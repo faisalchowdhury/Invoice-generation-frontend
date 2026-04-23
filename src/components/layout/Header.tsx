@@ -9,11 +9,11 @@ import {
   Plus,
   Play,
   Pause,
-  Settings,
   Bell,
   ChevronDown,
   Menu,
 } from "lucide-react";
+import { SettingsDropdown } from "@/pages/SettingsDropdown";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -71,10 +71,10 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           </span>
         </div>
 
-        {/* Settings - Hide on small mobile */}
-        <button className="hidden sm:block p-1.5 hover:bg-gray-100 rounded transition-colors">
-          <Settings className="w-4 h-4 text-gray-700" />
-        </button>
+        {/* Settings Dropdown - Hide on small mobile */}
+        <div className="hidden sm:block">
+          <SettingsDropdown />
+        </div>
 
         {/* Notifications */}
         <button className="p-1.5 hover:bg-gray-100 rounded transition-colors relative">

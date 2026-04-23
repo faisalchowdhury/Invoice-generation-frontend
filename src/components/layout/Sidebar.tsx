@@ -1,13 +1,6 @@
 /**
  * File: src/components/layout/Sidebar.tsx
- * Premium Sidebar - Exact Figma Match
- *
- * Design Characteristics:
- * - Ultra-clean minimal aesthetic
- * - Light gray background (#FAFBFC)
- * - Subtle hover states
- * - Precise spacing
- * - Professional enterprise look
+ * Updated with all menu items from screenshot
  */
 
 import React, { useState } from "react";
@@ -35,8 +28,13 @@ import {
   HelpCircle,
   Menu,
   X,
+  Box,
+  Wrench,
+  Scan,
+  FileCheck,
 } from "lucide-react";
 import Logo from "../../assets/logo.png";
+
 interface NavItem {
   label: string;
   icon: React.ElementType;
@@ -48,7 +46,7 @@ const navigationItems: NavItem[] = [
   {
     label: "Dashboard",
     icon: LayoutDashboard,
-    path: "/dashboard",
+    path: "/",
   },
   {
     label: "Sales",
@@ -82,17 +80,27 @@ const navigationItems: NavItem[] = [
     children: [
       { label: "Vendors", icon: Building2, path: "/purchase/vendors" },
       {
-        label: "Purchase Orders",
+        label: "Purchase Order",
         icon: ClipboardList,
         path: "/purchase/purchase-orders",
       },
       { label: "Bills", icon: FileText, path: "/purchase/bills" },
+      { label: "Expense", icon: Receipt, path: "/purchase/expense" },
+      {
+        label: "Payment Made",
+        icon: DollarSign,
+        path: "/purchase/payment-made",
+      },
+      { label: "Debit Notes", icon: CreditCard, path: "/purchase/debit-notes" },
     ],
   },
   {
     label: "Items",
     icon: Package,
-    path: "/items",
+    children: [
+      { label: "Product", icon: Box, path: "/items/product" },
+      { label: "Services", icon: Wrench, path: "/items/services" },
+    ],
   },
   {
     label: "Time Logs",
@@ -107,7 +115,14 @@ const navigationItems: NavItem[] = [
   {
     label: "Documents",
     icon: FolderOpen,
-    path: "/documents",
+    children: [
+      { label: "Quick Scan", icon: Scan, path: "/documents/quick-scan" },
+      {
+        label: "My Documents",
+        icon: FileCheck,
+        path: "/documents/my-documents",
+      },
+    ],
   },
   {
     label: "Reports",
@@ -144,6 +159,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [expandedItems, setExpandedItems] = useState<string[]>([
     "Sales",
     "Purchase",
+    "Items",
+    "Documents",
   ]);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -212,13 +229,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {!isCollapsed && (
             <>
               <button
-                className="lg:hidden p-1.5 hover:bg-gray-100 rounded-md transition-colors"
+                className="lg:hidden p-1.5 hover:bg-gray-300 rounded-md transition-colors"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 <X className="w-4 h-4 text-gray-600" />
               </button>
               <button
-                className="hidden lg:block p-1.5 hover:bg-gray-100 rounded-md transition-colors"
+                className="hidden lg:block p-1.5 hover:bg-gray-300 rounded-md transition-colors"
                 onClick={() => setIsCollapsed(!isCollapsed)}
               >
                 <Menu className="w-4 h-4 text-gray-600" />
@@ -228,7 +245,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {isCollapsed && (
             <button
-              className="hidden lg:block absolute top-4 left-1/2 -translate-x-1/2 p-1.5 hover:bg-gray-100 rounded-md transition-colors"
+              className="hidden lg:block absolute top-4 left-1/2 -translate-x-1/2 p-1.5 hover:bg-gray-300 rounded-md transition-colors"
               onClick={() => setIsCollapsed(!isCollapsed)}
             >
               <Menu className="w-4 h-4 text-gray-600" />
@@ -251,8 +268,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                          font-normal transition-all duration-150 border-y border-gray-200
                         ${
                           isParentActive(item.children)
-                            ? "bg-white text-gray-900 shadow-sm"
-                            : "text-gray-700 hover:bg-white/60"
+                            ? "bg-gray-300 text-gray-900 shadow-sm"
+                            : "text-gray-700 hover:bg-gray-300"
                         }
                       `}
                       title={isCollapsed ? item.label : ""}
@@ -295,8 +312,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                  transition-all duration-150
                                 ${
                                   isActive(child.path)
-                                    ? "border-b border-gray-200 text-gray-900 font-medium shadow-sm"
-                                    : "text-gray-600 hover:bg-white/60 hover:text-gray-900"
+                                    ? "border-b bg-gray-200 text-gray-900 font-medium shadow-sm"
+                                    : "text-gray-600 hover:bg-gray-300 hover:text-gray-900"
                                 }
                               `}
                             >
@@ -324,8 +341,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                        font-normal transition-all duration-150
                       ${
                         isActive(item.path)
-                          ? "border-b border-gray-200 text-gray-900 font-medium shadow-sm"
-                          : "text-gray-700 hover:bg-white/60"
+                          ? "border-b bg-gray-200 text-gray-900 font-medium shadow-sm"
+                          : "text-gray-700 hover:bg-gray-300"
                       }
                     `}
                     title={isCollapsed ? item.label : ""}
@@ -346,13 +363,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Get Help Footer */}
         <div className="border-t border-gray-200 p-2">
-          <button
-            className={`w-full flex items-center ${isCollapsed ? "justify-center" : "gap-2.5"} px-2.5 py-2 rounded-md  text-gray-700 hover:bg-white/60 transition-all duration-150`}
+          <Link
+            to="/get-help"
+            className={`w-full flex items-center ${isCollapsed ? "justify-center" : "gap-2.5"} px-2.5 py-2 rounded-md  text-gray-700 hover:bg-gray-300 transition-all duration-150`}
             title={isCollapsed ? "Get Help" : ""}
           >
             <HelpCircle className="w-[16px] h-[16px]" strokeWidth={1.8} />
             {!isCollapsed && <span className="tracking-tight">Get Help</span>}
-          </button>
+          </Link>
         </div>
       </div>
     </>

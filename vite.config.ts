@@ -11,7 +11,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 7000,
+    port: 8080,
 
     // ✅ Allow your custom domain
     allowedHosts: ["faisal8080.merinasib.shop"],

@@ -1,12 +1,16 @@
-@import url("https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,1..1000&display=swap");
 @import "tailwindcss";
 @plugin "daisyui";
 
-.montserrat-invoice {
-  font-family: "Montserrat", sans-serif;
+.google-sans-flex-invoice {
+  font-family: "Google Sans Flex", sans-serif;
   font-optical-sizing: auto;
-
   font-style: normal;
+  font-variation-settings:
+    "slnt" 0,
+    "wdth" 100,
+    "GRAD" 0,
+    "ROND" 0;
 }
 @theme {
   /* Modern Premium Colors */
