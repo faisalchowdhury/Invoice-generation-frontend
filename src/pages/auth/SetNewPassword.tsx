@@ -17,13 +17,15 @@ export const SetNewPassword: React.FC = () => {
     confirmPassword: "",
   });
   const [isSuccess, setIsSuccess] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.password !== formData.confirmPassword) {
-      alert("Passwords do not match!");
+      setError("Passwords do not match!");
       return;
     }
+    setError("");
     console.log("Setting new password");
     setIsSuccess(true);
     setTimeout(() => navigate("/auth/login"), 2000);
@@ -135,6 +137,10 @@ export const SetNewPassword: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {error && (
+          <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-md">{error}</p>
+        )}
 
         {/* Submit Button */}
         <button

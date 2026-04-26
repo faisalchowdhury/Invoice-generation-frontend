@@ -70,8 +70,8 @@ export const MyDocument: React.FC = () => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Bar */}
-        <div className="bg-white border-b border-gray-200 px-6 py-3">
-          <div className="flex items-center justify-between">
+        <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-4">
               <button className="text-sm font-medium text-blue-600 border-b-2 border-blue-600 pb-2">
                 My Document
@@ -86,7 +86,7 @@ export const MyDocument: React.FC = () => {
                   placeholder="Search name, Extension, Inside..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md w-64"
+                  className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md w-full sm:w-64"
                 />
               </div>
               <button className="p-1.5 hover:bg-gray-100 rounded">
@@ -97,9 +97,9 @@ export const MyDocument: React.FC = () => {
         </div>
 
         {/* Filters Bar */}
-        <div className="bg-white border-b border-gray-200 px-6 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+        <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button className="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-2">
                 <Calendar className="w-4 h-4" />
                 Today
@@ -135,7 +135,7 @@ export const MyDocument: React.FC = () => {
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
+        <div className="flex-1 overflow-y-auto bg-gray-50 p-4 sm:p-6">
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
               <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
@@ -193,8 +193,8 @@ export const MyDocument: React.FC = () => {
 
       {/* Create Folder Modal */}
       {showCreateFolderModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg w-full max-w-md p-6">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-md p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
               Create New Folder
             </h2>

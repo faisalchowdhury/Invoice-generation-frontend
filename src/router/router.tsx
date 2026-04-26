@@ -3,7 +3,7 @@
  * Main router configuration using createBrowserRouter
  */
 
-import { createBrowserRouter, Navigate } from "react-router";
+import { createBrowserRouter } from "react-router";
 import { Login } from "../pages/auth/Login";
 import { Signup } from "../pages/auth/Signup";
 import { ForgotPassword } from "../pages/auth/ForgotPassword";

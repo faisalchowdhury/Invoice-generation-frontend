@@ -43,6 +43,7 @@ export const Projects: React.FC = () => {
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [activeTab, setActiveTab] = useState<"tasks" | "time-logs">("tasks");
+  const [showMobileList, setShowMobileList] = useState(true);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -213,8 +214,18 @@ export const Projects: React.FC = () => {
   // MAIN CONTENT WITH PROJECT
   return (
     <div className="flex-1 flex flex-col bg-[#FAFBFC] overflow-hidden">
+      {/* Mobile Toggle Bar */}
+      <div className="lg:hidden bg-white border-b border-gray-200 px-4 py-2">
+        <button
+          onClick={() => setShowMobileList(!showMobileList)}
+          className="flex items-center gap-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-md px-3 py-1.5"
+        >
+          {showMobileList ? "← Back to Details" : "☰ View Projects"}
+        </button>
+      </div>
+
       {/* Top Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3">
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3">
         <div className="flex items-center justify-between">
           <button className="text-sm font-medium text-gray-900 border-b-2 border-blue-600 pb-2">
             Summary
@@ -242,9 +253,9 @@ export const Projects: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden flex">
+      <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
         {/* LEFT PANEL - Project List */}
-        <div className="w-96 bg-white border-r border-gray-200 flex flex-col">
+        <div className={`${showMobileList ? "flex" : "hidden"} lg:flex flex-col w-full lg:w-96 bg-white border-r border-gray-200`}>
           {/* Header */}
           <div className="px-6 py-4 border-b border-gray-200">
             <div className="flex items-center justify-between mb-4">
@@ -296,7 +307,7 @@ export const Projects: React.FC = () => {
               {projects.map((project) => (
                 <div
                   key={project.id}
-                  onClick={() => setSelectedProject(project)}
+                  onClick={() => { setSelectedProject(project); setShowMobileList(false); }}
                   className={`p-3 rounded cursor-pointer mb-2 ${
                     selectedProject?.id === project.id
                       ? "bg-blue-50"
@@ -332,12 +343,12 @@ export const Projects: React.FC = () => {
         </div>
 
         {/* RIGHT PANEL - Project Details */}
-        <div className="flex-1 overflow-y-auto bg-white">
+        <div className={`${showMobileList ? "hidden" : "flex"} lg:flex flex-col flex-1 overflow-y-auto bg-white`}>
           {selectedProject ? (
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               {/* Project Info Header */}
               <div className="bg-gray-50 rounded-lg p-6 mb-6">
-                <div className="grid grid-cols-4 gap-6">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
                   <div>
                     <div className="text-sm text-gray-600 mb-1">Customer</div>
                     <div className="text-base font-medium text-gray-900">
@@ -520,7 +531,7 @@ export const Projects: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     $ Default Project

@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from "react";
+import { showToast } from '../utils/toast';
 import {
   Settings,
   Bell,
@@ -167,7 +168,7 @@ export const SettingsDropdown: React.FC = () => {
       {activePage === "categories" && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
                 Categories
               </h2>
@@ -179,7 +180,7 @@ export const SettingsDropdown: React.FC = () => {
                   Close
                 </button>
                 <button
-                  onClick={() => alert("Categories saved!")}
+                  onClick={() => showToast("Categories saved!", "success")}
                   className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
                 >
                   Edit
@@ -187,7 +188,7 @@ export const SettingsDropdown: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
               <div className="flex gap-4 mb-4 border-b border-gray-200">
                 <button className="pb-2 text-sm font-medium text-gray-900 border-b-2 border-blue-600">
                   All Category
@@ -225,7 +226,7 @@ export const SettingsDropdown: React.FC = () => {
               </div>
 
               <button
-                onClick={() => alert("Add new category")}
+                onClick={() => showToast("Add new category", "info")}
                 className="w-12 h-12 bg-gray-900 text-white rounded-full flex items-center justify-center hover:bg-gray-800 mt-6 mx-auto"
               >
                 <Plus className="w-6 h-6" />
@@ -252,7 +253,7 @@ export const SettingsDropdown: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    alert("Category updated!");
+                    showToast("Category updated!", "info");
                     setShowEditCategoryModal(false);
                   }}
                   className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
@@ -299,7 +300,7 @@ export const SettingsDropdown: React.FC = () => {
       {activePage === "edit-titles" && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
                 Edit Titles
               </h2>
@@ -322,8 +323,8 @@ export const SettingsDropdown: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="grid grid-cols-2 gap-4">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {[
                   "50% OFF First Month Plan",
                   "20% OFF Annual Subscription",
@@ -351,7 +352,7 @@ export const SettingsDropdown: React.FC = () => {
       {activePage === "app-settings" && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
                 App Settings
               </h2>
@@ -374,9 +375,9 @@ export const SettingsDropdown: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-hidden flex">
+            <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
               {/* Left Sidebar */}
-              <div className="w-64 border-r border-gray-200 overflow-y-auto bg-gray-50">
+              <div className="w-full lg:w-64 border-b lg:border-b-0 lg:border-r border-gray-200 overflow-y-auto bg-gray-50">
                 {appSections.map((section) => (
                   <button
                     key={section}
@@ -393,7 +394,7 @@ export const SettingsDropdown: React.FC = () => {
               </div>
 
               {/* Right Content */}
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6">
                 {selectedAppSection === "General" && (
                   <div className="space-y-6">
                     <h3 className="text-base font-semibold text-gray-900 mb-4">
@@ -496,7 +497,7 @@ export const SettingsDropdown: React.FC = () => {
       {activePage === "notifications" && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
                 Notification Setting
               </h2>
@@ -516,7 +517,7 @@ export const SettingsDropdown: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Default Time Zone
@@ -608,13 +609,13 @@ export const SettingsDropdown: React.FC = () => {
               </h2>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => alert("Downloading barcodes...")}
+                  onClick={() => showToast("Downloading barcodes...", "info")}
                   className="p-2 hover:bg-gray-100 rounded"
                 >
                   <Download className="w-5 h-5 text-gray-600" />
                 </button>
                 <button
-                  onClick={() => alert("Refreshing...")}
+                  onClick={() => showToast("Refreshing...", "info")}
                   className="p-2 hover:bg-gray-100 rounded"
                 >
                   <RefreshCw className="w-5 h-5 text-gray-600" />
@@ -626,7 +627,7 @@ export const SettingsDropdown: React.FC = () => {
                   Cancel
                 </button>
                 <button
-                  onClick={() => alert("Generating barcodes...")}
+                  onClick={() => showToast("Generating barcodes...", "info")}
                   className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
                 >
                   Generate (0)
@@ -670,14 +671,14 @@ export const SettingsDropdown: React.FC = () => {
                   Add Barcode
                 </h3>
                 <button
-                  onClick={() => alert("Adding barcode...")}
+                  onClick={() => showToast("Adding barcode...", "info")}
                   className="text-sm text-blue-600 hover:text-blue-700"
                 >
                   Add
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <input
                   type="text"
                   placeholder="Item Name*"
@@ -723,7 +724,7 @@ export const SettingsDropdown: React.FC = () => {
       {activePage === "product-library" && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
                 Product Library
               </h2>
@@ -735,7 +736,7 @@ export const SettingsDropdown: React.FC = () => {
                   Cancel
                 </button>
                 <button
-                  onClick={() => alert("Importing selected products...")}
+                  onClick={() => showToast("Importing selected products...", "info")}
                   className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
                 >
                   Import (0)
@@ -743,9 +744,9 @@ export const SettingsDropdown: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-hidden flex">
+            <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
               {/* Left Sidebar - Categories */}
-              <div className="w-64 border-r border-gray-200 overflow-y-auto p-4">
+              <div className="w-full lg:w-64 border-b lg:border-b-0 lg:border-r border-gray-200 overflow-y-auto p-4">
                 <div className="mb-4">
                   <div className="text-xs text-gray-500 mb-2">
                     Sort by: Created on
@@ -782,7 +783,7 @@ export const SettingsDropdown: React.FC = () => {
                     ].map((cat) => (
                       <button
                         key={cat.name}
-                        onClick={() => alert(`Viewing ${cat.name} category`)}
+                        onClick={() => showToast(`Viewing ${cat.name} category`, "info")}
                         className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50 rounded cursor-pointer text-left"
                       >
                         <span className="text-sm text-gray-700">
@@ -796,7 +797,7 @@ export const SettingsDropdown: React.FC = () => {
                   </div>
 
                   <button
-                    onClick={() => alert("Showing all 63 categories")}
+                    onClick={() => showToast("Showing all 63 categories", "info")}
                     className="mt-4 text-sm text-blue-600 cursor-pointer hover:text-blue-700"
                   >
                     63 Categories
@@ -805,7 +806,7 @@ export const SettingsDropdown: React.FC = () => {
               </div>
 
               {/* Right Content - Products */}
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6">
                 <div className="mb-4">
                   <h3 className="text-base font-semibold text-gray-900 mb-1">
                     Appliances
@@ -857,7 +858,7 @@ export const SettingsDropdown: React.FC = () => {
                         <tr
                           key={index}
                           className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => alert(`Selected: ${product.name}`)}
+                          onClick={() => showToast(`Selected: ${product.name}`, "info")}
                         >
                           <td className="px-6 py-4 text-sm text-gray-900">
                             {product.name}
@@ -891,19 +892,19 @@ export const SettingsDropdown: React.FC = () => {
       {activePage === "pdf-print" && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
                 PDF & Print Settings
               </h2>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => alert("Searching...")}
+                  onClick={() => showToast("Searching...", "info")}
                   className="p-2 hover:bg-gray-100 rounded"
                 >
                   <Search className="w-5 h-5 text-gray-600" />
                 </button>
                 <button
-                  onClick={() => alert("Refreshing...")}
+                  onClick={() => showToast("Refreshing...", "info")}
                   className="p-2 hover:bg-gray-100 rounded"
                 >
                   <RefreshCw className="w-5 h-5 text-gray-600" />
@@ -915,7 +916,7 @@ export const SettingsDropdown: React.FC = () => {
                   Cancel
                 </button>
                 <button
-                  onClick={() => alert("Settings saved!")}
+                  onClick={() => showToast("Settings saved!", "success")}
                   className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-800"
                 >
                   Save
@@ -923,10 +924,10 @@ export const SettingsDropdown: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="flex gap-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+              <div className="flex flex-col lg:flex-row gap-6">
                 {/* Preview */}
-                <div className="w-1/3">
+                <div className="w-full lg:w-1/3">
                   <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                     <div className="aspect-[8.5/11] bg-white border border-gray-300 rounded shadow-sm">
                       <div className="p-4 text-xs text-gray-600">
@@ -943,34 +944,34 @@ export const SettingsDropdown: React.FC = () => {
                       Style
                     </h3>
 
-                    <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                       <button
-                        onClick={() => alert("Text Color selected")}
+                        onClick={() => showToast("Text Color selected", "info")}
                         className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-left"
                       >
                         ⬛ Text Color
                       </button>
                       <button
-                        onClick={() => alert("Border Color selected")}
+                        onClick={() => showToast("Border Color selected", "info")}
                         className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-left"
                       >
                         ⬛ Border Color
                       </button>
                       <button
-                        onClick={() => alert("Fill Color selected")}
+                        onClick={() => showToast("Fill Color selected", "info")}
                         className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-left"
                       >
                         ⬛ Fill Color
                       </button>
                       <button
-                        onClick={() => alert("Fill Text Color selected")}
+                        onClick={() => showToast("Fill Text Color selected", "info")}
                         className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-left"
                       >
                         ⬛ Fill Text Color
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm text-gray-700 mb-2">
                           Font
@@ -1023,7 +1024,7 @@ export const SettingsDropdown: React.FC = () => {
       {activePage === "email-templates" && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
                 Email Templates
               </h2>
@@ -1035,7 +1036,7 @@ export const SettingsDropdown: React.FC = () => {
                   Close
                 </button>
                 <button
-                  onClick={() => alert("Template saved!")}
+                  onClick={() => showToast("Template saved!", "success")}
                   className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
                 >
                   Save
@@ -1043,7 +1044,7 @@ export const SettingsDropdown: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
               <div className="space-y-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1124,7 +1125,7 @@ export const SettingsDropdown: React.FC = () => {
                   Drag and drop your file here, or click to browse
                 </p>
                 <button
-                  onClick={() => alert("Opening file browser...")}
+                  onClick={() => showToast("Opening file browser...", "info")}
                   className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
                 >
                   Choose File
@@ -1135,7 +1136,7 @@ export const SettingsDropdown: React.FC = () => {
               </div>
 
               <button
-                onClick={() => alert("Importing data...")}
+                onClick={() => showToast("Importing data...", "info")}
                 className="w-full px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800"
               >
                 Import
@@ -1190,7 +1191,7 @@ export const SettingsDropdown: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Date Range
                 </label>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <input
                     type="date"
                     className="px-3 py-2 border border-gray-300 rounded-md"
@@ -1203,7 +1204,7 @@ export const SettingsDropdown: React.FC = () => {
               </div>
 
               <button
-                onClick={() => alert("Exporting data...")}
+                onClick={() => showToast("Exporting data...", "info")}
                 className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center justify-center gap-2"
               >
                 <Download className="w-5 h-5" />
@@ -1243,7 +1244,7 @@ export const SettingsDropdown: React.FC = () => {
                 <button
                   key={lang.code}
                   onClick={() => {
-                    alert(`Language changed to ${lang.name}`);
+                    showToast(`Language changed to ${lang.name}`, "info");
                     setActivePage(null);
                   }}
                   className="w-full px-4 py-3 text-left border border-gray-200 rounded-md hover:bg-gray-50 hover:border-blue-600 transition-colors"

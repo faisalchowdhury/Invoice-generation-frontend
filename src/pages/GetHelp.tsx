@@ -5,6 +5,7 @@
  */
 
 import React from "react";
+import { showToast } from "../utils/toast";
 import {
   HelpCircle,
   BookOpen,
@@ -26,27 +27,27 @@ interface HelpCard {
 
 export const GetHelp: React.FC = () => {
   const handleRaiseTicket = () => {
-    alert("Opening support ticket form...");
+    showToast("Opening support ticket form...", "info");
   };
 
   const handleViewGuide = () => {
-    alert("Opening documentation...");
+    showToast("Opening documentation...", "info");
   };
 
   const handleWatchVideos = () => {
-    alert("Opening video tutorials...");
+    showToast("Opening video tutorials...", "info");
   };
 
   const handleBookDemo = () => {
-    alert("Opening demo booking...");
+    showToast("Opening demo booking...", "info");
   };
 
   const handleSubmitIdea = () => {
-    alert("Opening feature request form...");
+    showToast("Opening feature request form...", "info");
   };
 
   const handleSocialClick = (platform: string) => {
-    alert(`Opening ${platform}...`);
+    showToast(`Opening ${platform}...`, "info");
   };
 
   const helpCards: HelpCard[] = [
@@ -109,7 +110,7 @@ export const GetHelp: React.FC = () => {
 
   return (
     <div className="flex-1 bg-[#FAFBFC] overflow-y-auto">
-      <div className="max-w-6xl mx-auto p-8">
+      <div className="max-w-6xl mx-auto p-4 sm:p-8">
         {/* Header */}
         <div className="mb-10">
           <h1 className="text-2xl font-semibold text-gray-900 mb-2">
@@ -119,7 +120,7 @@ export const GetHelp: React.FC = () => {
         </div>
 
         {/* Help Cards Grid */}
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {helpCards.map((card) => (
             <div
               key={card.id}

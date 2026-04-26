@@ -5,6 +5,8 @@
  */
 
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { showToast } from "../../utils/toast";
 import {
   Search,
   Plus,
@@ -174,6 +176,7 @@ const sampleReceipts: SalesReceipt[] = [
 ];
 
 export const SalesReceipts: React.FC = () => {
+  const navigate = useNavigate();
   const [receipts, setReceipts] = useState<SalesReceipt[]>(sampleReceipts);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedReceipt, setSelectedReceipt] = useState<SalesReceipt>(
@@ -182,14 +185,15 @@ export const SalesReceipts: React.FC = () => {
   const [selectedReceipts, setSelectedReceipts] = useState<string[]>([]);
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
 
-  // Modal states
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  // Form states
+  const [showForm, setShowForm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showPrintMenu, setShowPrintMenu] = useState(false);
   const [showConvertMenu, setShowConvertMenu] = useState(false);
   const [showReceiptPreview, setShowReceiptPreview] = useState(false);
+  const [showMobileList, setShowMobileList] = useState(false);
 
   // Form data
   const [formData, setFormData] = useState<SalesReceipt>(sampleReceipts[0]);
@@ -202,23 +206,28 @@ export const SalesReceipts: React.FC = () => {
   };
 
   const handleSave = () => {
-    if (showEditModal) {
+    if (isEditing) {
       setReceipts((prev) =>
         prev.map((rec) => (rec.id === formData.id ? formData : rec)),
       );
       setSelectedReceipt(formData);
-      setShowEditModal(false);
-    } else if (showCreateModal) {
+      showToast("Receipt updated!", "success");
+    } else {
       const newReceipt = { ...formData, id: Date.now().toString() };
       setReceipts((prev) => [...prev, newReceipt]);
       setSelectedReceipt(newReceipt);
-      setShowCreateModal(false);
+      showToast("Receipt created!", "success");
     }
+    setShowForm(false);
   };
+
+  const handleCancel = () => setShowForm(false);
 
   const handleEdit = () => {
     setFormData(selectedReceipt);
-    setShowEditModal(true);
+    setIsEditing(true);
+    setShowForm(true);
+    setShowMobileList(false);
   };
 
   const handleCreate = () => {
@@ -228,7 +237,9 @@ export const SalesReceipts: React.FC = () => {
       receiptNumber: "",
       customerName: "",
     });
-    setShowCreateModal(true);
+    setIsEditing(false);
+    setShowForm(true);
+    setShowMobileList(false);
   };
 
   const toggleSelectReceipt = (id: string) => {
@@ -280,8 +291,8 @@ export const SalesReceipts: React.FC = () => {
   return (
     <div className="flex-1 bg-[#FAFBFC] overflow-hidden flex flex-col">
       {/* Top Header Bar */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3">
-        <div className="flex items-center justify-between">
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-6">
             <button className="text-sm font-medium text-gray-900 border-b-2 border-blue-600 pb-2">
               Summary
@@ -289,7 +300,6 @@ export const SalesReceipts: React.FC = () => {
           </div>
           <div className="flex items-center gap-3">
             <select
-              onChange={(e) => alert(`Filtering by: ${e.target.value}`)}
               className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white"
             >
               <option>This Year</option>
@@ -297,7 +307,6 @@ export const SalesReceipts: React.FC = () => {
               <option>Last Month</option>
             </select>
             <button
-              onClick={() => alert("Filter menu opened")}
               className="p-1.5 hover:bg-gray-100 rounded"
             >
               <svg
@@ -319,9 +328,9 @@ export const SalesReceipts: React.FC = () => {
       </div>
 
       {/* Receipt Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4">
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2 sm:mb-4">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
             <h2 className="text-lg font-semibold text-gray-900">
               Sales Receipts
             </h2>
@@ -338,18 +347,24 @@ export const SalesReceipts: React.FC = () => {
           </div>
 
           {/* Action Icons */}
-          <div className="flex items-center gap-2 relative">
-            {isMultiSelectMode ? (
+          <div className="flex items-center gap-1 sm:gap-2 relative overflow-x-auto max-w-full">
+            {showForm ? (
+              <div className="flex items-center gap-2">
+                <button onClick={handleCancel} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm">Cancel</button>
+                <button onClick={() => { showToast("Saved as draft", "success"); setShowForm(false); }} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm">Save as Draft</button>
+                <button onClick={handleSave} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm">Save & Send</button>
+              </div>
+            ) : isMultiSelectMode ? (
               <>
                 <button
-                  onClick={() => alert("Deleting selected receipts...")}
+                  onClick={() => showToast("Receipts deleted!", "success")}
                   className="p-2 hover:bg-gray-100 rounded-md"
                   title="Delete"
                 >
                   <Trash2 className="w-5 h-5 text-gray-600" />
                 </button>
                 <button
-                  onClick={() => alert("Calling selected customers...")}
+                  onClick={() => showToast("Opening phone app...", "info")}
                   className="p-2 hover:bg-gray-100 rounded-md"
                   title="Call"
                 >
@@ -368,7 +383,7 @@ export const SalesReceipts: React.FC = () => {
                   </svg>
                 </button>
                 <button
-                  onClick={() => alert("Sending email to selected...")}
+                  onClick={() => showToast("Emails sent!", "success")}
                   className="p-2 hover:bg-gray-100 rounded-md"
                   title="Email"
                 >
@@ -382,7 +397,7 @@ export const SalesReceipts: React.FC = () => {
                   <Eye className="w-5 h-5 text-gray-600" />
                 </button>
                 <button
-                  onClick={() => alert("Opening dropdown...")}
+                  onClick={() => {}}
                   className="p-2 hover:bg-gray-100 rounded-md"
                   title="More"
                 >
@@ -404,14 +419,14 @@ export const SalesReceipts: React.FC = () => {
             ) : (
               <>
                 <button
-                  onClick={() => alert("Added to favorites!")}
+                  onClick={() => showToast("Added to favorites!", "success")}
                   className="p-2 hover:bg-gray-100 rounded-md"
                   title="Add to favorites"
                 >
                   <CheckCircle className="w-5 h-5 text-gray-600" />
                 </button>
                 <button
-                  onClick={() => alert("Column settings opened")}
+                  onClick={() => showToast("Column settings coming soon", "info")}
                   className="p-2 hover:bg-gray-100 rounded-md"
                   title="Columns"
                 >
@@ -425,7 +440,7 @@ export const SalesReceipts: React.FC = () => {
                   <Edit className="w-5 h-5 text-gray-600" />
                 </button>
                 <button
-                  onClick={() => alert("Receipt expanded to full screen")}
+                  onClick={() => setShowReceiptPreview(true)}
                   className="p-2 hover:bg-gray-100 rounded-md"
                   title="Expand"
                 >
@@ -451,14 +466,14 @@ export const SalesReceipts: React.FC = () => {
                   <Eye className="w-5 h-5 text-gray-600" />
                 </button>
                 <button
-                  onClick={() => alert("Printing receipt...")}
+                  onClick={() => setShowReceiptPreview(true)}
                   className="p-2 hover:bg-gray-100 rounded-md"
                   title="Print"
                 >
                   <Printer className="w-5 h-5 text-gray-600" />
                 </button>
                 <button
-                  onClick={() => alert("Email dialog opened")}
+                  onClick={() => showToast("Email sent!", "success")}
                   className="p-2 hover:bg-gray-100 rounded-md"
                   title="Send Email"
                 >
@@ -479,7 +494,7 @@ export const SalesReceipts: React.FC = () => {
               <div className="absolute right-0 top-12 w-56 bg-white rounded-md shadow-lg border border-gray-200 py-1 z-50">
                 <button
                   onClick={() => {
-                    alert("Opening WhatsApp...");
+                    showToast("Opening WhatsApp...", "info");
                     setShowMoreMenu(false);
                   }}
                   className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
@@ -489,7 +504,7 @@ export const SalesReceipts: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    alert("Receipt duplicated!");
+                    showToast("Receipt duplicated!", "success");
                     setShowMoreMenu(false);
                   }}
                   className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
@@ -499,7 +514,7 @@ export const SalesReceipts: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    alert("Opening activity log...");
+                    navigate("/reports");
                     setShowMoreMenu(false);
                   }}
                   className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
@@ -514,48 +529,18 @@ export const SalesReceipts: React.FC = () => {
                 >
                   <span className="flex items-center gap-2">
                     <FileText className="w-4 h-4" />
-                    Frame 214723...
+                    Convert To
                   </span>
                   <span>→</span>
                 </button>
                 {showConvertMenu && (
                   <div className="ml-4 border-l border-gray-200 pl-2">
-                    <button
-                      onClick={() => {
-                        alert("Converting to Sales Receipts...");
-                        setShowMoreMenu(false);
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      As Sales Receipts
-                    </button>
-                    <button
-                      onClick={() => {
-                        alert("Printing single copy...");
-                        setShowMoreMenu(false);
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      Single Copy
-                    </button>
-                    <button
-                      onClick={() => {
-                        alert("Printing double copy...");
-                        setShowMoreMenu(false);
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      Double Copy
-                    </button>
-                    <button
-                      onClick={() => {
-                        alert("Printing triple copy...");
-                        setShowMoreMenu(false);
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      Triple Copy
-                    </button>
+                    <button onClick={() => { navigate("/sales/invoices"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">As Invoice</button>
+                    <button onClick={() => { navigate("/sales/estimates"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">As Estimate</button>
+                    <button onClick={() => { navigate("/sales/credit-notes"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">As Credit Note</button>
+                    <button onClick={() => { setShowReceiptPreview(true); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Single Copy</button>
+                    <button onClick={() => { setShowReceiptPreview(true); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Double Copy</button>
+                    <button onClick={() => { setShowReceiptPreview(true); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Triple Copy</button>
                   </div>
                 )}
                 <div className="border-t border-gray-200 my-1"></div>
@@ -564,7 +549,7 @@ export const SalesReceipts: React.FC = () => {
                     if (
                       confirm("Are you sure you want to delete this receipt?")
                     ) {
-                      alert("Receipt moved to trash!");
+                      showToast("Receipt moved to trash!", "info");
                     }
                     setShowMoreMenu(false);
                   }}
@@ -579,10 +564,20 @@ export const SalesReceipts: React.FC = () => {
         </div>
       </div>
 
+      {/* Mobile list toggle */}
+      <div className="lg:hidden bg-white border-b border-gray-200 px-4 py-2">
+        <button
+          onClick={() => setShowMobileList(!showMobileList)}
+          className="flex items-center gap-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-md px-3 py-1.5"
+        >
+          {showMobileList ? "← Back to Details" : "☰ View Receipts"}
+        </button>
+      </div>
+
       {/* Main Content */}
       <div className="flex-1 overflow-hidden flex">
         {/* Left Sidebar - Receipts List */}
-        <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+        <div className={`${showMobileList ? "flex" : "hidden"} lg:flex flex-col w-full lg:w-64 bg-white border-r border-gray-200`}>
           {/* Multi-select mode header */}
           {isMultiSelectMode && (
             <div className="p-3 border-b border-gray-200 bg-gray-50">
@@ -627,7 +622,7 @@ export const SalesReceipts: React.FC = () => {
             <div className="flex items-center gap-2 text-xs mb-2">
               <span className="text-gray-600">Sort by:</span>
               <select
-                onChange={(e) => alert(`Sorting by: ${e.target.value}`)}
+                onChange={() => {}}
                 className="px-2 py-1 border border-gray-300 rounded text-gray-700"
               >
                 <option>Date</option>
@@ -636,7 +631,7 @@ export const SalesReceipts: React.FC = () => {
             </div>
             <div className="flex items-center gap-2 text-xs flex-wrap">
               <select
-                onChange={(e) => alert(`Filter by status: ${e.target.value}`)}
+                onChange={() => {}}
                 className="px-2 py-1 border border-gray-300 rounded text-gray-700 flex-1"
               >
                 <option>Status</option>
@@ -644,22 +639,22 @@ export const SalesReceipts: React.FC = () => {
                 <option>Approved</option>
               </select>
               <select
-                onChange={(e) => alert(`Filter by customer: ${e.target.value}`)}
+                onChange={() => {}}
                 className="px-2 py-1 border border-gray-300 rounded text-gray-700 flex-1"
               >
                 <option>Customer: All</option>
               </select>
               <select
-                onChange={(e) => alert(`Filter by date: ${e.target.value}`)}
+                onChange={() => {}}
                 className="px-2 py-1 border border-gray-300 rounded text-gray-700 flex-1"
               >
                 <option>Date Range</option>
               </select>
               <button
-                onClick={() => alert("Custom filter opened")}
+                onClick={() => showToast("Custom filter coming soon", "info")}
                 className="px-2 py-1 border border-gray-300 rounded text-gray-700 text-xs"
               >
-                Custo
+                Custom
               </button>
             </div>
           </div>
@@ -739,8 +734,51 @@ export const SalesReceipts: React.FC = () => {
         </div>
 
         {/* Right Content - Receipt Details or Selection Summary */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {isMultiSelectMode && selectedReceipts.length > 0 ? (
+        <div className={`${showMobileList ? "hidden" : "flex"} lg:flex flex-col flex-1 overflow-y-auto p-4 sm:p-6`}>
+          {showForm ? (
+            <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Customer</label><input type="text" value={formData.customerName} onChange={(e) => handleInputChange("customerName", e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Address</label><select className="w-full px-3 py-2 border border-gray-300 rounded-md"><option>Default Taxes (Service)</option></select></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Sales Receipts #</label><select className="w-full px-3 py-2 border border-gray-300 rounded-md"><option>Default Taxes (Product)</option></select></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Currency</label><input type="text" placeholder="$" className="w-full px-3 py-2 border border-gray-300 rounded-md" /></div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Subtitle</label><select className="w-full px-3 py-2 border border-gray-300 rounded-md"><option>Default Company</option></select></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Payment Type</label><input type="text" placeholder="$0" className="w-full px-3 py-2 border border-gray-300 rounded-md" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Shipping Method</label><input type="text" placeholder="24" className="w-full px-3 py-2 border border-gray-300 rounded-md" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Sales Receipts Date</label><div className="relative"><input type="text" placeholder="24" className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md" /><Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /></div></div>
+              </div>
+              <div className="mb-6 overflow-x-auto">
+                <table className="w-full text-sm border-collapse min-w-[600px]">
+                  <thead><tr className="border-b border-gray-200"><th className="px-2 py-2 text-left text-xs font-medium text-gray-600">Sr. No.</th><th className="px-2 py-2 text-left text-xs font-medium text-gray-600">Items</th><th className="px-2 py-2 text-left text-xs font-medium text-gray-600">Quantity</th><th className="px-2 py-2 text-left text-xs font-medium text-gray-600">Rate</th><th className="px-2 py-2 text-left text-xs font-medium text-gray-600">Tax</th><th className="px-2 py-2 text-left text-xs font-medium text-gray-600">Discount</th><th className="px-2 py-2 text-left text-xs font-medium text-gray-600">Amount</th></tr></thead>
+                  <tbody><tr className="border-b border-gray-100"><td className="px-2 py-3">01</td><td className="px-2 py-3"><div className="flex items-center gap-2"><span>Electronics</span><button className="text-gray-400 hover:text-gray-600"><Edit className="w-4 h-4" /></button></div><div className="text-xs text-gray-500">Description</div></td><td className="px-2 py-3">23</td><td className="px-2 py-3">$40000</td><td className="px-2 py-3"><select className="border border-gray-300 rounded px-2 py-1 text-xs"><option>Tax</option></select></td><td className="px-2 py-3">2%</td><td className="px-2 py-3 flex items-center gap-2"><span>$32000</span><button className="text-green-600 hover:text-green-700"><Plus className="w-4 h-4" /></button><button className="text-red-600 hover:text-red-700"><Trash2 className="w-4 h-4" /></button></td></tr></tbody>
+                </table>
+              </div>
+              <div className="flex gap-3 mb-6">
+                <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 flex items-center gap-2"><Plus className="w-4 h-4" />Add Product</button>
+                <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 flex items-center gap-2"><Plus className="w-4 h-4" />Add Services</button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-6">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Terms & Conditions</label><textarea rows={4} className="w-full px-3 py-2 border border-gray-300 rounded-md" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Notes</label><textarea rows={4} className="w-full px-3 py-2 border border-gray-300 rounded-md" /></div>
+                <div><div className="space-y-2"><div className="flex justify-between text-sm"><span className="text-gray-600">Sub Total</span><span className="text-blue-600">$80.00</span></div><div className="flex justify-between text-sm"><span className="text-gray-600">Shipping Cost</span><span className="text-blue-600">$3.20</span></div><div className="flex justify-between text-sm"><span className="text-gray-600">Sales Tax 4%</span><span className="text-blue-600">$10.00</span></div><div className="flex justify-between text-sm font-semibold border-t pt-2"><span className="text-gray-900">Total</span><span className="text-blue-600">$93.20</span></div></div></div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Internal Notes</label><textarea rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-md" /></div>
+                <div><button className="w-full py-8 border-2 border-dashed border-gray-300 rounded-md text-gray-400 hover:border-gray-400 hover:text-gray-500 flex flex-col items-center justify-center gap-2 transition-colors"><Plus className="w-6 h-6" /><span className="text-sm">Upload Computer</span></button></div>
+              </div>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Customer Signature</label>
+                <button onClick={() => setShowSignatureModal(true)} className="w-full py-4 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">Customer Signature</button>
+              </div>
+              <div className="flex justify-end gap-2 pt-4 border-t border-gray-200">
+                <button onClick={handleCancel} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm">Cancel</button>
+                <button onClick={() => { showToast("Saved as draft", "success"); setShowForm(false); }} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm">Save as Draft</button>
+                <button onClick={handleSave} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm">Save & Send</button>
+              </div>
+            </div>
+          ) : isMultiSelectMode && selectedReceipts.length > 0 ? (
             // Selection Summary
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
@@ -757,7 +795,7 @@ export const SalesReceipts: React.FC = () => {
             // Receipt Details
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               {/* Receipt Header Info - 3 columns */}
-              <div className="grid grid-cols-3 gap-4 mb-6 pb-4 border-b border-gray-200">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 pb-4 border-b border-gray-200">
                 <div>
                   <label className="text-xs text-gray-500 block mb-1">
                     Receipt #
@@ -801,7 +839,7 @@ export const SalesReceipts: React.FC = () => {
               </div>
 
               {/* Sub Title & Shipping Method */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                 <div>
                   <label className="text-xs text-gray-500 block mb-1">
                     Sub Title
@@ -821,9 +859,9 @@ export const SalesReceipts: React.FC = () => {
               </div>
 
               {/* Items Table with Totals on Right */}
-              <div className="flex gap-6 mb-6">
-                <div className="flex-1">
-                  <table className="w-full text-sm border-collapse">
+              <div className="flex flex-col lg:flex-row gap-6 mb-6">
+                <div className="flex-1 overflow-x-auto">
+                  <table className="w-full text-sm border-collapse min-w-[500px]">
                     <thead>
                       <tr className="border-b border-gray-200">
                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">
@@ -913,7 +951,7 @@ export const SalesReceipts: React.FC = () => {
               </div>
 
               {/* Terms & Conditions and Notes */}
-              <div className="grid grid-cols-2 gap-6 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
                 <div>
                   <label className="text-xs text-gray-500 block mb-1">
                     Terms & Conditions
@@ -933,7 +971,7 @@ export const SalesReceipts: React.FC = () => {
               </div>
 
               {/* Internal Notes & Upload */}
-              <div className="grid grid-cols-2 gap-6 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
                 <div>
                   <label className="text-xs text-gray-500 block mb-1">
                     Internal Notes
@@ -944,7 +982,7 @@ export const SalesReceipts: React.FC = () => {
                 </div>
                 <div>
                   <button
-                    onClick={() => alert("Upload Computer clicked")}
+                    onClick={() => showToast("File upload coming soon", "info")}
                     className="w-full py-8 border-2 border-dashed border-gray-300 rounded-md text-gray-400 hover:border-gray-400 hover:text-gray-500 flex flex-col items-center justify-center gap-2 transition-colors"
                   >
                     <Plus className="w-6 h-6" />
@@ -986,11 +1024,11 @@ export const SalesReceipts: React.FC = () => {
         )}
       </button>
 
-      {/* Create/Edit Sales Receipt Modal */}
-      {(showEditModal || showCreateModal) && (
+      {/* form is now inline in right panel */}
+      {false && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-6xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
                 {showEditModal
                   ? "Edit sales Receipts"
@@ -1018,8 +1056,8 @@ export const SalesReceipts: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Customer
@@ -1061,7 +1099,7 @@ export const SalesReceipts: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-4 gap-4 mb-6">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Subtitle
@@ -1178,7 +1216,7 @@ export const SalesReceipts: React.FC = () => {
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-6 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Terms & Conditions
@@ -1221,7 +1259,7 @@ export const SalesReceipts: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-6 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Internal Notes
@@ -1259,7 +1297,7 @@ export const SalesReceipts: React.FC = () => {
       {showSignatureModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-md">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
                 Customer Signature
               </h2>
@@ -1276,7 +1314,7 @@ export const SalesReceipts: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Name
@@ -1289,7 +1327,7 @@ export const SalesReceipts: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Title
@@ -1345,7 +1383,7 @@ export const SalesReceipts: React.FC = () => {
       {showReceiptPreview && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setShowReceiptPreview(false)}
@@ -1371,7 +1409,7 @@ export const SalesReceipts: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 bg-gray-100">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-100">
               <div
                 className="bg-white shadow-lg mx-auto"
                 style={{ width: "595px", minHeight: "842px" }}

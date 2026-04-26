@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from "react";
+import { showToast } from "../../utils/toast";
 import {
   Search,
   Plus,
@@ -144,14 +145,15 @@ export const ProformaInvoices: React.FC = () => {
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
 
-  // Modal states
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  // Form states
+  const [showForm, setShowForm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showFrameMenu, setShowFrameMenu] = useState(false);
   const [showFrame2Menu, setShowFrame2Menu] = useState(false);
   const [showInvoicePreview, setShowInvoicePreview] = useState(false);
+  const [showMobileList, setShowMobileList] = useState(false);
 
   // Form data
   const [formData, setFormData] = useState<ProformaInvoice>(sampleInvoices[0]);
@@ -164,24 +166,29 @@ export const ProformaInvoices: React.FC = () => {
   };
 
   const handleSave = () => {
-    if (showEditModal && selectedInvoice) {
+    if (isEditing && selectedInvoice) {
       setInvoices((prev) =>
         prev.map((inv) => (inv.id === formData.id ? formData : inv)),
       );
       setSelectedInvoice(formData);
-      setShowEditModal(false);
-    } else if (showCreateModal) {
+      showToast("Proforma Invoice updated!", "success");
+    } else {
       const newInvoice = { ...formData, id: Date.now().toString() };
       setInvoices((prev) => [...prev, newInvoice]);
       setSelectedInvoice(newInvoice);
-      setShowCreateModal(false);
+      showToast("Proforma Invoice created!", "success");
     }
+    setShowForm(false);
   };
+
+  const handleCancel = () => setShowForm(false);
 
   const handleEdit = () => {
     if (selectedInvoice) {
       setFormData(selectedInvoice);
-      setShowEditModal(true);
+      setIsEditing(true);
+      setShowForm(true);
+      setShowMobileList(false);
     }
   };
 
@@ -192,7 +199,9 @@ export const ProformaInvoices: React.FC = () => {
       invoiceNumber: "",
       customerName: "",
     });
-    setShowCreateModal(true);
+    setIsEditing(false);
+    setShowForm(true);
+    setShowMobileList(false);
   };
 
   const toggleSelectInvoice = (id: string) => {
@@ -229,7 +238,7 @@ export const ProformaInvoices: React.FC = () => {
   return (
     <div className="flex-1 bg-[#FAFBFC] overflow-hidden flex flex-col">
       {/* Top Header Bar */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3">
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-6">
             <button className="text-sm font-medium text-gray-900 border-b-2 border-blue-600 pb-2">
@@ -261,7 +270,7 @@ export const ProformaInvoices: React.FC = () => {
         </div>
       </div>
 
-      {isEmpty && !selectedInvoice ? (
+      {isEmpty && !selectedInvoice && !showForm ? (
         // Empty State
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
@@ -300,9 +309,9 @@ export const ProformaInvoices: React.FC = () => {
       ) : (
         <>
           {/* Invoice Header */}
-          <div className="bg-white border-b border-gray-200 px-6 py-4">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-4">
+          <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+              <div className="flex items-center gap-4 flex-wrap">
                 <h2 className="text-lg font-semibold text-gray-900">
                   Proforma Invoices
                 </h2>
@@ -319,8 +328,14 @@ export const ProformaInvoices: React.FC = () => {
               </div>
 
               {/* Action Icons */}
-              <div className="flex items-center gap-2 relative">
-                {isMultiSelectMode ? (
+              <div className="flex items-center gap-2 relative overflow-x-auto max-w-full">
+                {showForm ? (
+                  <div className="flex items-center gap-2">
+                    <button onClick={handleCancel} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm">Cancel</button>
+                    <button onClick={() => { showToast("Saved as draft", "success"); setShowForm(false); }} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm">Save as Draft</button>
+                    <button onClick={handleSave} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm">Save & Send</button>
+                  </div>
+                ) : isMultiSelectMode ? (
                   <>
                     <button
                       className="p-2 hover:bg-gray-100 rounded-md"
@@ -458,7 +473,7 @@ export const ProformaInvoices: React.FC = () => {
                     >
                       <span className="flex items-center gap-2">
                         <FileText className="w-4 h-4" />
-                        Frame 2...
+                        Convert To
                       </span>
                       <span>→</span>
                     </button>
@@ -490,7 +505,7 @@ export const ProformaInvoices: React.FC = () => {
                     >
                       <span className="flex items-center gap-2">
                         <FileText className="w-4 h-4" />
-                        Frame 2147...
+                        Print Options
                       </span>
                       <span>→</span>
                     </button>
@@ -521,10 +536,20 @@ export const ProformaInvoices: React.FC = () => {
             </div>
           </div>
 
+          {/* Mobile list toggle */}
+          <div className="lg:hidden bg-white border-b border-gray-200 px-4 py-2">
+            <button
+              onClick={() => setShowMobileList(!showMobileList)}
+              className="flex items-center gap-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-md px-3 py-1.5"
+            >
+              {showMobileList ? "← Back to Details" : "☰ View Proforma Invoices"}
+            </button>
+          </div>
+
           {/* Main Content */}
           <div className="flex-1 overflow-hidden flex">
             {/* Left Sidebar - Invoice List */}
-            <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+            <div className={`${showMobileList ? "flex" : "hidden"} lg:flex flex-col w-full lg:w-64 bg-white border-r border-gray-200`}>
               {isMultiSelectMode && (
                 <div className="p-3 border-b border-gray-200 bg-gray-50">
                   <label className="flex items-center gap-2">
@@ -604,6 +629,7 @@ export const ProformaInvoices: React.FC = () => {
                         onClick={() => {
                           if (!isMultiSelectMode) {
                             setSelectedInvoice(invoice);
+                            setShowMobileList(false);
                           } else {
                             toggleSelectInvoice(invoice.id);
                           }
@@ -654,7 +680,7 @@ export const ProformaInvoices: React.FC = () => {
             </div>
 
             {/* Right Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className={`${showMobileList ? "hidden" : "flex"} lg:flex flex-col flex-1 overflow-y-auto p-4 sm:p-6`}>
               {isMultiSelectMode && selectedInvoices.length > 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
@@ -667,9 +693,122 @@ export const ProformaInvoices: React.FC = () => {
                     </div>
                   </div>
                 </div>
+              ) : showForm ? (
+                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
+                      <input type="text" value={formData.customerName} onChange={(e) => handleInputChange("customerName", e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                      <select className="w-full px-3 py-2 border border-gray-300 rounded-md"><option>Default Taxes (Service)</option></select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Proforma invoice #</label>
+                      <select className="w-full px-3 py-2 border border-gray-300 rounded-md"><option>Default Taxes (Product)</option></select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+                      <input type="text" placeholder="$" className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Subtitle</label>
+                      <select className="w-full px-3 py-2 border border-gray-300 rounded-md"><option>Default Company</option></select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Payment Type</label>
+                      <input type="text" placeholder="$0" className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Shipping Method</label>
+                      <input type="text" placeholder="24" className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Proforma Invoice Date</label>
+                      <div className="relative">
+                        <input type="text" placeholder="24" className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md" />
+                        <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mb-6 overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200">
+                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">Sr. No.</th>
+                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">Items</th>
+                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">Quantity</th>
+                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">Rate</th>
+                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">Tax</th>
+                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">Discount</th>
+                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-b border-gray-100">
+                          <td className="px-2 py-3">01</td>
+                          <td className="px-2 py-3">
+                            <div className="flex items-center gap-2"><span>Electronics</span><button className="text-gray-400 hover:text-gray-600"><Edit className="w-4 h-4" /></button></div>
+                            <div className="text-xs text-gray-500">Description</div>
+                          </td>
+                          <td className="px-2 py-3">23</td>
+                          <td className="px-2 py-3">$40000</td>
+                          <td className="px-2 py-3"><select className="border border-gray-300 rounded px-2 py-1 text-xs"><option>Tax</option></select></td>
+                          <td className="px-2 py-3">2%</td>
+                          <td className="px-2 py-3 flex items-center gap-2">
+                            <span>$32000</span>
+                            <button className="text-green-600"><Plus className="w-4 h-4" /></button>
+                            <button className="text-red-600"><Trash2 className="w-4 h-4" /></button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex gap-3 mb-6">
+                    <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 flex items-center gap-2"><Plus className="w-4 h-4" /> Add Product</button>
+                    <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 flex items-center gap-2"><Plus className="w-4 h-4" /> Add Services</button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Terms & Conditions</label>
+                      <textarea rows={4} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                      <textarea rows={4} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                    </div>
+                    <div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm"><span className="text-gray-600">Sub Total</span><span className="text-blue-600">$80.00</span></div>
+                        <div className="flex justify-between text-sm"><span className="text-gray-600">Shipping Cost</span><span className="text-blue-600">$3.20</span></div>
+                        <div className="flex justify-between text-sm"><span className="text-gray-600">Sales Tax 4% on 80.00</span><span className="text-blue-600">$10.00</span></div>
+                        <div className="flex justify-between text-sm font-semibold border-t pt-2"><span className="text-gray-900">Total</span><span className="text-blue-600">$93.20</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Internal Notes</label>
+                      <textarea rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                    </div>
+                    <div>
+                      <button className="w-full py-8 border-2 border-dashed border-gray-300 rounded-md text-gray-400 hover:border-gray-400 flex flex-col items-center justify-center gap-2">
+                        <Plus className="w-6 h-6" />
+                        <span className="text-sm">Upload Computer</span>
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Customer Signature</label>
+                    <button onClick={() => setShowSignatureModal(true)} className="w-full py-4 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">Customer Signature</button>
+                  </div>
+                </div>
               ) : selectedInvoice ? (
                 <div className="bg-white rounded-lg border border-gray-200 p-6">
-                  <div className="grid grid-cols-2 gap-4 mb-6 pb-4 border-b border-gray-200">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 pb-4 border-b border-gray-200">
                     <div>
                       <label className="text-xs text-gray-500 block mb-1">
                         #1
@@ -688,8 +827,8 @@ export const ProformaInvoices: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="mb-6">
-                    <table className="w-full text-sm">
+                  <div className="overflow-x-auto mb-6">
+                    <table className="w-full min-w-[500px] text-sm">
                       <thead>
                         <tr className="border-b border-gray-200">
                           <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">
@@ -745,9 +884,9 @@ export const ProformaInvoices: React.FC = () => {
                     </table>
                   </div>
 
-                  <div className="flex gap-6 mb-6">
+                  <div className="flex flex-col lg:flex-row gap-6 mb-6">
                     <div className="flex-1">
-                      <div className="grid grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <div>
                           <label className="text-xs text-gray-500 block mb-1">
                             Terms & Conditions
@@ -799,7 +938,7 @@ export const ProformaInvoices: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-6 mb-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
                     <div>
                       <label className="text-xs text-gray-500 block mb-1">
                         Internal Notes
@@ -851,279 +990,11 @@ export const ProformaInvoices: React.FC = () => {
         </button>
       )}
 
-      {/* Create/Edit Modal */}
-      {(showEditModal || showCreateModal) && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-6xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">
-                {showEditModal
-                  ? "Edit Proforma Invoice"
-                  : "New Proforma Invoice"}
-              </h2>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setShowEditModal(false);
-                    setShowCreateModal(false);
-                  }}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50">
-                  Save as Draft
-                </button>
-                <button
-                  onClick={handleSave}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                >
-                  Save & Save
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="grid grid-cols-4 gap-4 mb-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Customer
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.customerName}
-                    onChange={(e) =>
-                      handleInputChange("customerName", e.target.value)
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Address
-                  </label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    <option>Default Taxes (Service)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Proforma invoice #
-                  </label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    <option>Default Taxes (Product)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Currency
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="$"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-4 mb-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Subtitle
-                  </label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-md">
-                    <option>Default Company</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Payment Type
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="$0"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Shipping Method
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="24"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Sales Receipts Date
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="24"
-                      className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md"
-                    />
-                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="mb-6">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200">
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">
-                        Sr. No.
-                      </th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">
-                        Items
-                      </th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">
-                        Quantity
-                      </th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">
-                        Rate
-                      </th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">
-                        Tax
-                      </th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">
-                        Discount
-                      </th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">
-                        Amount
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b border-gray-100">
-                      <td className="px-2 py-3">01</td>
-                      <td className="px-2 py-3">
-                        <div className="flex items-center gap-2">
-                          <span>Electronics</span>
-                          <button className="text-gray-400 hover:text-gray-600">
-                            <Edit className="w-4 h-4" />
-                          </button>
-                        </div>
-                        <div className="text-xs text-gray-500">Description</div>
-                      </td>
-                      <td className="px-2 py-3">23</td>
-                      <td className="px-2 py-3">$40000</td>
-                      <td className="px-2 py-3">
-                        <select className="border border-gray-300 rounded px-2 py-1 text-xs">
-                          <option>Tax</option>
-                        </select>
-                      </td>
-                      <td className="px-2 py-3">2%</td>
-                      <td className="px-2 py-3 flex items-center gap-2">
-                        <span>$32000</span>
-                        <button className="text-green-600">
-                          <Plus className="w-4 h-4" />
-                        </button>
-                        <button className="text-red-600">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="flex gap-3 mb-6">
-                <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 flex items-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  Add Product
-                </button>
-                <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 flex items-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  Add Services
-                </button>
-              </div>
-
-              <div className="grid grid-cols-3 gap-6 mb-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Terms & Conditions
-                  </label>
-                  <textarea
-                    rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Notes
-                  </label>
-                  <textarea
-                    rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  />
-                </div>
-                <div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Sub Total</span>
-                      <span className="text-blue-600">$80.00</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Shipping Cost</span>
-                      <span className="text-blue-600">$3.20</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">
-                        Sales Tax 4% on 80.00
-                      </span>
-                      <span className="text-blue-600">$10.00</span>
-                    </div>
-                    <div className="flex justify-between text-sm font-semibold border-t pt-2">
-                      <span className="text-gray-900">Total</span>
-                      <span className="text-blue-600">$93.20</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-6 mb-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Internal Notes
-                  </label>
-                  <textarea
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  />
-                </div>
-                <div>
-                  <button className="w-full py-8 border-2 border-dashed border-gray-300 rounded-md text-gray-400 hover:border-gray-400 flex flex-col items-center justify-center gap-2">
-                    <Plus className="w-6 h-6" />
-                    <span className="text-sm">Upload Computer</span>
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Customer Signature
-                </label>
-                <button
-                  onClick={() => setShowSignatureModal(true)}
-                  className="w-full py-4 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-                >
-                  Customer Signature
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Signature Modal */}
       {showSignatureModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-md">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
                 Customer Signature
               </h2>
@@ -1140,7 +1011,7 @@ export const ProformaInvoices: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Name
@@ -1153,7 +1024,7 @@ export const ProformaInvoices: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Title
@@ -1209,7 +1080,7 @@ export const ProformaInvoices: React.FC = () => {
       {showInvoicePreview && selectedInvoice && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setShowInvoicePreview(false)}
@@ -1235,7 +1106,7 @@ export const ProformaInvoices: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 bg-gray-100">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-100">
               <div
                 className="bg-white shadow-lg mx-auto"
                 style={{ width: "595px", minHeight: "842px" }}

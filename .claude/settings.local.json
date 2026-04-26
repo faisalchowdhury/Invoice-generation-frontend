@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp convert-forms.js /tmp/convert-forms.cjs)",
+      "Bash(node /tmp/convert-forms.cjs)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

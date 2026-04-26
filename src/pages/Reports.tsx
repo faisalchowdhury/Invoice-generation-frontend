@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from "react";
+import { showToast } from "../utils/toast";
 import {
   ChevronDown,
   ChevronUp,
@@ -166,6 +167,7 @@ export const Reports: React.FC = () => {
     "business-overview",
   ]);
   const [selectedReport, setSelectedReport] = useState("profit-loss");
+  const [showMobileList, setShowMobileList] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState({
     dataRange: "All Data",
     reportType: "PDF",
@@ -182,6 +184,7 @@ export const Reports: React.FC = () => {
 
   const handleReportClick = (reportId: string) => {
     setSelectedReport(reportId);
+    setShowMobileList(false);
   };
 
   const handleAction = (action: string) => {
@@ -189,19 +192,19 @@ export const Reports: React.FC = () => {
     // Implement actual actions here
     switch (action) {
       case "view":
-        alert("View report");
+        showToast("Viewing report...", "info");
         break;
       case "download":
-        alert("Download report");
+        showToast("Downloading report...", "info");
         break;
       case "print":
-        alert("Print report");
+        showToast("Printing report...", "info");
         break;
       case "email":
-        alert("Email report");
+        showToast("Opening email composer...", "info");
         break;
       case "whatsapp":
-        alert("Share via WhatsApp");
+        showToast("Opening WhatsApp...", "info");
         break;
     }
   };
@@ -210,8 +213,18 @@ export const Reports: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col bg-[#FAFBFC] overflow-hidden">
+      {/* Mobile Toggle Bar */}
+      <div className="lg:hidden bg-white border-b border-gray-200 px-4 py-2">
+        <button
+          onClick={() => setShowMobileList(!showMobileList)}
+          className="flex items-center gap-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-md px-3 py-1.5"
+        >
+          {showMobileList ? "← Back to Report" : "☰ View Categories"}
+        </button>
+      </div>
+
       {/* Top Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3">
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3">
         <div className="flex items-center justify-between">
           <button className="text-sm font-medium text-gray-900 border-b-2 border-blue-600 pb-2">
             Summary
@@ -241,9 +254,9 @@ export const Reports: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden flex">
+      <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
         {/* LEFT SIDEBAR - Report Categories */}
-        <div className="w-80 bg-white border-r border-gray-200 flex flex-col overflow-y-auto">
+        <div className={`${showMobileList ? "flex" : "hidden"} lg:flex flex-col w-full lg:w-80 bg-white border-r border-gray-200 overflow-y-auto`}>
           <div className="p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
               Reports
@@ -290,11 +303,11 @@ export const Reports: React.FC = () => {
         </div>
 
         {/* RIGHT PANEL - Report Content */}
-        <div className="flex-1 overflow-y-auto bg-white">
-          <div className="p-6">
+        <div className={`${showMobileList ? "hidden" : "flex"} lg:flex flex-col flex-1 overflow-y-auto bg-white`}>
+          <div className="p-4 sm:p-6">
             {/* Report Header */}
             <div className="mb-6">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                 <h1 className="text-xl font-semibold text-gray-900">
                   {currentReport.title}
                 </h1>
@@ -340,7 +353,7 @@ export const Reports: React.FC = () => {
               </div>
 
               {/* Filters */}
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <select
                   value={selectedFilter.dataRange}
                   onChange={(e) =>
@@ -390,7 +403,8 @@ export const Reports: React.FC = () => {
             </div>
 
             {/* Report Table */}
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+            <div className="border border-gray-200 rounded-lg overflow-hidden min-w-[400px]">
               <table className="w-full">
                 <tbody>
                   {currentReport.sections.map((section, sectionIndex) => (
@@ -439,6 +453,7 @@ export const Reports: React.FC = () => {
                   ))}
                 </tbody>
               </table>
+            </div>
             </div>
           </div>
         </div>

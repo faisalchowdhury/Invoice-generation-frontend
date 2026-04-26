@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { BarChart3, PieChart } from "lucide-react";
 
 export const Dashboard: React.FC = () => {
@@ -14,7 +15,7 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="flex-1 bg-[#FAFBFC] overflow-auto">
       {/* Top Bar */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-2">
         {/* Left - Summary Tab */}
         <div className="flex items-center gap-6">
           <button className="text-sm font-medium text-gray-900 border-b-2 border-blue-600 pb-2">
@@ -51,46 +52,46 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* Metrics Row */}
-      <div className="px-6 py-4 bg-white border-b border-gray-200">
-        <div className="grid grid-cols-5 gap-4">
+      <div className="px-4 sm:px-6 py-4 bg-white border-b border-gray-200">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {/* Outstanding */}
-          <div className="text-center">
+          <Link to="/sales/invoices" className="text-center hover:bg-gray-50 rounded-md p-1 transition-colors cursor-pointer">
             <div className="text-xs text-gray-600 mb-1">Outstanding</div>
             <div className="text-lg font-semibold text-red-600">-$134,720</div>
-          </div>
+          </Link>
 
           {/* Net Profit */}
-          <div className="text-center">
+          <Link to="/reports" className="text-center hover:bg-gray-50 rounded-md p-1 transition-colors cursor-pointer">
             <div className="text-xs text-gray-600 mb-1">Net Profit</div>
             <div className="text-lg font-semibold text-gray-900">$134,720</div>
-          </div>
+          </Link>
 
           {/* Sales */}
-          <div className="text-center">
+          <Link to="/sales/invoices" className="text-center hover:bg-gray-50 rounded-md p-1 transition-colors cursor-pointer">
             <div className="text-xs text-gray-600 mb-1">Sales</div>
             <div className="text-lg font-semibold text-red-600">-$4,720</div>
-          </div>
+          </Link>
 
           {/* Debt Overview */}
-          <div className="text-center">
+          <Link to="/purchase/bills" className="text-center hover:bg-gray-50 rounded-md p-1 transition-colors cursor-pointer">
             <div className="text-xs text-gray-600 mb-1">Debt Overview</div>
             <div className="text-lg font-semibold text-gray-900">$34,720</div>
-          </div>
+          </Link>
 
           {/* Profit */}
-          <div className="text-center">
+          <Link to="/reports" className="text-center hover:bg-gray-50 rounded-md p-1 transition-colors cursor-pointer">
             <div className="text-xs text-gray-600 mb-1">Profit</div>
             <div className="text-lg font-semibold text-gray-900">$34,720</div>
-          </div>
+          </Link>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         {/* Chart Section */}
-        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+        <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 mb-6">
           {/* Chart Controls */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
             <div className="flex items-center gap-3">
               {/* Sales Dropdown */}
               <select className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white">
@@ -224,60 +225,46 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Bottom Grid - Vendors, Products, Activity */}
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Column */}
           <div className="space-y-6">
             {/* Top Vendors */}
             <div className="bg-white rounded-lg border border-gray-200 p-5">
-              <h3 className="text-sm font-semibold text-gray-900 mb-4">
-                Top Vendors
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-900">Top Vendors</h3>
+                <Link to="/purchase/vendors" className="text-xs text-blue-600 hover:text-blue-700">View all →</Link>
+              </div>
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">Spark Tech</span>
-                  <span className="text-sm font-medium text-gray-900">$3</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">Spark Tech</span>
-                  <span className="text-sm font-medium text-gray-900">$3</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">Spark Tech</span>
-                  <span className="text-sm font-medium text-gray-900">$3</span>
-                </div>
+                {[
+                  { name: "Spark Tech Agency", amount: "$3,200" },
+                  { name: "Fair Electronics", amount: "$2,800" },
+                  { name: "Global Supplies", amount: "$1,500" },
+                ].map((v) => (
+                  <Link key={v.name} to="/purchase/vendors" className="flex items-center justify-between hover:bg-gray-50 rounded px-1 py-0.5 transition-colors">
+                    <span className="text-sm text-gray-700">{v.name}</span>
+                    <span className="text-sm font-medium text-gray-900">{v.amount}</span>
+                  </Link>
+                ))}
               </div>
             </div>
 
             {/* Top Products */}
             <div className="bg-white rounded-lg border border-gray-200 p-5">
-              <h3 className="text-sm font-semibold text-gray-900 mb-4">
-                Top Products
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-900">Top Products</h3>
+                <Link to="/items/product" className="text-xs text-blue-600 hover:text-blue-700">View all →</Link>
+              </div>
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">
-                    Fair Electronics
-                  </span>
-                  <span className="text-sm font-medium text-gray-900">
-                    $1000
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">
-                    Fair Electronics
-                  </span>
-                  <span className="text-sm font-medium text-gray-900">
-                    $1000
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">
-                    Fair Electronics
-                  </span>
-                  <span className="text-sm font-medium text-gray-900">
-                    $1000
-                  </span>
-                </div>
+                {[
+                  { name: "Electronics Bundle", amount: "$1,000" },
+                  { name: "Office Supplies", amount: "$850" },
+                  { name: "Software License", amount: "$600" },
+                ].map((p) => (
+                  <Link key={p.name} to="/items/product" className="flex items-center justify-between hover:bg-gray-50 rounded px-1 py-0.5 transition-colors">
+                    <span className="text-sm text-gray-700">{p.name}</span>
+                    <span className="text-sm font-medium text-gray-900">{p.amount}</span>
+                  </Link>
+                ))}
               </div>
             </div>
           </div>
@@ -288,56 +275,31 @@ export const Dashboard: React.FC = () => {
               <h3 className="text-sm font-semibold text-gray-900">
                 Recent Activity
               </h3>
-              <select className="text-xs border border-gray-300 rounded px-2 py-1">
-                <option>2025</option>
-                <option>2024</option>
-              </select>
+              <div className="flex items-center gap-2">
+                <select className="text-xs border border-gray-300 rounded px-2 py-1">
+                  <option>2025</option>
+                  <option>2024</option>
+                </select>
+                <Link to="/reports" className="text-xs text-blue-600 hover:text-blue-700">View all →</Link>
+              </div>
             </div>
             <div className="space-y-3">
-              {/* Activity Item 1 */}
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-xs text-blue-600">$</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-gray-900 font-medium">
-                    May Payment #1 Create for Spark Tech
+              {[
+                { icon: "$", bg: "bg-blue-100", text: "text-blue-600", title: "Invoice #1 created for Spark Tech", sub: "Feb 18, 2026 — $5,000", path: "/sales/invoices" },
+                { icon: "✓", bg: "bg-green-100", text: "text-green-600", title: "Payment received from Tech Corp", sub: "Apr 15, 2026 — $2,000", path: "/sales/payment-received" },
+                { icon: "$", bg: "bg-blue-100", text: "text-blue-600", title: "Purchase Order #3 sent to vendor", sub: "Feb 18, 2026 — $1,200", path: "/purchase/purchase-orders" },
+                { icon: "!", bg: "bg-yellow-100", text: "text-yellow-600", title: "Invoice #2 overdue — Tech Corp", sub: "Mar 1, 2026 — $5,500", path: "/sales/invoices" },
+              ].map((a, i) => (
+                <Link key={i} to={a.path} className="flex items-start gap-3 hover:bg-gray-50 rounded-md px-1 py-1 transition-colors">
+                  <div className={`w-6 h-6 rounded-full ${a.bg} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                    <span className={`text-xs ${a.text}`}>{a.icon}</span>
                   </div>
-                  <div className="text-xs text-gray-500">
-                    Feb 18, 2026 - info@spark.com
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-gray-900 font-medium">{a.title}</div>
+                    <div className="text-xs text-gray-500">{a.sub}</div>
                   </div>
-                </div>
-              </div>
-
-              {/* Activity Item 2 */}
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-xs text-green-600">✓</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-gray-900 font-medium">
-                    May Payment #1 Create for Spark Tech
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    Apr 15, 2026 - info@spark.com
-                  </div>
-                </div>
-              </div>
-
-              {/* Activity Item 3 */}
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-xs text-blue-600">i</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-gray-900 font-medium">
-                    May Payment #1 Create for Spark Tech
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    Feb 18, 2026 - info@spark.com
-                  </div>
-                </div>
-              </div>
+                </Link>
+              ))}
             </div>
           </div>
         </div>

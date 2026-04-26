@@ -219,9 +219,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {isCollapsed && (
             <div className="flex items-center justify-center w-full">
-              <div className="w-6 h-6 bg-blue-600 rounded-md flex items-center justify-center shadow-sm">
-                <span className="text-white font-bold text-sm">Q</span>
-              </div>
+              <button
+                className="hidden lg:flex p-1.5 hover:bg-gray-100 rounded-md transition-colors"
+                onClick={() => setIsCollapsed(!isCollapsed)}
+                title="Expand sidebar"
+              >
+                <Menu className="w-4 h-4 text-gray-600" />
+              </button>
             </div>
           )}
 
@@ -229,27 +233,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {!isCollapsed && (
             <>
               <button
-                className="lg:hidden p-1.5 hover:bg-gray-300 rounded-md transition-colors"
+                className="lg:hidden p-1.5 hover:bg-gray-100 rounded-md transition-colors"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 <X className="w-4 h-4 text-gray-600" />
               </button>
               <button
-                className="hidden lg:block p-1.5 hover:bg-gray-300 rounded-md transition-colors"
+                className="hidden lg:block p-1.5 hover:bg-gray-100 rounded-md transition-colors"
                 onClick={() => setIsCollapsed(!isCollapsed)}
               >
                 <Menu className="w-4 h-4 text-gray-600" />
               </button>
             </>
-          )}
-
-          {isCollapsed && (
-            <button
-              className="hidden lg:block absolute top-4 left-1/2 -translate-x-1/2 p-1.5 hover:bg-gray-300 rounded-md transition-colors"
-              onClick={() => setIsCollapsed(!isCollapsed)}
-            >
-              <Menu className="w-4 h-4 text-gray-600" />
-            </button>
           )}
         </div>
 

@@ -154,7 +154,7 @@ export const Team: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col bg-[#FAFBFC] overflow-hidden">
       {/* Top Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">Team</h1>
           <button
@@ -168,70 +168,72 @@ export const Team: React.FC = () => {
       </div>
 
       {/* Team Members List */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                  Name
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                  Email
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                  Role
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {teamMembers.map((member) => (
-                <tr
-                  key={member.id}
-                  className="border-b border-gray-100 hover:bg-gray-50"
-                >
-                  <td className="px-6 py-4 text-sm text-gray-900">
-                    {member.name}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    {member.email}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    {member.role}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
-                        member.status === "active"
-                          ? "bg-green-100 text-green-700"
-                          : member.status === "pending"
-                            ? "bg-yellow-100 text-yellow-700"
-                            : "bg-gray-100 text-gray-700"
-                      }`}
-                    >
-                      {member.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button className="p-1.5 hover:bg-gray-100 rounded">
-                        <Edit2 className="w-4 h-4 text-gray-600" />
-                      </button>
-                      <button className="p-1.5 hover:bg-gray-100 rounded">
-                        <Trash2 className="w-4 h-4 text-red-600" />
-                      </button>
-                    </div>
-                  </td>
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        <div className="overflow-x-auto">
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden min-w-[500px]">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                    Name
+                  </th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                    Email
+                  </th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                    Role
+                  </th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">
+                    Actions
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {teamMembers.map((member) => (
+                  <tr
+                    key={member.id}
+                    className="border-b border-gray-100 hover:bg-gray-50"
+                  >
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      {member.name}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      {member.email}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      {member.role}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
+                          member.status === "active"
+                            ? "bg-green-100 text-green-700"
+                            : member.status === "pending"
+                              ? "bg-yellow-100 text-yellow-700"
+                              : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {member.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button className="p-1.5 hover:bg-gray-100 rounded">
+                          <Edit2 className="w-4 h-4 text-gray-600" />
+                        </button>
+                        <button className="p-1.5 hover:bg-gray-100 rounded">
+                          <Trash2 className="w-4 h-4 text-red-600" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -240,7 +242,7 @@ export const Team: React.FC = () => {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
                 Invite Team
               </h2>
@@ -261,7 +263,7 @@ export const Team: React.FC = () => {
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
               {/* Form Fields */}
               <div className="space-y-4 mb-6">
                 <div>
@@ -295,59 +297,61 @@ export const Team: React.FC = () => {
               </div>
 
               {/* Permissions Table */}
-              <div className="border border-gray-200 rounded-lg overflow-hidden mb-6">
-                <table className="w-full">
-                  <tbody>
-                    {permissions.map((perm) => (
-                      <tr
-                        key={perm.id}
-                        className="border-b border-gray-200 last:border-b-0"
-                      >
-                        <td className="px-4 py-3 text-sm text-gray-900 w-1/3">
-                          {perm.name}
-                        </td>
-                        <td className="px-4 py-3 w-1/3">
-                          <select
-                            value={perm.sharing}
-                            onChange={(e) =>
-                              handlePermissionChange(
-                                perm.id,
-                                "sharing",
-                                e.target.value,
-                              )
-                            }
-                            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
-                          >
-                            <option>Sharing</option>
-                            <option>View Only</option>
-                            <option>Edit</option>
-                          </select>
-                        </td>
-                        <td className="px-4 py-3 w-1/3">
-                          <select
-                            value={perm.access}
-                            onChange={(e) =>
-                              handlePermissionChange(
-                                perm.id,
-                                "access",
-                                e.target.value,
-                              )
-                            }
-                            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
-                          >
-                            <option>Access</option>
-                            <option>Full Access</option>
-                            <option>Limited</option>
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="overflow-x-auto mb-6">
+                <div className="border border-gray-200 rounded-lg overflow-hidden min-w-[400px]">
+                  <table className="w-full">
+                    <tbody>
+                      {permissions.map((perm) => (
+                        <tr
+                          key={perm.id}
+                          className="border-b border-gray-200 last:border-b-0"
+                        >
+                          <td className="px-4 py-3 text-sm text-gray-900 w-1/3">
+                            {perm.name}
+                          </td>
+                          <td className="px-4 py-3 w-1/3">
+                            <select
+                              value={perm.sharing}
+                              onChange={(e) =>
+                                handlePermissionChange(
+                                  perm.id,
+                                  "sharing",
+                                  e.target.value,
+                                )
+                              }
+                              className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
+                            >
+                              <option>Sharing</option>
+                              <option>View Only</option>
+                              <option>Edit</option>
+                            </select>
+                          </td>
+                          <td className="px-4 py-3 w-1/3">
+                            <select
+                              value={perm.access}
+                              onChange={(e) =>
+                                handlePermissionChange(
+                                  perm.id,
+                                  "access",
+                                  e.target.value,
+                                )
+                              }
+                              className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
+                            >
+                              <option>Access</option>
+                              <option>Full Access</option>
+                              <option>Limited</option>
+                            </select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               {/* Additional Permissions - 4 Columns */}
-              <div className="grid grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {additionalPerms.map((perm) => (
                   <label
                     key={perm.id}
