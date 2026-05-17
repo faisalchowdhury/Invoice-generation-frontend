@@ -3,7 +3,7 @@
  * Updated with all menu items from screenshot
  */
 
-import React, { useState } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -32,6 +32,21 @@ import {
   Wrench,
   Scan,
   FileCheck,
+  ListTodo,
+  User,
+  Proportions,
+  Handshake,
+  BanknoteArrowUp,
+  Network,
+  FileQuestionMark,
+  RefreshCcwDot,
+  CornerDownLeft,
+  FileStack,
+  Calculator,
+  Goal,
+  CircleDollarSign,
+  Copy,
+  ChartColumnDecreasing,
 } from "lucide-react";
 import Logo from "../../assets/logo.png";
 
@@ -47,6 +62,36 @@ const navigationItems: NavItem[] = [
     label: "Dashboard",
     icon: LayoutDashboard,
     path: "/",
+    children: [
+      { label: "Project Dashboard", icon: ListTodo, path: "project-dashboard" },
+      { label: "Account Dashboard", icon: User, path: "/account-dashboard" },
+      { label: "HRM Dashboard", icon: Proportions, path: "hrm-dashboard" },
+      {
+        label: "Recruitment Dashboard",
+        icon: Handshake,
+        path: "recruitment-dashboard",
+      },
+      { label: "POS Dashboard", icon: BanknoteArrowUp, path: "pos-dashboard" },
+      { label: "CRM Dashboard", icon: Network, path: "crm-dashboard" },
+      {
+        label: "Support Dashboard",
+        icon: FileQuestionMark,
+        path: "support-dashboard",
+      },
+    ],
+  },
+  {
+    label: "User Management",
+    icon: Users,
+    children: [
+      { label: "Roles", icon: UserCog, path: "user-management/user-roles" },
+      { label: "User", icon: Network, path: "user-management/users" },
+    ],
+  },
+  {
+    label: "proposal",
+    icon: RefreshCcwDot,
+    path: "/proposal",
   },
   {
     label: "Sales",
@@ -54,6 +99,16 @@ const navigationItems: NavItem[] = [
     children: [
       { label: "Customers", icon: Users, path: "/sales/customers" },
       { label: "Invoices", icon: FileText, path: "/sales/invoices" },
+      {
+        label: "Sales Invoice",
+        icon: DollarSign,
+        path: "/sales/sales-invoice",
+      },
+      {
+        label: "Sales Invoice Returns",
+        icon: CornerDownLeft,
+        path: "/sales/sales-invoice-returns",
+      },
       { label: "Sales Receipts", icon: Receipt, path: "/sales/sales-receipts" },
       { label: "Estimates", icon: FileSpreadsheet, path: "/sales/estimates" },
       {
@@ -74,10 +129,31 @@ const navigationItems: NavItem[] = [
       },
     ],
   },
+
   {
     label: "Purchase",
     icon: ShoppingCart,
     children: [
+      {
+        label: "Purchase Invoice",
+        icon: FileText,
+        path: "/purchase/purchase-invoice",
+      },
+      {
+        label: "Purchase Returns",
+        icon: FileStack,
+        path: "/purchase/purchase-returns",
+      },
+      {
+        label: "Warehouses",
+        icon: FileStack,
+        path: "/purchase/warehouses",
+      },
+      {
+        label: "Transfers",
+        icon: FileStack,
+        path: "/purchase/transfers",
+      },
       { label: "Vendors", icon: Building2, path: "/purchase/vendors" },
       {
         label: "Purchase Order",
@@ -100,7 +176,13 @@ const navigationItems: NavItem[] = [
     children: [
       { label: "Product", icon: Box, path: "/items/product" },
       { label: "Services", icon: Wrench, path: "/items/services" },
+      { label: "System Setup", icon: Wrench, path: "/items/system-setup" },
     ],
+  },
+  {
+    label: "Quotation",
+    icon: Clock,
+    path: "/quotation",
   },
   {
     label: "Time Logs",
@@ -108,19 +190,260 @@ const navigationItems: NavItem[] = [
     path: "/time-logs",
   },
   {
-    label: "Projects",
-    icon: FolderOpen,
-    path: "/projects",
-  },
-  {
-    label: "Documents",
+    label: "Project",
     icon: FolderOpen,
     children: [
-      { label: "Quick Scan", icon: Scan, path: "/documents/quick-scan" },
+      { label: "Projects", icon: FolderOpen, path: "/project/projects" },
+      { label: "Projects New", icon: FolderOpen, path: "/project/project-new" },
+    ],
+  },
+
+  {
+    label: "Acounting",
+    icon: Calculator,
+    children: [
+      { label: "Customer", icon: Scan, path: "/accounting/customer" },
+      { label: "Vendor", icon: Scan, path: "/accounting/vendor" },
+      { label: "Bank Accounts", icon: Scan, path: "/accounting/bank-accounts" },
       {
-        label: "My Documents",
-        icon: FileCheck,
-        path: "/documents/my-documents",
+        label: "Bank Transaction",
+        icon: Scan,
+        path: "/accounting/bank-transaction",
+      },
+      {
+        label: "Bank Transfers",
+        icon: Scan,
+        path: "/accounting/bank-transfers",
+      },
+      {
+        label: "Chart of Accounts",
+        icon: Scan,
+        path: "/accounting/chart-of-accounts",
+      },
+      {
+        label: "Vendor Payments",
+        icon: Scan,
+        path: "/accounting/vendor-payments",
+      },
+      {
+        label: "Customer Payments",
+        icon: Scan,
+        path: "/accounting/customer-payments",
+      },
+      {
+        label: "Revenue",
+        icon: Scan,
+        path: "/accounting/revenue",
+      },
+      {
+        label: "Expense",
+        icon: Scan,
+        path: "/accounting/expense",
+      },
+      {
+        label: "Debit Notes",
+        icon: Scan,
+        path: "/accounting/debit-notes",
+      },
+      {
+        label: "Credit Notes",
+        icon: Scan,
+        path: "/accounting/credit-notes",
+      },
+      {
+        label: "Reports",
+        icon: Scan,
+        path: "/accounting/reports",
+      },
+      {
+        label: "System",
+        icon: Scan,
+        path: "/accounting/system",
+      },
+    ],
+  },
+
+  {
+    label: "Goal",
+    icon: Goal,
+    children: [
+      { label: "Goals", icon: FolderOpen, path: "/goal/goals" },
+      { label: "Milestones", icon: FolderOpen, path: "/goal/milestones" },
+      { label: "Contributions", icon: FolderOpen, path: "/goal/contributions" },
+      { label: "Tracking", icon: FolderOpen, path: "/goal/tracking" },
+      { label: "Category", icon: FolderOpen, path: "/goal/category" },
+    ],
+  },
+  // Budget
+  {
+    label: "Budget Planner",
+    icon: CircleDollarSign,
+    children: [
+      {
+        label: "Budget Periods",
+        icon: FolderOpen,
+        path: "/budget-planner/budget-periods",
+      },
+      {
+        label: "Budget",
+        icon: FolderOpen,
+        path: "/budget-planner/budget",
+      },
+      {
+        label: "Budget Allocations",
+        icon: FolderOpen,
+        path: "/budget-planner/budget-allocations",
+      },
+      {
+        label: "Budget Monitoring",
+        icon: FolderOpen,
+        path: "/budget-planner/budget-monitoring",
+      },
+    ],
+  },
+
+  // Double Entry
+
+  {
+    label: "Double Entry",
+    icon: Copy,
+    children: [
+      {
+        label: "Ledger Summary",
+        icon: FolderOpen,
+        path: "/double-entry/ledger-summary",
+      },
+      {
+        label: "Trial Balance",
+        icon: FolderOpen,
+        path: "/double-entry/trial-balance",
+      },
+      {
+        label: "Balance Sheet",
+        icon: FolderOpen,
+        path: "/double-entry/balance-sheet",
+      },
+      {
+        label: "Profit & Loss",
+        icon: FolderOpen,
+        path: "/double-entry/profit-loss",
+      },
+      {
+        label: "Reports",
+        icon: FolderOpen,
+        path: "/double-entry/reports",
+      },
+    ],
+  },
+  // HRM
+  {
+    label: "HRM",
+    icon: ChartColumnDecreasing,
+    children: [
+      {
+        label: "Employees",
+        icon: FolderOpen,
+        path: "/hrm/employees",
+      },
+      {
+        label: "Set Salary",
+        icon: FolderOpen,
+        path: "/hrm/payslip/set-salary",
+      },
+      {
+        label: "Payroll",
+        icon: FolderOpen,
+        path: "/hrm/payslip/payroll",
+      },
+      {
+        label: "Shifts",
+        icon: FolderOpen,
+        path: "/hrm/attendance/shifts",
+      },
+      {
+        label: "Attendances",
+        icon: FolderOpen,
+        path: "/hrm/attendance/attendances",
+      },
+      {
+        label: "Leave Types",
+        icon: FolderOpen,
+        path: "/hrm/leave-management/leave-types",
+      },
+      {
+        label: "Leave Applications",
+        icon: FolderOpen,
+        path: "/hrm/leave-management/leave-applications",
+      },
+      {
+        label: "Leave Balance",
+        icon: FolderOpen,
+        path: "/hrm/leave-management/leave-balance",
+      },
+      {
+        label: "Holidays",
+        icon: FolderOpen,
+        path: "/hrm/holidays",
+      },
+      {
+        label: "Awards",
+        icon: FolderOpen,
+        path: "/hrm/awards",
+      },
+      {
+        label: "Promotions",
+        icon: FolderOpen,
+        path: "/hrm/promotions",
+      },
+      {
+        label: "Resignations",
+        icon: FolderOpen,
+        path: "/hrm/resignations",
+      },
+      {
+        label: "Terminations",
+        icon: FolderOpen,
+        path: "/hrm/terminations",
+      },
+      {
+        label: "Warnings",
+        icon: FolderOpen,
+        path: "/hrm/warnings",
+      },
+      {
+        label: "Complaints",
+        icon: FolderOpen,
+        path: "/hrm/complaints",
+      },
+      {
+        label: "Transfers",
+        icon: FolderOpen,
+        path: "/hrm/transfers",
+      },
+      {
+        label: "Documents",
+        icon: FolderOpen,
+        path: "/hrm/documents",
+      },
+      {
+        label: "Acknowledgements",
+        icon: FolderOpen,
+        path: "/hrm/acknowledgements",
+      },
+      {
+        label: "Announcements",
+        icon: FolderOpen,
+        path: "/hrm/announcements",
+      },
+      {
+        label: "Events",
+        icon: FolderOpen,
+        path: "/hrm/events",
+      },
+      {
+        label: "System Setup",
+        icon: FolderOpen,
+        path: "/hrm/system-setup",
       },
     ],
   },
@@ -151,6 +474,11 @@ interface SidebarProps {
   setMobileMenuOpen: (open: boolean) => void;
 }
 
+const MIN_WIDTH = 60;
+const MAX_WIDTH = 480;
+const COLLAPSE_THRESHOLD = 120;
+const DEFAULT_WIDTH = 260;
+
 export const Sidebar: React.FC<SidebarProps> = ({
   mobileMenuOpen,
   setMobileMenuOpen,
@@ -163,6 +491,63 @@ export const Sidebar: React.FC<SidebarProps> = ({
     "Documents",
   ]);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH);
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(DEFAULT_WIDTH);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDragging.current) return;
+    const delta = e.clientX - dragStartX.current;
+    const newWidth = Math.min(
+      MAX_WIDTH,
+      Math.max(MIN_WIDTH, dragStartWidth.current + delta),
+    );
+    setSidebarWidth(newWidth);
+    setIsCollapsed(newWidth < COLLAPSE_THRESHOLD);
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    if (!isDragging.current) return;
+    isDragging.current = false;
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    window.removeEventListener("mousemove", handleMouseMove);
+    window.removeEventListener("mouseup", handleMouseUp);
+    // snap to minimum if below threshold
+    setSidebarWidth((w) => (w < COLLAPSE_THRESHOLD ? MIN_WIDTH : w));
+  }, [handleMouseMove]);
+
+  const handleDragStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      isDragging.current = true;
+      dragStartX.current = e.clientX;
+      dragStartWidth.current = sidebarWidth;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    },
+    [sidebarWidth, handleMouseMove, handleMouseUp],
+  );
+
+  useEffect(() => {
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [handleMouseMove, handleMouseUp]);
+
+  const toggleCollapse = () => {
+    if (isCollapsed) {
+      setIsCollapsed(false);
+      setSidebarWidth(DEFAULT_WIDTH);
+    } else {
+      setIsCollapsed(true);
+      setSidebarWidth(MIN_WIDTH);
+    }
+  };
 
   const toggleExpand = (label: string) => {
     setExpandedItems((prev) =>
@@ -195,13 +580,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Sidebar */}
       <div
         className={`
-          fixed lg:static inset-y-0 left-0 z-50
-          ${isCollapsed ? "w-[60px]" : "w-[260px]"} lg:${isCollapsed ? "w-[60px]" : "w-[260px]"}
+          fixed lg:relative inset-y-0 left-0 z-50
           h-screen bg-[#FAFBFC] border-r border-gray-200 flex flex-col
-          transform transition-all duration-300 ease-in-out
+          ${isDragging.current ? "" : "transition-all duration-300 ease-in-out"}
           ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
         `}
+        style={{ width: sidebarWidth }}
       >
+        {/* Drag handle */}
+        <div
+          onMouseDown={handleDragStart}
+          className="absolute right-0 top-0 bottom-0 w-1 z-10 cursor-col-resize group hidden lg:flex items-stretch"
+        >
+          <div className="w-full group-hover:bg-blue-400 transition-colors duration-150 opacity-0 group-hover:opacity-60 rounded-full" />
+        </div>
         {/* Logo Header */}
         <div className="h-14 flex items-center justify-between px-4 border-b border-gray-200 bg-white">
           {!isCollapsed && (
@@ -221,7 +613,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="flex items-center justify-center w-full">
               <button
                 className="hidden lg:flex p-1.5 hover:bg-gray-100 rounded-md transition-colors"
-                onClick={() => setIsCollapsed(!isCollapsed)}
+                onClick={toggleCollapse}
                 title="Expand sidebar"
               >
                 <Menu className="w-4 h-4 text-gray-600" />
@@ -240,7 +632,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </button>
               <button
                 className="hidden lg:block p-1.5 hover:bg-gray-100 rounded-md transition-colors"
-                onClick={() => setIsCollapsed(!isCollapsed)}
+                onClick={toggleCollapse}
               >
                 <Menu className="w-4 h-4 text-gray-600" />
               </button>
@@ -296,7 +688,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                     {/* Children - Flat design with icons */}
                     {!isCollapsed && expandedItems.includes(item.label) && (
-                      <ul className="mt-0.5 space-y-0.5">
+                      <ul className="mt-0.5 space-y-0.5 ml-5 border-l border-gray-200">
                         {item.children.map((child) => (
                           <li key={child.label}>
                             <Link
@@ -313,10 +705,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               `}
                             >
                               {/* Icon for submenu items */}
-                              <child.icon
+                              {/* <child.icon
                                 className="w-[16px] h-[16px]"
                                 strokeWidth={1.8}
-                              />
+                              /> */}
                               <span className="tracking-tight">
                                 {child.label}
                               </span>

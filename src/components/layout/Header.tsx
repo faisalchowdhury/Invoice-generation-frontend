@@ -26,6 +26,7 @@ import {
   LogOut,
   User,
   Check,
+  Megaphone,
 } from "lucide-react";
 import { SettingsDropdown } from "@/pages/SettingsDropdown";
 
@@ -42,6 +43,37 @@ const quickCreateItems = [
   { label: "New Vendor", icon: Building2, path: "/purchase/vendors" },
   { label: "New Product", icon: Package, path: "/items/product" },
   { label: "Log Time", icon: Clock, path: "/time-logs" },
+];
+
+const sampleAnnouncements = [
+  {
+    id: 1,
+    title: "New feature: Bulk Invoice Export",
+    description: "You can now export multiple invoices at once as PDF or CSV from the Invoices page.",
+    date: "Apr 26, 2026",
+    isNew: true,
+  },
+  {
+    id: 2,
+    title: "Scheduled maintenance — Apr 30",
+    description: "The app will be unavailable from 2:00 AM to 4:00 AM UTC on April 30 for scheduled maintenance.",
+    date: "Apr 24, 2026",
+    isNew: true,
+  },
+  {
+    id: 3,
+    title: "Tax season reminder",
+    description: "Don't forget to generate your quarterly tax reports before the deadline. Visit Reports to get started.",
+    date: "Apr 18, 2026",
+    isNew: false,
+  },
+  {
+    id: 4,
+    title: "New payment gateway added",
+    description: "Stripe and Razorpay are now supported as payment options for your invoices.",
+    date: "Apr 10, 2026",
+    isNew: false,
+  },
 ];
 
 const sampleNotifications = [
@@ -82,6 +114,8 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [notifications, setNotifications] = useState(sampleNotifications);
+  const [announcements, setAnnouncements] = useState(sampleAnnouncements);
+  const [notifTab, setNotifTab] = useState<"notifications" | "announcements">("notifications");
   const [searchQuery, setSearchQuery] = useState("");
 
   const quickCreateRef = useRef<HTMLDivElement>(null);
@@ -218,14 +252,22 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
 
           {showNotifications && (
             <div className="absolute right-0 top-10 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
+              {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-900">
-                  Notifications
-                </h3>
+                <h3 className="text-sm font-semibold text-gray-900">Updates</h3>
                 <div className="flex items-center gap-2">
-                  {unreadCount > 0 && (
+                  {notifTab === "notifications" && unreadCount > 0 && (
                     <button
                       onClick={markAllRead}
+                      className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                    >
+                      <Check className="w-3 h-3" />
+                      Mark all read
+                    </button>
+                  )}
+                  {notifTab === "announcements" && announcements.some((a) => a.isNew) && (
+                    <button
+                      onClick={() => setAnnouncements((prev) => prev.map((a) => ({ ...a, isNew: false })))}
                       className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
                     >
                       <Check className="w-3 h-3" />
@@ -240,43 +282,107 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                   </button>
                 </div>
               </div>
+
+              {/* Tabs */}
+              <div className="flex border-b border-gray-200">
+                <button
+                  onClick={() => setNotifTab("notifications")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${
+                    notifTab === "notifications"
+                      ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
+                      : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  <Bell className="w-3.5 h-3.5" />
+                  Notifications
+                  {unreadCount > 0 && (
+                    <span className="ml-0.5 px-1.5 py-0.5 bg-red-500 text-white text-[10px] rounded-full leading-none">
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setNotifTab("announcements")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${
+                    notifTab === "announcements"
+                      ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
+                      : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  <Megaphone className="w-3.5 h-3.5" />
+                  Announcements
+                  {announcements.filter((a) => a.isNew).length > 0 && (
+                    <span className="ml-0.5 px-1.5 py-0.5 bg-orange-500 text-white text-[10px] rounded-full leading-none">
+                      {announcements.filter((a) => a.isNew).length}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {/* Content */}
               <div className="max-h-72 overflow-y-auto">
-                {notifications.map((notif) => (
-                  <div
-                    key={notif.id}
-                    onClick={() => {
-                      setNotifications((prev) =>
-                        prev.map((n) =>
-                          n.id === notif.id ? { ...n, unread: false } : n,
-                        ),
-                      );
-                    }}
-                    className={`px-4 py-3 border-b border-gray-100 last:border-0 cursor-pointer hover:bg-gray-50 ${notif.unread ? "bg-blue-50" : ""}`}
-                  >
-                    <div className="flex items-start gap-2">
-                      {notif.unread && (
-                        <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5 flex-shrink-0" />
-                      )}
-                      <div className={notif.unread ? "" : "ml-4"}>
-                        <p className="text-sm font-medium text-gray-900">
-                          {notif.title}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {notif.description}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">{notif.time}</p>
+                {notifTab === "notifications" ? (
+                  notifications.map((notif) => (
+                    <div
+                      key={notif.id}
+                      onClick={() =>
+                        setNotifications((prev) =>
+                          prev.map((n) => n.id === notif.id ? { ...n, unread: false } : n)
+                        )
+                      }
+                      className={`px-4 py-3 border-b border-gray-100 last:border-0 cursor-pointer hover:bg-gray-50 ${notif.unread ? "bg-blue-50" : ""}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {notif.unread && (
+                          <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5 flex-shrink-0" />
+                        )}
+                        <div className={notif.unread ? "" : "ml-4"}>
+                          <p className="text-sm font-medium text-gray-900">{notif.title}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{notif.description}</p>
+                          <p className="text-xs text-gray-400 mt-1">{notif.time}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  announcements.map((ann) => (
+                    <div
+                      key={ann.id}
+                      onClick={() =>
+                        setAnnouncements((prev) =>
+                          prev.map((a) => a.id === ann.id ? { ...a, isNew: false } : a)
+                        )
+                      }
+                      className={`px-4 py-3 border-b border-gray-100 last:border-0 cursor-pointer hover:bg-gray-50 ${ann.isNew ? "bg-orange-50" : ""}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5 ${ann.isNew ? "bg-orange-100" : "bg-gray-100"}`}>
+                          <Megaphone className={`w-3.5 h-3.5 ${ann.isNew ? "text-orange-500" : "text-gray-400"}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-gray-900 truncate">{ann.title}</p>
+                            {ann.isNew && (
+                              <span className="flex-shrink-0 px-1.5 py-0.5 bg-orange-100 text-orange-600 text-[10px] font-medium rounded">New</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{ann.description}</p>
+                          <p className="text-xs text-gray-400 mt-1">{ann.date}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
+
+              {/* Footer */}
               <div className="px-4 py-2 border-t border-gray-200">
                 <Link
                   to="/reports"
                   onClick={() => setShowNotifications(false)}
                   className="text-xs text-blue-600 hover:text-blue-700"
                 >
-                  View all activity →
+                  {notifTab === "notifications" ? "View all activity →" : "View all announcements →"}
                 </Link>
               </div>
             </div>
