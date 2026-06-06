@@ -47,6 +47,14 @@ import {
   CircleDollarSign,
   Copy,
   ChartColumnDecreasing,
+  ContactRound,
+  TrendingUp,
+  BookText,
+  Presentation,
+  Images,
+  MessageCircleMore,
+  Mail,
+  BellRing,
 } from "lucide-react";
 import Logo from "../../assets/logo.png";
 
@@ -446,6 +454,245 @@ const navigationItems: NavItem[] = [
         path: "/hrm/system-setup",
       },
     ],
+  },
+  // Performance
+  {
+    label: "Performance",
+    icon: TrendingUp,
+    children: [
+      {
+        label: "Performance Indicators",
+        icon: FolderOpen,
+        path: "/performance/performance-indicators",
+      },
+      {
+        label: "Employee Goals",
+        icon: FolderOpen,
+        path: "/performance/employee-goals",
+      },
+      {
+        label: "Emaployee Reviews",
+        icon: FolderOpen,
+        path: "/performance/employee-reviews",
+      },
+      {
+        label: "Review Cycles",
+        icon: FolderOpen,
+        path: "/performance/review-cycles",
+      },
+      {
+        label: "System Setup",
+        icon: FolderOpen,
+        path: "/performance/system-setup",
+      },
+    ],
+  },
+  // training
+  {
+    label: "training",
+    icon: TrendingUp,
+    children: [
+      {
+        label: "Training Types",
+        icon: FolderOpen,
+        path: "/training/training-types",
+      },
+      {
+        label: "Trainers",
+        icon: FolderOpen,
+        path: "/training/trainers",
+      },
+      {
+        label: "Training List",
+        icon: FolderOpen,
+        path: "/training/training-list",
+      },
+    ],
+  },
+  // Recruitment
+  {
+    label: "Recruitment",
+    icon: TrendingUp,
+    children: [
+      {
+        label: "Job Locations",
+        icon: FolderOpen,
+        path: "/recruitment/job-locations",
+      },
+      {
+        label: "Custom Questions",
+        icon: FolderOpen,
+        path: "/recruitment/custom-questions",
+      },
+      {
+        label: "Job Postings",
+        icon: FolderOpen,
+        path: "/recruitment/job-postings",
+      },
+      {
+        label: "Candidates",
+        icon: FolderOpen,
+        path: "/recruitment/candidates",
+      },
+      {
+        label: "Interview Rounds",
+        icon: FolderOpen,
+        path: "/recruitment/interview-rounds",
+      },
+      {
+        label: "Interview",
+        icon: FolderOpen,
+        path: "/recruitment/interview",
+      },
+      {
+        label: "Interview Feedback",
+        icon: FolderOpen,
+        path: "/recruitment/interview-feedback",
+      },
+      {
+        label: "Candidate Assessments",
+        icon: FolderOpen,
+        path: "/recruitment/candidate-assessments",
+      },
+      {
+        label: "Offers",
+        icon: FolderOpen,
+        path: "/recruitment/offers",
+      },
+      {
+        label: "Checklists Items",
+        icon: FolderOpen,
+        path: "/recruitment/checklist-items",
+      },
+      {
+        label: "Candidate Onboarding",
+        icon: FolderOpen,
+        path: "/recruitment/candidate-onboarding",
+      },
+      {
+        label: "System Setup",
+        icon: FolderOpen,
+        path: "/recruitment/system-setup",
+      },
+    ],
+  },
+  // CRM
+  {
+    label: "CRM",
+    icon: ContactRound,
+    children: [
+      {
+        label: "Leads",
+        icon: FolderOpen,
+        path: "/crm/leads",
+      },
+      {
+        label: "Deals",
+        icon: FolderOpen,
+        path: "/crm/deals",
+      },
+      {
+        label: "Systems Setup",
+        icon: FolderOpen,
+        path: "/crm/system-setup",
+      },
+      // Reports
+      {
+        label: "Leads Reports",
+        icon: FolderOpen,
+        path: "/crm/lead-reports",
+      },
+      {
+        label: "Deal Reports",
+        icon: FolderOpen,
+        path: "/crm/deal-reports",
+      },
+    ],
+  },
+
+  // Support
+  {
+    label: "Support Ticket",
+    icon: ContactRound,
+    children: [
+      {
+        label: "Tickets",
+        icon: FolderOpen,
+        path: "/support-ticket/tickets",
+      },
+      {
+        label: "Knowledge Base",
+        icon: FolderOpen,
+        path: "/support-ticket/knowledge-base",
+      },
+      {
+        label: "FAQ",
+        icon: FolderOpen,
+        path: "/support-ticket/faq",
+      },
+      {
+        label: "Contacts",
+        icon: FolderOpen,
+        path: "/support-ticket/contact",
+      },
+      {
+        label: "System Setup",
+        icon: FolderOpen,
+        path: "/support-ticket/system-setup",
+      },
+    ],
+  },
+  // contract
+  {
+    label: "Contract",
+    icon: ContactRound,
+    children: [
+      {
+        label: "Contracts",
+        icon: FolderOpen,
+        path: "/contract/contracts",
+      },
+      {
+        label: "Contract Types",
+        icon: FolderOpen,
+        path: "/contract/contract-types",
+      },
+    ],
+  },
+  {
+    label: "Form Builder",
+    icon: BookText,
+    path: "/form-builder",
+  },
+  {
+    label: "Zoom Meetings",
+    icon: Presentation,
+    path: "/zoom-meetings",
+  },
+  {
+    label: "Timesheet",
+    icon: Clock,
+    path: "/timesheet",
+  },
+  {
+    label: "Media Library",
+    icon: Images,
+    path: "/media-library",
+  },
+  {
+    label: "Messenger",
+    icon: MessageCircleMore,
+    path: "/messenger",
+  },
+  {
+    label: "Email Templates",
+    icon: Mail,
+    path: "/email-templates",
+  },
+  {
+    label: "Notification Templates",
+    icon: BellRing,
+    path: "/notification-templates",
   },
   {
     label: "Reports",

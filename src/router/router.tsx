@@ -111,6 +111,46 @@ import { Acknowledgments } from "@/pages/hrm/Acknowledgments";
 import { Announcements } from "@/pages/hrm/Announcements";
 import { Events } from "@/pages/hrm/Events";
 import { HRMSystemSetup } from "@/pages/hrm/HRMSystemSetup";
+import { PerformanceIndicators } from "@/pages/performance/PerformanceIndicators";
+import { EmployeeGoals } from "@/pages/performance/EmployeeGoals";
+import { ReviewCycles } from "@/pages/performance/ReviewCycles";
+import { EmployeeReviews } from "@/pages/performance/EmployeeReviews";
+import PerformanceSystemSetup from "@/pages/performance/PerformanceSystemSetup";
+import TrainingTypes from "@/pages/training/TrainingTypes";
+import Trainers from "@/pages/training/Trainers";
+import TrainingList from "@/pages/training/TrainingList";
+import JobLocations from "@/pages/recruitment/JobLocations";
+import CustomQuestions from "@/pages/recruitment/CustomQuestions";
+import JobPostings from "@/pages/recruitment/JobPosting";
+import Candidates from "@/pages/recruitment/Candidates";
+import InterviewRounds from "@/pages/recruitment/InterviewRounds";
+import Interviews from "@/pages/recruitment/Interview";
+import { InterviewFeedback } from "@/pages/recruitment/InterviewFeedback";
+import CandidateAssessments from "@/pages/recruitment/CandidateAssessments";
+import Offers from "@/pages/recruitment/Offers";
+import ChecklistItems from "@/pages/recruitment/ChecklistItems";
+import { CandidateOnboarding } from "@/pages/recruitment/CandidateOnboarding";
+import RecruitmentSystemSetup from "@/pages/recruitment/RecruitmentSystemSetup";
+import Leads from "@/pages/crm/Leads";
+import Deals from "@/pages/crm/Deals";
+import DealDetail from "@/pages/crm/DealDetails";
+import CrmSystemSetup from "@/pages/crm/CmsSystemSetup";
+import LeadReports from "@/pages/crm/reports/LeadReports";
+import DealReports from "@/pages/crm/reports/DealReports";
+import FormBuilder from "@/pages/formBulder/FormBuilder";
+import Tickets from "@/pages/supportTicket/Tickets";
+import KnowledgeBase from "@/pages/supportTicket/KnowledgeBase";
+import FAQ from "@/pages/supportTicket/FAQ";
+import Contact from "@/pages/supportTicket/Contacts";
+import STsystemSetup from "@/pages/supportTicket/STsystemSetup";
+import Contracts from "@/pages/contract/Contracts";
+import ContractTypes from "@/pages/contract/ContractTypes";
+import ZoomMeetings from "@/pages/zoomMeetings/ZoomMeetings";
+import Timesheet from "@/pages/Timesheet/TimeSheet";
+import MediaLibrary from "@/pages/mediaLibrary/MediaLibrary";
+import Messenger from "@/pages/messenger/Messenger";
+import EmailTemplates from "@/pages/EmailTemplates/EmailTemplates";
+import NotificationTemplates from "@/pages/notificationTemplates/NotificationTemplates";
 
 // Import your main app layout (update path as needed)
 // import { MainLayout } from "../components/layout/MainLayout";
@@ -524,6 +564,215 @@ export const route = createBrowserRouter([
             element: <HRMSystemSetup />,
           },
         ],
+      },
+      // Performance
+      {
+        path: "performance",
+        children: [
+          {
+            path: "performance-indicators",
+            element: <PerformanceIndicators />,
+          },
+          {
+            path: "employee-goals",
+            element: <EmployeeGoals />,
+          },
+          {
+            path: "employee-reviews",
+            element: <EmployeeReviews />,
+          },
+          {
+            path: "review-cycles",
+            element: <ReviewCycles />,
+          },
+          {
+            path: "system-setup",
+            element: <PerformanceSystemSetup />,
+          },
+        ],
+      },
+      // Training
+      {
+        path: "training",
+        children: [
+          {
+            path: "training-types",
+            element: <TrainingTypes />,
+          },
+          {
+            path: "trainers",
+            element: <Trainers />,
+          },
+          {
+            path: "training-list",
+            element: <TrainingList />,
+          },
+        ],
+      },
+      // recruitment
+      {
+        path: "recruitment",
+        children: [
+          {
+            path: "job-locations",
+            element: <JobLocations />,
+          },
+          {
+            path: "custom-questions",
+            element: <CustomQuestions />,
+          },
+          {
+            path: "job-postings",
+            element: <JobPostings />,
+          },
+          {
+            path: "candidates",
+            element: <Candidates />,
+          },
+          {
+            path: "interview-rounds",
+            element: <InterviewRounds />,
+          },
+          {
+            path: "interview",
+            element: <Interviews />,
+          },
+          {
+            path: "interview-feedback",
+            element: <InterviewFeedback />,
+          },
+          {
+            path: "candidate-assessments",
+            element: <CandidateAssessments />,
+          },
+          {
+            path: "offers",
+            element: <Offers />,
+          },
+          {
+            path: "checklist-items",
+            element: <ChecklistItems />,
+          },
+          {
+            path: "candidate-onboarding",
+            element: <CandidateOnboarding />,
+          },
+          {
+            path: "system-setup",
+            element: <RecruitmentSystemSetup />,
+          },
+        ],
+      },
+      // crm
+      {
+        path: "crm",
+        children: [
+          {
+            path: "leads",
+            element: <Leads />,
+          },
+          {
+            path: "deals",
+            element: <Deals />,
+          },
+          {
+            path: "deals/:id",
+            element: <DealDetail />,
+          },
+          {
+            path: "system-setup",
+            element: <CrmSystemSetup />,
+          },
+
+          // Reports
+          {
+            path: "lead-reports",
+            element: <LeadReports />,
+          },
+          {
+            path: "deal-reports",
+            element: <DealReports />,
+          },
+        ],
+      },
+      // Form Bulder
+      {
+        path: "form-builder",
+        element: <FormBuilder />,
+      },
+      // Support Ticket
+      {
+        path: "support-ticket",
+        children: [
+          {
+            path: "tickets",
+            element: <Tickets />,
+          },
+          {
+            path: "knowledge-base",
+            element: <KnowledgeBase />,
+          },
+          {
+            path: "faq",
+            element: <FAQ />,
+          },
+          {
+            path: "contact",
+            element: <Contact />,
+          },
+          {
+            path: "system-setup",
+            element: <STsystemSetup />,
+          },
+        ],
+      },
+      // Contract
+      {
+        path: "contract",
+        children: [
+          {
+            path: "contracts",
+            element: <Contracts />,
+          },
+          {
+            path: "contract-types",
+            element: <ContractTypes />,
+          },
+        ],
+      },
+      // Zoom Meetings
+      {
+        path: "zoom-meetings",
+        element: <ZoomMeetings />,
+      },
+      // Timesheet
+      {
+        path: "timesheet",
+        element: <Timesheet />,
+      },
+      // Media Library
+
+      {
+        path: "media-library",
+        element: <MediaLibrary />,
+      },
+      // Messenger
+
+      {
+        path: "messenger",
+        element: <Messenger />,
+      },
+      // Email Templates
+
+      {
+        path: "email-templates",
+        element: <EmailTemplates />,
+      },
+      // Notification Templates
+
+      {
+        path: "notification-templates",
+        element: <NotificationTemplates />,
       },
       // Reports
       {
