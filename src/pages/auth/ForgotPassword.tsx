@@ -1,62 +1,39 @@
 /**
  * File: src/pages/auth/ForgotPassword.tsx
- * Forgot Password page - Send recovery email
+ * Forgot Password page - step 1 of the OTP recovery flow.
+ *
+ * Sends the recovery request to the backend, then forwards the email to the
+ * OTP verification step. The email is carried through the flow via router
+ * state so the user never has to re-type it.
+ *
+ * Backend contract:
+ *   POST /user/forgot-password  { email }  -> sends a reset OTP to the email
  */
 
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { AuthLayout } from "../../components/auth/AuthLayout";
+import { api } from "../../lib/api/client";
+import { alertApiError } from "../../utils/alert";
 import { ArrowLeft } from "lucide-react";
 
 export const ForgotPassword: React.FC = () => {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Password reset for:", email);
-    setIsSubmitted(true);
+    setSubmitting(true);
+    try {
+      await api.post("/user/forgot-password", { email });
+      navigate("/auth/verify-otp", { state: { email } });
+    } catch (err) {
+      alertApiError(err, "Couldn't send the reset code. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
-
-  if (isSubmitted) {
-    return (
-      <AuthLayout
-        title="Check Your Email"
-        subtitle="We've sent a reset link to your email"
-      >
-        <div className="text-center space-y-6">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-            <svg
-              className="w-8 h-8 text-green-600"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M5 13l4 4L19 7"
-              />
-            </svg>
-          </div>
-
-          <p className="text-sm text-gray-600">
-            If an account exists for {email}, you will receive a password reset
-            link shortly.
-          </p>
-
-          <Link
-            to="/auth/login"
-            className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium text-sm"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Login
-          </Link>
-        </div>
-      </AuthLayout>
-    );
-  }
 
   return (
     <AuthLayout
@@ -85,9 +62,10 @@ export const ForgotPassword: React.FC = () => {
 
         <button
           type="submit"
-          className="w-full bg-blue-600 text-white py-2.5 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 transition-all font-medium text-sm"
+          disabled={submitting}
+          className="w-full bg-blue-600 text-white py-2.5 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 transition-all font-medium text-sm disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          Send Reset Link
+          {submitting ? "Sending..." : "Send Reset Code"}
         </button>
 
         <div className="text-center">

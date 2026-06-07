@@ -36,46 +36,8 @@ import {
   Receipt,
   Package,
 } from "lucide-react";
-
-interface InvoiceItem {
-  srNo: number;
-  item: string;
-  description?: string;
-  rate: number;
-  quantity: number;
-  tax: number;
-  discount: number;
-  amount: number;
-}
-
-interface Invoice {
-  id: string;
-  invoiceNumber: string;
-  customerName: string;
-  customerSubtitle: string;
-  status: "Draft" | "Approved" | "Cancelled";
-  amount: number;
-  invoiceDate: string;
-  dueDate: string;
-  date: string;
-  billingAddress: string;
-  billingCity: string;
-  billingZip: string;
-  shippingMethod: string;
-  subTitle: string;
-  poNumber: string;
-  currency: string;
-  items: InvoiceItem[];
-  termsAndConditions: string;
-  notes: string;
-  internalNotes: string;
-  subTotal: number;
-  shippingCost: number;
-  salesTax: number;
-  total: number;
-  paid: number;
-  due: number;
-}
+import { invoiceHooks, type Invoice } from "@/services/invoices";
+import { useResourceData } from "@/hooks/useResourceData";
 
 const sampleInvoices: Invoice[] = [
   {
@@ -92,7 +54,7 @@ const sampleInvoices: Invoice[] = [
     billingCity: "Bankok, 122 Bangladesh",
     billingZip: "",
     shippingMethod: "Priority Shipping",
-    subTitle: "fdffdfdf",
+    subTitle: "Monthly Service",
     poNumber: "124",
     currency: "$",
     items: [
@@ -144,7 +106,12 @@ const sampleInvoices: Invoice[] = [
 
 export const Invoices: React.FC = () => {
   const navigate = useNavigate();
-  const [invoices, setInvoices] = useState<Invoice[]>(sampleInvoices);
+  // Data layer: reads from the API when a backend is connected, otherwise
+  // transparently falls back to the in-memory sample data below.
+  const { items: invoices, create, update, remove } = useResourceData(
+    invoiceHooks,
+    { seed: sampleInvoices },
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice>(sampleInvoices[0]);
 
@@ -171,18 +138,34 @@ export const Invoices: React.FC = () => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSave = () => {
-    if (isEditing) {
-      setInvoices((prev) => prev.map((inv) => (inv.id === formData.id ? formData : inv)));
-      setSelectedInvoice(formData);
-      showToast("Invoice updated!", "success");
-    } else {
-      const newInvoice = { ...formData, id: Date.now().toString() };
-      setInvoices((prev) => [...prev, newInvoice]);
-      setSelectedInvoice(newInvoice);
-      showToast("Invoice created!", "success");
+  const handleSave = async () => {
+    try {
+      if (isEditing) {
+        const saved = await update(formData.id, formData);
+        setSelectedInvoice({ ...formData, ...saved });
+        showToast("Invoice updated!", "success");
+      } else {
+        const { id: _omit, ...payload } = formData;
+        void _omit;
+        const created = await create(payload);
+        setSelectedInvoice(created);
+        showToast("Invoice created!", "success");
+      }
+      setShowForm(false);
+    } catch {
+      showToast("Could not save invoice. Please try again.", "error");
     }
-    setShowForm(false);
+  };
+
+  // Helper for the status quick-actions in the More menu.
+  const setInvoiceStatus = async (status: Invoice["status"], message: string) => {
+    try {
+      const saved = await update(selectedInvoice.id, { ...selectedInvoice, status });
+      setSelectedInvoice((prev) => ({ ...prev, ...saved, status }));
+      showToast(message, "success");
+    } catch {
+      showToast("Could not update status.", "error");
+    }
   };
 
   const handleEdit = () => {
@@ -336,20 +319,20 @@ export const Invoices: React.FC = () => {
                   <button onClick={() => { navigate("/sales/delivery-challan"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                     <Truck className="w-4 h-4" /> Delivery Note
                   </button>
-                  <button onClick={() => { const dup = { ...selectedInvoice, id: Date.now().toString(), invoiceNumber: `#${Date.now()}` }; setInvoices(prev => [...prev, dup]); showToast("Invoice duplicated!", "success"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                  <button onClick={async () => { const { id: _id, ...rest } = selectedInvoice; void _id; const dup = await create({ ...rest, invoiceNumber: `#${Date.now()}` }); setSelectedInvoice(dup); showToast("Invoice duplicated!", "success"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                     <Copy className="w-4 h-4" /> Duplicate
                   </button>
                   <button onClick={() => { navigate("/sales/credit-notes"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                     <Receipt className="w-4 h-4" /> Credit Notes
                   </button>
                   <div className="border-t border-gray-200 my-1" />
-                  <button onClick={() => { setInvoices(prev => prev.map(inv => inv.id === selectedInvoice.id ? { ...inv, status: "Approved" } : inv)); setSelectedInvoice(prev => ({ ...prev, status: "Approved" })); showToast("Marked as Sent!", "success"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                  <button onClick={() => { setInvoiceStatus("Approved", "Marked as Sent!"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                     <Send className="w-4 h-4" /> Mark as Sent
                   </button>
-                  <button onClick={() => { setInvoices(prev => prev.map(inv => inv.id === selectedInvoice.id ? { ...inv, status: "Cancelled" } : inv)); setSelectedInvoice(prev => ({ ...prev, status: "Cancelled" })); showToast("Marked as Void!", "info"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                  <button onClick={() => { setInvoiceStatus("Cancelled", "Marked as Void!"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                     <Ban className="w-4 h-4" /> Mark as Void
                   </button>
-                  <button onClick={() => { setInvoices(prev => prev.map(inv => inv.id === selectedInvoice.id ? { ...inv, status: "Approved" } : inv)); setSelectedInvoice(prev => ({ ...prev, status: "Approved" })); showToast("Marked as Paid!", "success"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                  <button onClick={() => { setInvoiceStatus("Approved", "Marked as Paid!"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                     <CheckCircle className="w-4 h-4" /> Mark as Paid
                   </button>
                   <div className="border-t border-gray-200 my-1" />
@@ -388,9 +371,10 @@ export const Invoices: React.FC = () => {
                   )}
                   <div className="border-t border-gray-200 my-1" />
                   <button
-                    onClick={() => {
-                      setInvoices(prev => prev.filter(inv => inv.id !== selectedInvoice.id));
-                      if (invoices.length > 1) setSelectedInvoice(invoices.find(inv => inv.id !== selectedInvoice.id) || invoices[0]);
+                    onClick={async () => {
+                      const next = invoices.find(inv => inv.id !== selectedInvoice.id);
+                      await remove(selectedInvoice.id);
+                      if (next) setSelectedInvoice(next);
                       showToast("Invoice moved to trash!", "info");
                       setShowMoreMenu(false);
                     }}
@@ -478,7 +462,7 @@ export const Invoices: React.FC = () => {
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">hdjjdj</span>
+                  <span className="text-xs text-gray-500 truncate max-w-[110px]">{invoice.customerName}</span>
                   <span className="text-xs text-gray-500">{invoice.date}</span>
                 </div>
                 <div className="mt-1">

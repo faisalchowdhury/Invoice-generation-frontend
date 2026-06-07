@@ -807,7 +807,7 @@ export const DealDetail: React.FC = () => {
             </button>
             <span>›</span>
             <button
-              onClick={() => navigate("/dashboard")}
+              onClick={() => navigate("/")}
               className="hover:text-gray-700"
             >
               Dashboard

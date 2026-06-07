@@ -3,7 +3,23 @@
     "allow": [
       "Bash(cp convert-forms.js /tmp/convert-forms.cjs)",
       "Bash(node /tmp/convert-forms.cjs)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(sed -i 's|navigate\\(\"/accounting/system-setup\"\\)|navigate\\(\"/accounting/system\"\\)|g' src/pages/accounting/AccountsSystem.tsx)",
+      "Bash(sed -i 's|navigate\\(\"/accounting/banking\"\\)|navigate\\(\"/accounting/bank-accounts\"\\)|g' src/pages/accounting/bank/BankTransfers.tsx)",
+      "Bash(sed -i 's|navigate\\(\"/budget\"\\)|navigate\\(\"/budget-planner\"\\)|g' src/pages/budgetPlanner/BudgetPeriods.tsx)",
+      "Bash(sed -i 's|navigate\\(\"/crm/reports\"\\)|navigate\\(\"/crm/lead-reports\"\\)|g' src/pages/crm/reports/DealReports.tsx src/pages/crm/reports/LeadReports.tsx)",
+      "Bash(sed -i 's|navigate\\(\"/double-entry/balance-sheets\"\\)|navigate\\(\"/double-entry/balance-sheet\"\\)|g' src/pages/doubleEntry/BalanceSheet.tsx)",
+      "Bash(grep -v ': /dashboard$')",
+      "Bash(grep -v ': /accounting$')",
+      "Bash(grep -v ': /crm$')",
+      "Bash(grep -v ': /hrm$')",
+      "Bash(grep -v ': /double-entry$')",
+      "Bash(grep -v ': /budget-planner$')",
+      "Bash(grep -v ': /goal$')",
+      "Bash(grep -v ': /performance$')",
+      "Bash(grep -v ': /recruitment$')",
+      "Bash(grep -v ': /training$')",
+      "Bash(grep -v ': /crm/reports$')"
     ]
   }
 }

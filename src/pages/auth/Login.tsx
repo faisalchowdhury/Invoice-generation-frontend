@@ -1,24 +1,46 @@
 /**
  * File: src/pages/auth/Login.tsx
- * Login page - Email/Password authentication
+ * Login page - Email/Password authentication with a "Login as …" role selector.
+ *
+ * The role buttons are a convenience for testing the six roles (superadmin,
+ * company, hr, staff, vendor, customer): selecting one prefills the seed
+ * credentials. The actual role/permissions always come from the backend in the
+ * login response.
  */
 
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { AuthLayout } from "../../components/auth/AuthLayout";
 import { SocialLogin } from "../../components/auth/SocialLogin";
+import useAuth from "../../hooks/useAuth";
+import { alertApiError, alertToast } from "../../utils/alert";
+import { ROLE_LOGIN_PRESETS, type Role } from "../../auth/roles";
 
 export const Login: React.FC = () => {
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [submitting, setSubmitting] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [formData, setFormData] = useState({
     email: "",
     password: "",
     rememberMe: false,
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle login logic here
-    console.log("Login:", formData);
+    setSubmitting(true);
+    try {
+      const user = await login(formData.email, formData.password);
+      alertToast(`Welcome back, ${user.name || "user"}!`, "success");
+      const from = (location.state as { from?: { pathname: string } })?.from?.pathname;
+      navigate(from || "/", { replace: true });
+    } catch (err) {
+      alertApiError(err, "Login failed. Check your credentials.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -29,9 +51,43 @@ export const Login: React.FC = () => {
     }));
   };
 
+  const handleSelectRole = (role: Role) => {
+    const preset = ROLE_LOGIN_PRESETS.find((p) => p.role === role);
+    if (!preset) return;
+    setSelectedRole(role);
+    setFormData((prev) => ({
+      ...prev,
+      email: preset.email,
+      password: preset.password,
+    }));
+  };
+
   return (
     <AuthLayout title="Welcome!" subtitle="Login to your account">
       <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Role Selector */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Login as
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            {ROLE_LOGIN_PRESETS.map((preset) => (
+              <button
+                key={preset.role}
+                type="button"
+                onClick={() => handleSelectRole(preset.role)}
+                className={`px-3 py-2 rounded-md border text-xs font-medium transition-all ${
+                  selectedRole === preset.role
+                    ? "border-blue-600 bg-blue-50 text-blue-700"
+                    : "border-gray-300 text-gray-600 hover:border-blue-400 hover:bg-gray-50"
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Email Field */}
         <div>
           <label
@@ -73,41 +129,39 @@ export const Login: React.FC = () => {
         </div>
 
         {/* Remember Me Checkbox */}
-        <div className="flex items-center">
-          <input
-            id="rememberMe"
-            name="rememberMe"
-            type="checkbox"
-            checked={formData.rememberMe}
-            onChange={handleChange}
-            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-600"
-          />
-          <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-700">
-            Remember me
-          </label>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <input
+              id="rememberMe"
+              name="rememberMe"
+              type="checkbox"
+              checked={formData.rememberMe}
+              onChange={handleChange}
+              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-600"
+            />
+            <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-700">
+              Remember me
+            </label>
+          </div>
+          <Link
+            to="/auth/forgot-password"
+            className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+          >
+            Forgot password?
+          </Link>
         </div>
 
         {/* Submit Button */}
         <button
           type="submit"
-          className="w-full bg-blue-600 text-white py-2.5 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 transition-all font-medium text-sm"
+          disabled={submitting}
+          className="w-full bg-blue-600 text-white py-2.5 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 transition-all font-medium text-sm disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          Login
+          {submitting ? "Logging in..." : "Login"}
         </button>
 
         {/* Social Login */}
         <SocialLogin />
-
-        {/* Sign Up Link */}
-        <div className="text-center text-sm">
-          <span className="text-gray-600">Don't have an account? </span>
-          <Link
-            to="/auth/signup"
-            className="text-blue-600 hover:text-blue-700 font-medium"
-          >
-            Sign Up
-          </Link>
-        </div>
       </form>
     </AuthLayout>
   );

@@ -1,10 +1,11 @@
-import axios from "axios";
-import React from "react";
-const axiosBase = axios.create({
-  baseURL: "http://localhost:5500/api/v1",
-});
-const useAxiosBase = () => {
-  return axiosBase;
-};
+/**
+ * File: src/hooks/useAxios.tsx
+ * Backward-compatible accessor for the shared axios instance.
+ * Prefer importing `api` from "@/lib/api/client" directly in new code.
+ */
+
+import { api } from "../lib/api/client";
+
+const useAxiosBase = () => api.raw;
 
 export default useAxiosBase;

@@ -1443,7 +1443,7 @@ Sincerely,
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <button
-              onClick={() => navigate("/dashboard")}
+              onClick={() => navigate("/")}
               className="hover:text-gray-700"
             >
               Dashboard

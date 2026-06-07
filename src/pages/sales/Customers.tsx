@@ -1,29 +1,10 @@
 import React, { useState } from "react";
 import { showToast } from "../../utils/toast";
 import {
-  Search, Plus, Edit, Trash2, MoreVertical, Copy, Mail, Columns, CheckCircle,
+  Search, Plus, Edit, Trash2, MoreVertical, Copy, Mail, Columns,
 } from "lucide-react";
-
-interface Customer {
-  id: string;
-  name: string;
-  companyName: string;
-  email: string;
-  businessPhone: string;
-  taxId: string;
-  mobile: string;
-  billingAddress: string;
-  billingCity: string;
-  billingCountry: string;
-  shippingAddress: string;
-  currency: string;
-  paymentTerms: string;
-  notes: string;
-  outstanding: number;
-  netProfit: number;
-  sales: number;
-  profit: number;
-}
+import { customerHooks, type Customer } from "@/services/customers";
+import { useResourceData } from "@/hooks/useResourceData";
 
 const sampleCustomers: Customer[] = [
   {
@@ -41,7 +22,13 @@ const sampleCustomers: Customer[] = [
 ];
 
 export const Customers: React.FC = () => {
-  const [customers, setCustomers] = useState<Customer[]>(sampleCustomers);
+  // Data layer: reads from the API when a backend is connected, otherwise
+  // transparently falls back to the in-memory sample data below.
+  const { items: customers, create, update, remove } = useResourceData(
+    customerHooks,
+    { seed: sampleCustomers },
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer>(sampleCustomers[0]);
   const [showForm, setShowForm] = useState(false);
@@ -53,18 +40,23 @@ export const Customers: React.FC = () => {
 
   const handleInputChange = (field: keyof Customer, value: any) => setFormData((prev) => ({ ...prev, [field]: value }));
 
-  const handleSave = () => {
-    if (isEditing) {
-      setCustomers((prev) => prev.map((c) => (c.id === formData.id ? formData : c)));
-      setSelectedCustomer(formData);
-      showToast("Customer updated!", "success");
-    } else {
-      const newCustomer = { ...formData, id: Date.now().toString() };
-      setCustomers((prev) => [...prev, newCustomer]);
-      setSelectedCustomer(newCustomer);
-      showToast("Customer created!", "success");
+  const handleSave = async () => {
+    try {
+      if (isEditing) {
+        const saved = await update(formData.id, formData);
+        setSelectedCustomer({ ...formData, ...saved });
+        showToast("Customer updated!", "success");
+      } else {
+        const { id: _omit, ...payload } = formData;
+        void _omit;
+        const created = await create(payload);
+        setSelectedCustomer(created);
+        showToast("Customer created!", "success");
+      }
+      setShowForm(false);
+    } catch {
+      showToast("Could not save customer. Please try again.", "error");
     }
-    setShowForm(false);
   };
 
   const handleEdit = () => { setFormData(selectedCustomer); setIsEditing(true); setShowForm(true); setShowMobileList(false); };
@@ -108,9 +100,9 @@ export const Customers: React.FC = () => {
               {showMoreMenu && (
                 <div className="absolute right-0 top-12 w-52 bg-white rounded-md shadow-lg border border-gray-200 py-1 z-50">
                   <button onClick={() => { showToast("Statement generated!", "info"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Customer Statement</button>
-                  <button onClick={() => { const dup = { ...selectedCustomer, id: Date.now().toString(), name: `${selectedCustomer.name} (Copy)`, email: "" }; setCustomers(prev => [...prev, dup]); showToast("Duplicated!", "success"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Copy className="w-4 h-4" /> Duplicate</button>
+                  <button onClick={async () => { const { id: _id, ...rest } = selectedCustomer; void _id; const dup = await create({ ...rest, name: `${selectedCustomer.name} (Copy)`, email: "" }); setSelectedCustomer(dup); showToast("Duplicated!", "success"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Copy className="w-4 h-4" /> Duplicate</button>
                   <div className="border-t border-gray-200 my-1" />
-                  <button onClick={() => { setCustomers(prev => prev.filter(c => c.id !== selectedCustomer.id)); if (customers.length > 1) setSelectedCustomer(customers.find(c => c.id !== selectedCustomer.id) || customers[0]); showToast("Customer deleted!", "info"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"><Trash2 className="w-4 h-4" /> Delete</button>
+                  <button onClick={async () => { const next = customers.find(c => c.id !== selectedCustomer.id); await remove(selectedCustomer.id); if (next) setSelectedCustomer(next); showToast("Customer deleted!", "info"); setShowMoreMenu(false); }} className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"><Trash2 className="w-4 h-4" /> Delete</button>
                 </div>
               )}
             </div>

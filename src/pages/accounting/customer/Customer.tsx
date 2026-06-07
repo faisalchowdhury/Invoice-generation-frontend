@@ -636,7 +636,7 @@ export const AccountsCustomers: React.FC = () => {
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-2">
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <button
-            onClick={() => navigate("/dashboard")}
+            onClick={() => navigate("/")}
             className="hover:text-gray-700"
           >
             Dashboard
@@ -660,7 +660,7 @@ export const AccountsCustomers: React.FC = () => {
             Manage Customers
           </h2>
           <button
-            onClick={() => navigate("/customers/create")}
+            onClick={() => navigate("/accounting/customer")}
             className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center hover:bg-blue-700"
             title="Create Customer"
           >
@@ -725,10 +725,16 @@ export const AccountsCustomers: React.FC = () => {
                       Options
                     </span>
                   </div>
-                  <button className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 text-gray-700">
+                  <button
+                    onClick={() => { showToast("Exporting as CSV...", "info"); setShowFilters(false); }}
+                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 text-gray-700"
+                  >
                     Export CSV
                   </button>
-                  <button className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 text-gray-700">
+                  <button
+                    onClick={() => { showToast("Exporting as PDF...", "info"); setShowFilters(false); }}
+                    className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 text-gray-700"
+                  >
                     Export PDF
                   </button>
                 </div>
@@ -909,7 +915,7 @@ export const CustomerDetails: React.FC = () => {
             Customer not found
           </h2>
           <button
-            onClick={() => navigate("/customers")}
+            onClick={() => navigate("/accounting/customer")}
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md"
           >
             Back to Customers
@@ -926,7 +932,7 @@ export const CustomerDetails: React.FC = () => {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <button
-              onClick={() => navigate("/dashboard")}
+              onClick={() => navigate("/")}
               className="hover:text-gray-700"
             >
               Dashboard
@@ -940,7 +946,7 @@ export const CustomerDetails: React.FC = () => {
             </button>
             <span>›</span>
             <button
-              onClick={() => navigate("/customers")}
+              onClick={() => navigate("/accounting/customer")}
               className="hover:text-gray-700"
             >
               Customers
@@ -1409,7 +1415,7 @@ export const EditCustomer: React.FC = () => {
 
   const handleSave = () => {
     showToast("Customer updated successfully!", "success");
-    navigate(`/customers/${id}`);
+    navigate(`/accounting/customers/${id}`);
   };
 
   if (!customer) {
@@ -1420,7 +1426,7 @@ export const EditCustomer: React.FC = () => {
             Customer not found
           </h2>
           <button
-            onClick={() => navigate("/customers")}
+            onClick={() => navigate("/accounting/customer")}
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md"
           >
             Back to Customers
@@ -1436,7 +1442,7 @@ export const EditCustomer: React.FC = () => {
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sticky top-0 z-10">
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <button
-            onClick={() => navigate("/dashboard")}
+            onClick={() => navigate("/")}
             className="hover:text-gray-700"
           >
             Dashboard
@@ -1450,7 +1456,7 @@ export const EditCustomer: React.FC = () => {
           </button>
           <span>›</span>
           <button
-            onClick={() => navigate("/customers")}
+            onClick={() => navigate("/accounting/customer")}
             className="hover:text-gray-700"
           >
             Customers
@@ -1689,7 +1695,7 @@ export const EditCustomer: React.FC = () => {
 
           <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
             <button
-              onClick={() => navigate(`/customers/${id}`)}
+              onClick={() => navigate(`/accounting/customers/${id}`)}
               className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
             >
               Cancel

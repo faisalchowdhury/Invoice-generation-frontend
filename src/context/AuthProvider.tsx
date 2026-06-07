@@ -1,91 +1,139 @@
-// import React, { useEffect, useState } from "react";
+/**
+ * File: src/context/AuthProvider.tsx
+ * Provides auth state to the app. Token persistence is delegated to tokenStore
+ * so the axios client and this provider always agree on the current token.
+ *
+ * Backend contract (see Postman "Common > auth"):
+ *   POST /user/login       -> { data: { user, token } }
+ *   GET  /user/my-profile  -> { data: user }
+ *
+ * The login response already embeds the user's role + permissions, so we use it
+ * directly. On a page reload we only have the token, so we re-fetch the profile
+ * to restore the full user (including permissions, which aren't in the JWT).
+ */
 
-// import AuthContext from "./AuthContext";
-// import useAxiosBase from "../hooks/useAxios";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import AuthContext, { type AuthUser } from "./AuthContext";
+import type { Role } from "../auth/roles";
+import { api, onUnauthorized } from "../lib/api/client";
+import { getToken, setToken as persistToken } from "../lib/api/tokenStore";
 
-// export default function AuthProvider({
-//   children,
-// }: {
-//   children: React.ReactNode;
-// }) {
-//   const [user, setUser] = useState(null);
-//   const [token, setToken] = useState(localStorage.getItem("token") || null);
-//   const [loading, setLoading] = useState(true);
+const PROFILE_ENDPOINT = "/user/my-profile";
+const LOGIN_ENDPOINT = "/user/login";
 
-//   const axiosSecure = useAxiosBase();
+/** Normalize the backend user (`_id`) into our AuthUser shape (`id`). */
+function normalizeUser(raw: AuthUser): AuthUser {
+  return {
+    ...raw,
+    id: (raw._id as string) ?? raw.id,
+    permissions: raw.permissions ?? [],
+  };
+}
 
-//   // login
-//   const login = async (email: any, password: any) => {
-//     try {
-//       setLoading(true);
+export default function AuthProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [token, setTokenState] = useState<string | null>(getToken());
+  const [loading, setLoading] = useState<boolean>(!!getToken());
 
-//       const res = await axiosSecure.post("/auth/login", { email, password });
+  const logout = useCallback(() => {
+    persistToken(null);
+    setTokenState(null);
+    setUser(null);
+  }, []);
 
-//       const { token } = res.data.data;
+  const refreshProfile = useCallback(async () => {
+    if (!getToken()) return;
+    try {
+      const profile = await api.get<AuthUser>(PROFILE_ENDPOINT);
+      setUser(normalizeUser(profile));
+    } catch {
+      logout();
+    }
+  }, [logout]);
 
-//       localStorage.setItem("token", token);
+  const login = useCallback(
+    async (email: string, password: string): Promise<AuthUser> => {
+      const res = await api.post<{ token: string; user: AuthUser }>(
+        LOGIN_ENDPOINT,
+        { email, password },
+      );
+      persistToken(res.token);
+      setTokenState(res.token);
+      const profile = normalizeUser(res.user);
+      setUser(profile);
+      return profile;
+    },
+    [],
+  );
 
-//       setToken(token);
+  // React to 401s coming from anywhere in the app.
+  useEffect(() => {
+    onUnauthorized(() => {
+      setTokenState(null);
+      setUser(null);
+    });
+  }, []);
 
-//       const response = await axiosSecure.get("/auth/my-profile", {
-//         headers: { Authorization: `Bearer ${token}` },
-//       });
-//       console.log(response?.data?.data, "testttttttttttttttttttt");
-//       setUser(response?.data?.data);
-//       setLoading(false);
-//       return res.data;
-//     } catch (error: any) {
-//       setLoading(false);
-//       throw error.response?.data?.message || "Login failed. Please try again.";
-//     }
-//   };
+  // Restore session on first load.
+  useEffect(() => {
+    let active = true;
+    if (getToken()) {
+      refreshProfile().finally(() => active && setLoading(false));
+    } else {
+      setLoading(false);
+    }
+    return () => {
+      active = false;
+    };
+  }, [refreshProfile]);
 
-//   useEffect(() => {
-//     console.log(".................................", loading, user);
-//     setLoading(true);
-//     const savedToken = localStorage.getItem("token");
+  const hasPermission = useCallback(
+    (permission: string) => !!user?.permissions?.includes(permission),
+    [user],
+  );
 
-//     if (savedToken) {
-//       setToken(savedToken);
-//       axiosSecure
-//         .get("/auth/my-profile", {
-//           headers: { Authorization: `Bearer ${savedToken}` },
-//         })
-//         .then((res) => {
-//           setLoading(true);
+  const hasAnyPermission = useCallback(
+    (permissions: string[]) =>
+      permissions.some((p) => user?.permissions?.includes(p)),
+    [user],
+  );
 
-//           setUser(res.data.data);
-//         })
-//         .catch(() => logout())
-//         .finally(() => {
-//           setLoading(false);
-//         });
-//     } else {
-//       setLoading(false);
-//     }
-//   }, []);
+  const hasRole = useCallback(
+    (...roles: Array<Role | string>) =>
+      !!user?.role && roles.includes(user.role),
+    [user],
+  );
 
-//   // a logout
-//   const logout = () => {
-//     setUser(null);
-//     setToken(null);
-//     localStorage.removeItem("token");
-//   };
+  const value = useMemo(
+    () => ({
+      user,
+      token,
+      loading,
+      isAuthenticated: !!user,
+      login,
+      logout,
+      setUser,
+      refreshProfile,
+      hasPermission,
+      hasAnyPermission,
+      hasRole,
+    }),
+    [
+      user,
+      token,
+      loading,
+      login,
+      logout,
+      refreshProfile,
+      hasPermission,
+      hasAnyPermission,
+      hasRole,
+    ],
+  );
 
-//   // Restore user on reload
-
-//   const userInfo = {
-//     user,
-//     setUser,
-//     token,
-//     login,
-//     logout,
-//     setLoading,
-//     loading,
-//     setToken,
-//   };
-
-//   return (
-//     <AuthContext.Provider value={userInfo}>{children}</AuthContext.Provider>
-//   );
-// }
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}

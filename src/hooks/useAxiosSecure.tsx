@@ -1,21 +1,13 @@
-import React from "react";
+/**
+ * File: src/hooks/useAxiosSecure.tsx
+ * Backward-compatible accessor for the shared axios instance.
+ *
+ * The token is injected automatically by the client's request interceptor, so
+ * this is identical to useAxios. Prefer `api` from "@/lib/api/client" in new code.
+ */
 
-import axios from "axios";
-import useAuth from "./useAuth";
+import { api } from "../lib/api/client";
 
-type Auth = {
-  token?: string;
-};
-
-const useAxiosSecure = () => {
-  const { token } = useAuth() as Auth;
-  // console.log(token);
-  const axiosSecure = axios.create({
-    baseURL: "http://localhost:5500/api/v1",
-    withCredentials: true,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  return axiosSecure;
-};
+const useAxiosSecure = () => api.raw;
 
 export default useAxiosSecure;

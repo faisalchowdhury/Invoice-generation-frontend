@@ -29,6 +29,7 @@ import {
   Megaphone,
 } from "lucide-react";
 import { SettingsDropdown } from "@/pages/SettingsDropdown";
+import useAuth from "@/hooks/useAuth";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -109,6 +110,10 @@ const sampleNotifications = [
 
 export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const displayName = user?.name || "Faisal Chowdhury";
+  const displayEmail = user?.email || "chowdhuryfaisal66@gmail.com";
+  const initial = displayName.charAt(0).toUpperCase();
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -403,10 +408,10 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
             className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-1.5 hover:bg-gray-100 rounded transition-colors"
           >
             <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold">
-              F
+              {initial}
             </div>
             <span className="hidden sm:block text-xs sm:text-sm font-medium text-gray-700">
-              Faisal
+              {displayName.split(" ")[0]}
             </span>
             <ChevronDown className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-gray-500" />
           </button>
@@ -414,9 +419,9 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           {showUserMenu && (
             <div className="absolute right-0 top-10 w-52 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50">
               <div className="px-4 py-3 border-b border-gray-200">
-                <p className="text-sm font-semibold text-gray-900">Faisal Chowdhury</p>
+                <p className="text-sm font-semibold text-gray-900">{displayName}</p>
                 <p className="text-xs text-gray-500 truncate">
-                  chowdhuryfaisal66@gmail.com
+                  {displayEmail}
                 </p>
               </div>
               <Link
@@ -452,14 +457,13 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                 Help & Support
               </Link>
               <div className="border-t border-gray-200 mt-1 pt-1">
-                <Link
-                  to="/auth/login"
-                  onClick={() => setShowUserMenu(false)}
-                  className="flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                <button
+                  onClick={() => { setShowUserMenu(false); logout(); navigate("/auth/login"); }}
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                 >
                   <LogOut className="w-4 h-4" />
                   Sign Out
-                </Link>
+                </button>
               </div>
             </div>
           )}

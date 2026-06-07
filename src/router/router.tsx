@@ -2,7 +2,7 @@
  * File: src/routes/router.tsx
  * Main router configuration using createBrowserRouter
  */
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter, Navigate } from "react-router";
 import { Login } from "../pages/auth/Login";
 import { Signup } from "../pages/auth/Signup";
 import { ForgotPassword } from "../pages/auth/ForgotPassword";
@@ -12,6 +12,8 @@ import { SetNewPassword } from "../pages/auth/SetNewPassword";
 import { VerifyOTP } from "@/pages/auth/VerifyOtp";
 import Home from "@/pages/Home";
 import { MainLayout } from "@/components/layout/MainLayout";
+import { PrivateRoute } from "@/privateRoutes/PrivateRoute";
+import { RequireGuest } from "@/components/auth/RequireGuest";
 import { Dashboard } from "@/pages/Dashboard";
 import { Customers } from "@/pages/sales/Customers";
 import { Invoices } from "@/pages/sales/Invoices";
@@ -105,6 +107,7 @@ import { Resignations } from "@/pages/hrm/Resignations";
 import { Terminations } from "@/pages/hrm/Terminations";
 import { Warnings } from "@/pages/hrm/Warnings";
 import { Transfers } from "@/pages/purchase/Transfers";
+import { EmployeeTransfers } from "@/pages/hrm/Transfers";
 import { Complaints } from "@/pages/hrm/Complaints";
 import { Documents } from "@/pages/hrm/Documents";
 import { Acknowledgments } from "@/pages/hrm/Acknowledgments";
@@ -163,7 +166,11 @@ export const route = createBrowserRouter([
     children: [
       {
         path: "login",
-        element: <Login />,
+        element: (
+          <RequireGuest>
+            <Login />
+          </RequireGuest>
+        ),
       },
       {
         path: "signup",
@@ -192,7 +199,12 @@ export const route = createBrowserRouter([
   // ============================================
   {
     path: "/",
-    element: <MainLayout />, // 👈 This wraps all child routes
+    // 👇 PrivateRoute blocks the entire dashboard for unauthenticated users.
+    element: (
+      <PrivateRoute>
+        <MainLayout />
+      </PrivateRoute>
+    ),
     children: [
       // Dashboard
       {
@@ -230,6 +242,7 @@ export const route = createBrowserRouter([
       {
         path: "user-management",
         children: [
+          { index: true, element: <Navigate to="user-roles" replace /> },
           { path: "user-roles", element: <UserRoles /> },
           { path: "users", element: <UsersManagement /> },
         ],
@@ -242,6 +255,7 @@ export const route = createBrowserRouter([
       {
         path: "sales",
         children: [
+          { index: true, element: <Navigate to="customers" replace /> },
           { path: "customers", element: <Customers /> },
           { path: "invoices", element: <Invoices /> },
           { path: "sales-invoice", element: <SalesInvoice /> },
@@ -260,6 +274,7 @@ export const route = createBrowserRouter([
       {
         path: "documents",
         children: [
+          { index: true, element: <Navigate to="quick-scan" replace /> },
           { path: "quick-scan", element: <QuickScan /> },
           { path: "my-documents", element: <MyDocument /> },
         ],
@@ -270,6 +285,7 @@ export const route = createBrowserRouter([
       {
         path: "purchase",
         children: [
+          { index: true, element: <Navigate to="purchase-invoice" replace /> },
           {
             path: "purchase-invoice",
             element: <PurchaseInvoices />,
@@ -284,7 +300,7 @@ export const route = createBrowserRouter([
           },
           {
             path: "transfers",
-            element: <Warehouses />,
+            element: <Transfers />,
           },
           {
             path: "vendors",
@@ -321,6 +337,7 @@ export const route = createBrowserRouter([
       {
         path: "project",
         children: [
+          { index: true, element: <Navigate to="projects" replace /> },
           {
             path: "projects",
             element: <Projects />,
@@ -336,6 +353,7 @@ export const route = createBrowserRouter([
       {
         path: "accounting",
         children: [
+          { index: true, element: <Navigate to="customer" replace /> },
           {
             path: "customer",
             element: <AccountsCustomers />,
@@ -398,7 +416,7 @@ export const route = createBrowserRouter([
             element: <AccountsReports />,
           },
           {
-            path: "System",
+            path: "system",
             element: <AccountingSystem />,
           },
         ],
@@ -407,6 +425,7 @@ export const route = createBrowserRouter([
       {
         path: "goal",
         children: [
+          { index: true, element: <Navigate to="goals" replace /> },
           {
             path: "goals",
             element: <Goals />,
@@ -433,6 +452,7 @@ export const route = createBrowserRouter([
       {
         path: "budget-planner",
         children: [
+          { index: true, element: <Navigate to="budget-periods" replace /> },
           {
             path: "budget-periods",
             element: <BudgetPeriods />,
@@ -455,6 +475,7 @@ export const route = createBrowserRouter([
       {
         path: "double-entry",
         children: [
+          { index: true, element: <Navigate to="ledger-summary" replace /> },
           {
             path: "ledger-summary",
             element: <LedgerSummary />,
@@ -482,6 +503,7 @@ export const route = createBrowserRouter([
       {
         path: "hrm",
         children: [
+          { index: true, element: <Navigate to="employees" replace /> },
           {
             path: "employees",
             element: <Employees />,
@@ -541,7 +563,7 @@ export const route = createBrowserRouter([
           },
           {
             path: "transfers",
-            element: <Transfers />,
+            element: <EmployeeTransfers />,
           },
           {
             path: "documents",
@@ -569,6 +591,7 @@ export const route = createBrowserRouter([
       {
         path: "performance",
         children: [
+          { index: true, element: <Navigate to="performance-indicators" replace /> },
           {
             path: "performance-indicators",
             element: <PerformanceIndicators />,
@@ -595,6 +618,7 @@ export const route = createBrowserRouter([
       {
         path: "training",
         children: [
+          { index: true, element: <Navigate to="training-types" replace /> },
           {
             path: "training-types",
             element: <TrainingTypes />,
@@ -613,6 +637,7 @@ export const route = createBrowserRouter([
       {
         path: "recruitment",
         children: [
+          { index: true, element: <Navigate to="job-locations" replace /> },
           {
             path: "job-locations",
             element: <JobLocations />,
@@ -667,6 +692,7 @@ export const route = createBrowserRouter([
       {
         path: "crm",
         children: [
+          { index: true, element: <Navigate to="leads" replace /> },
           {
             path: "leads",
             element: <Leads />,
@@ -704,6 +730,7 @@ export const route = createBrowserRouter([
       {
         path: "support-ticket",
         children: [
+          { index: true, element: <Navigate to="tickets" replace /> },
           {
             path: "tickets",
             element: <Tickets />,
@@ -730,6 +757,7 @@ export const route = createBrowserRouter([
       {
         path: "contract",
         children: [
+          { index: true, element: <Navigate to="contracts" replace /> },
           {
             path: "contracts",
             element: <Contracts />,
@@ -799,6 +827,7 @@ export const route = createBrowserRouter([
       {
         path: "items",
         children: [
+          { index: true, element: <Navigate to="product" replace /> },
           {
             path: "product",
             element: <Product />,

@@ -1,6 +1,6 @@
 /**
  * File: src/pages/auth/VerifyOTP.tsx
- * OTP Verification page - Enter 4-digit code
+ * OTP Verification page - Enter 6-digit code
  */
 
 import React, { useState } from "react";

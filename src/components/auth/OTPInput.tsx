@@ -1,6 +1,6 @@
 /**
  * File: src/components/auth/OTPInput.tsx
- * 4-digit OTP input component
+ * 6-digit OTP input component
  */
 
 import React, { useRef, useState } from "react";
@@ -11,7 +11,7 @@ interface OTPInputProps {
 }
 
 export const OTPInput: React.FC<OTPInputProps> = ({
-  length = 4,
+  length = 6,
   onComplete,
 }) => {
   const [otp, setOtp] = useState<string[]>(new Array(length).fill(""));

@@ -534,14 +534,14 @@ export const PurchaseReturns: React.FC = () => {
         <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-2">
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <button
-              onClick={() => navigate("/dashboard")}
+              onClick={() => navigate("/")}
               className="hover:text-gray-700"
             >
               Dashboard
             </button>
             <span>›</span>
             <button
-              onClick={() => navigate("/purchase/returns")}
+              onClick={() => navigate("/purchase/purchase-returns")}
               className="hover:text-gray-700"
             >
               Purchase Returns
@@ -732,7 +732,7 @@ export const PurchaseReturns: React.FC = () => {
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-2">
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <button
-            onClick={() => navigate("/dashboard")}
+            onClick={() => navigate("/")}
             className="hover:text-gray-700"
           >
             Dashboard

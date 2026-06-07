@@ -774,7 +774,7 @@ export const Candidates: React.FC = () => {
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-gray-500">
-            <button onClick={() => navigate("/dashboard")} className="hover:text-gray-700">Dashboard</button><span>›</span>
+            <button onClick={() => navigate("/")} className="hover:text-gray-700">Dashboard</button><span>›</span>
             <button onClick={() => navigate("/recruitment")} className="hover:text-gray-700">Recruitment</button><span>›</span>
             <span className="text-gray-900 font-medium">Candidates</span>
           </div>
