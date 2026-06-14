@@ -1,12 +1,26 @@
 /**
- * File: src/pages/purchase/PurchaseInvoices.tsx
- * Complete Purchase Invoices page with list view, create/edit form, filters, pagination
- * Based on existing SalesInvoices pattern — matching exact color codes and design style
+ * File: src/pages/purchase/PurchaseInvoice.tsx
+ * Purchase Invoices page — list, create/edit form, view modal, post & delete.
+ *
+ * Backed by the purchase/invoices API:
+ *   GET    /purchase/invoices/all?page=&limit=   -> list (paginated envelope)
+ *   GET    /purchase/invoices/single/:id         -> one invoice (View modal)
+ *   POST   /purchase/invoices/create             -> create (status: draft)
+ *   PATCH  /purchase/invoices/edit/:id           -> update (draft only)
+ *   PATCH  /purchase/invoices/post/:id           -> post (draft -> posted)
+ *   DELETE /purchase/invoices/delete/:id         -> delete (not allowed once posted)
+ *
+ * Form dropdowns are loaded from:
+ *   /user/all-user-for-company?role=vendor       -> vendors (vendor_id = user _id)
+ *   /purchase/warehouses/all                     -> warehouses
+ *   /product/all                                 -> products
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { api } from "../../lib/api/client";
+import { ApiError } from "../../lib/api/ApiError";
 import {
   Search,
   Plus,
@@ -14,7 +28,7 @@ import {
   Trash2,
   Download,
   Eye,
-  Save,
+  Send,
   Calendar,
   ChevronLeft,
   ChevronRight,
@@ -27,313 +41,164 @@ import {
   Settings,
   Mail,
   FileText,
+  Loader2,
+  X,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface PurchaseItem {
   id: string;
+  productId: string;
   product: string;
+  sku: string;
   qty: number;
   unitPrice: number;
   discountPercent: number;
-  tax: number;
-  total: number;
+  taxPercent: number;
+  taxName: string;
+  tax: number; // computed tax amount (display)
+  total: number; // computed line total incl. tax (display)
 }
 
 interface PurchaseInvoice {
   id: string;
   invoiceNumber: string;
+  vendorId: string;
   vendor: string;
-  invoiceDate: string;
-  dueDate: string;
+  warehouseId: string;
+  warehouse: string;
+  invoiceDate: string; // yyyy-mm-dd
+  dueDate: string; // yyyy-mm-dd
   subtotal: number;
   tax: number;
+  discount: number;
   totalAmount: number;
+  paidAmount: number;
   balance: number;
-  status: "Draft" | "Paid" | "Posted" | "Partial";
-  warehouse: string;
+  status: string; // "Draft" | "Posted" | "Paid" | "Partial"
   paymentTerms: string;
   notes: string;
-  syncToCalendar: boolean;
   items: PurchaseItem[];
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
-
-const sampleInvoices: PurchaseInvoice[] = [
-  {
-    id: "1",
-    invoiceNumber: "PI-2026-02-016",
-    vendor: "Tech Solutions Inc",
-    invoiceDate: "2026-05-28",
-    dueDate: "2026-06-15",
-    subtotal: 2045.0,
-    tax: 729.0,
-    totalAmount: 2774.0,
-    balance: 2774.0,
-    status: "Draft",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    items: [
-      {
-        id: "i1",
-        product: "Server Hardware",
-        qty: 2,
-        unitPrice: 1022.5,
-        discountPercent: 0,
-        tax: 364.5,
-        total: 2045,
-      },
-    ],
-  },
-  {
-    id: "2",
-    invoiceNumber: "PI-2026-02-015",
-    vendor: "Sam Supplier",
-    invoiceDate: "2026-05-20",
-    dueDate: "2026-06-05",
-    subtotal: 1800.0,
-    tax: 420.0,
-    totalAmount: 2220.0,
-    balance: 0.0,
-    status: "Paid",
-    warehouse: "Warehouse B",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    items: [
-      {
-        id: "i1",
-        product: "Office Supplies",
-        qty: 100,
-        unitPrice: 18,
-        discountPercent: 0,
-        tax: 420,
-        total: 1800,
-      },
-    ],
-  },
-  {
-    id: "3",
-    invoiceNumber: "PI-2026-02-014",
-    vendor: "Alex Vendor",
-    invoiceDate: "2026-05-10",
-    dueDate: "2026-05-25",
-    subtotal: 1150.0,
-    tax: 345.0,
-    totalAmount: 1495.0,
-    balance: 1495.0,
-    status: "Posted",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    items: [
-      {
-        id: "i1",
-        product: "Electronics Components",
-        qty: 50,
-        unitPrice: 23,
-        discountPercent: 0,
-        tax: 345,
-        total: 1150,
-      },
-    ],
-  },
-  {
-    id: "4",
-    invoiceNumber: "PI-2026-02-013",
-    vendor: "Elite Vendors Group",
-    invoiceDate: "2026-05-01",
-    dueDate: "2026-05-15",
-    subtotal: 3300.0,
-    tax: 666.0,
-    totalAmount: 3966.0,
-    balance: 3966.0,
-    status: "Draft",
-    warehouse: "Warehouse B",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    items: [
-      {
-        id: "i1",
-        product: "Raw Materials",
-        qty: 100,
-        unitPrice: 33,
-        discountPercent: 0,
-        tax: 666,
-        total: 3300,
-      },
-    ],
-  },
-  {
-    id: "5",
-    invoiceNumber: "PI-2026-02-012",
-    vendor: "Prime Materials Ltd",
-    invoiceDate: "2026-04-20",
-    dueDate: "2026-05-05",
-    subtotal: 2100.0,
-    tax: 945.0,
-    totalAmount: 3045.0,
-    balance: 3045.0,
-    status: "Posted",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    items: [
-      {
-        id: "i1",
-        product: "Construction Materials",
-        qty: 30,
-        unitPrice: 70,
-        discountPercent: 0,
-        tax: 945,
-        total: 2100,
-      },
-    ],
-  },
-  {
-    id: "6",
-    invoiceNumber: "PI-2026-02-011",
-    vendor: "Global Supplies Co",
-    invoiceDate: "2026-04-10",
-    dueDate: "2026-04-25",
-    subtotal: 660.0,
-    tax: 146.4,
-    totalAmount: 806.4,
-    balance: 406.4,
-    status: "Partial",
-    warehouse: "Warehouse B",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    items: [
-      {
-        id: "i1",
-        product: "Stationery Items",
-        qty: 200,
-        unitPrice: 3.3,
-        discountPercent: 0,
-        tax: 146.4,
-        total: 660,
-      },
-    ],
-  },
-  {
-    id: "7",
-    invoiceNumber: "PI-2026-02-010",
-    vendor: "Tech Solutions Inc",
-    invoiceDate: "2026-04-02",
-    dueDate: "2026-04-15",
-    subtotal: 650.0,
-    tax: 177.0,
-    totalAmount: 827.0,
-    balance: 0.0,
-    status: "Paid",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    items: [
-      {
-        id: "i1",
-        product: "Network Cables",
-        qty: 50,
-        unitPrice: 13,
-        discountPercent: 0,
-        tax: 177,
-        total: 650,
-      },
-    ],
-  },
-  {
-    id: "8",
-    invoiceNumber: "PI-2026-02-009",
-    vendor: "Sam Supplier",
-    invoiceDate: "2026-03-25",
-    dueDate: "2026-04-10",
-    subtotal: 1400.0,
-    tax: 387.0,
-    totalAmount: 1787.0,
-    balance: 1787.0,
-    status: "Draft",
-    warehouse: "Warehouse B",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    items: [
-      {
-        id: "i1",
-        product: "Furniture",
-        qty: 10,
-        unitPrice: 140,
-        discountPercent: 0,
-        tax: 387,
-        total: 1400,
-      },
-    ],
-  },
-  {
-    id: "9",
-    invoiceNumber: "PI-2026-02-008",
-    vendor: "Alex Vendor",
-    invoiceDate: "2026-03-12",
-    dueDate: "2026-04-01",
-    subtotal: 390.0,
-    tax: 81.0,
-    totalAmount: 471.0,
-    balance: 471.0,
-    status: "Posted",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    items: [
-      {
-        id: "i1",
-        product: "Tool Set",
-        qty: 5,
-        unitPrice: 78,
-        discountPercent: 0,
-        tax: 81,
-        total: 390,
-      },
-    ],
-  },
-];
-
-const vendors = [
-  "Tech Solutions Inc",
-  "Sam Supplier",
-  "Alex Vendor",
-  "Elite Vendors Group",
-  "Prime Materials Ltd",
-  "Global Supplies Co",
-];
-const warehouses = ["Main Warehouse", "Warehouse B", "Warehouse C"];
-const products = [
-  { name: "Server Hardware", price: 1022.5 },
-  { name: "Office Supplies", price: 18 },
-  { name: "Electronics Components", price: 23 },
-  { name: "Raw Materials", price: 33 },
-  { name: "Construction Materials", price: 70 },
-  { name: "Stationery Items", price: 3.3 },
-  { name: "Network Cables", price: 13 },
-  { name: "Furniture", price: 140 },
-  { name: "Tool Set", price: 78 },
-];
+/* ---- Raw API shapes ---- */
+interface ApiRef {
+  _id: string;
+  name?: string;
+  productName?: string;
+  sku?: string;
+  email?: string;
+}
+interface ApiInvoiceItem {
+  _id?: string;
+  product_id: ApiRef | string;
+  quantity: number;
+  unit_price: number;
+  discount_percentage?: number;
+  discount_amount?: number;
+  tax_percentage?: number;
+  tax_amount?: number;
+  total_amount?: number;
+  taxes?: { tax_name: string; tax_rate: number }[];
+}
+interface ApiInvoice {
+  _id: string;
+  invoice_number: string;
+  invoice_date: string;
+  due_date: string;
+  vendor_id: ApiRef | string;
+  warehouse_id: ApiRef | string;
+  items: ApiInvoiceItem[];
+  subtotal?: number;
+  tax_amount?: number;
+  discount_amount?: number;
+  total_amount?: number;
+  paid_amount?: number;
+  balance_amount?: number;
+  status?: string;
+  payment_terms?: string;
+  notes?: string;
+}
+interface ApiVendor {
+  _id: string;
+  name: string;
+  email?: string;
+}
+interface ApiWarehouse {
+  _id: string;
+  name: string;
+}
+interface ApiProduct {
+  _id: string;
+  productName?: string;
+  name?: string;
+  sku?: string;
+  buyPrice?: number;
+  buy_price?: number;
+  unit_price?: number;
+  sellPrice?: number;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const fmtCurrency = (val: number) => {
-  const formatted = val.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const formatted = (val || 0)
+    .toFixed(2)
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `${formatted}$`;
 };
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** ISO datetime -> yyyy-mm-dd (safe for <input type="date"> and display). */
+const toDateInput = (iso?: string) => (iso ? iso.slice(0, 10) : "");
+
+const titleCase = (s?: string) =>
+  s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "";
+
+const errMessage = (err: unknown, fallback: string) =>
+  err instanceof ApiError && err.message ? err.message : fallback;
+
+const refName = (ref: ApiRef | string | undefined): string =>
+  typeof ref === "object" && ref
+    ? ref.name ?? ref.productName ?? ""
+    : "";
+const refId = (ref: ApiRef | string | undefined): string =>
+  typeof ref === "object" && ref ? ref._id : (ref ?? "");
+
+const mapApiInvoice = (inv: ApiInvoice): PurchaseInvoice => ({
+  id: inv._id,
+  invoiceNumber: inv.invoice_number ?? "",
+  vendorId: refId(inv.vendor_id),
+  vendor: refName(inv.vendor_id),
+  warehouseId: refId(inv.warehouse_id),
+  warehouse: refName(inv.warehouse_id),
+  invoiceDate: toDateInput(inv.invoice_date),
+  dueDate: toDateInput(inv.due_date),
+  subtotal: inv.subtotal ?? 0,
+  tax: inv.tax_amount ?? 0,
+  discount: inv.discount_amount ?? 0,
+  totalAmount: inv.total_amount ?? 0,
+  paidAmount: inv.paid_amount ?? 0,
+  balance: inv.balance_amount ?? 0,
+  status: titleCase(inv.status) || "Draft",
+  paymentTerms: inv.payment_terms ?? "",
+  notes: inv.notes ?? "",
+  items: (inv.items ?? []).map((it, idx) => ({
+    id: it._id ?? `item-${idx}`,
+    productId: refId(it.product_id),
+    product: refName(it.product_id),
+    sku: typeof it.product_id === "object" ? (it.product_id.sku ?? "") : "",
+    qty: it.quantity ?? 0,
+    unitPrice: it.unit_price ?? 0,
+    discountPercent: it.discount_percentage ?? 0,
+    taxPercent: it.tax_percentage ?? 0,
+    taxName: it.taxes?.[0]?.tax_name ?? "VAT",
+    tax: it.tax_amount ?? 0,
+    total: it.total_amount ?? 0,
+  })),
+});
 
 type SortField =
   | "invoiceNumber"
@@ -347,12 +212,29 @@ type SortField =
   | "status";
 type SortDir = "asc" | "desc";
 
+const emptyItem = (): PurchaseItem => ({
+  id: `new-${Math.random().toString(36).slice(2)}`,
+  productId: "",
+  product: "",
+  sku: "",
+  qty: 1,
+  unitPrice: 0,
+  discountPercent: 0,
+  taxPercent: 0,
+  taxName: "VAT",
+  tax: 0,
+  total: 0,
+});
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const PurchaseInvoices: React.FC = () => {
   const navigate = useNavigate();
 
-  const [invoices, setInvoices] = useState<PurchaseInvoice[]>(sampleInvoices);
+  const [invoices, setInvoices] = useState<PurchaseInvoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [perPage, setPerPage] = useState(10);
@@ -367,28 +249,85 @@ export const PurchaseInvoices: React.FC = () => {
   const [editingInvoice, setEditingInvoice] = useState<PurchaseInvoice | null>(
     null,
   );
+  const [saving, setSaving] = useState(false);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+  // Dropdown option sources
+  const [vendors, setVendors] = useState<ApiVendor[]>([]);
+  const [warehouses, setWarehouses] = useState<ApiWarehouse[]>([]);
+  const [products, setProducts] = useState<ApiProduct[]>([]);
+
+  // View modal
+  const [showView, setShowView] = useState(false);
+  const [viewInvoice, setViewInvoice] = useState<PurchaseInvoice | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+
+  // Delete modal
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [invoiceToDelete, setInvoiceToDelete] =
+    useState<PurchaseInvoice | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Form state
   const [formInvoiceDate, setFormInvoiceDate] = useState(
     () => new Date().toISOString().split("T")[0],
   );
   const [formDueDate, setFormDueDate] = useState("");
-  const [formVendor, setFormVendor] = useState("");
-  const [formWarehouse, setFormWarehouse] = useState("");
+  const [formVendorId, setFormVendorId] = useState("");
+  const [formWarehouseId, setFormWarehouseId] = useState("");
   const [formPaymentTerms, setFormPaymentTerms] = useState("");
   const [formNotes, setFormNotes] = useState("");
-  const [formSyncCalendar, setFormSyncCalendar] = useState(false);
-  const [formItems, setFormItems] = useState<PurchaseItem[]>([
-    {
-      id: "new-1",
-      product: "",
-      qty: 1,
-      unitPrice: 0,
-      discountPercent: 0,
-      tax: 0,
-      total: 0,
-    },
-  ]);
+  const [formItems, setFormItems] = useState<PurchaseItem[]>([emptyItem()]);
+
+  // ─── Data loading ────────────────────────────────────────────────────────
+
+  const loadInvoices = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await api.get<ApiInvoice[]>("/purchase/invoices/all", {
+        params: { page: 1, limit: 1000 },
+      });
+      setInvoices(Array.isArray(data) ? data.map(mapApiInvoice) : []);
+    } catch (err) {
+      const message = errMessage(err, "Couldn't load purchase invoices.");
+      setLoadError(message);
+      showToast(message, "error");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Vendors / warehouses / products for the form selects. Failures are
+  // non-fatal — the relevant dropdown just stays empty.
+  const loadOptions = useCallback(async () => {
+    try {
+      const [v, w, p] = await Promise.allSettled([
+        api.get<ApiVendor[]>("/user/all-user-for-company", {
+          params: { role: "vendor" },
+        }),
+        api.get<ApiWarehouse[]>("/purchase/warehouses/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+        api.get<ApiProduct[]>("/product/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+      ]);
+      if (v.status === "fulfilled" && Array.isArray(v.value))
+        setVendors(v.value);
+      if (w.status === "fulfilled" && Array.isArray(w.value))
+        setWarehouses(w.value);
+      if (p.status === "fulfilled" && Array.isArray(p.value))
+        setProducts(p.value);
+    } catch {
+      /* ignore — dropdowns degrade gracefully */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInvoices();
+    loadOptions();
+  }, [loadInvoices, loadOptions]);
 
   // ─── Sorting ────────────────────────────────────────────────────────────────
 
@@ -418,8 +357,8 @@ export const PurchaseInvoices: React.FC = () => {
       result = result.filter((inv) => inv.status === statusFilter);
     }
     result.sort((a, b) => {
-      let aVal: any = a[sortField];
-      let bVal: any = b[sortField];
+      let aVal: string | number = a[sortField] as string | number;
+      let bVal: string | number = b[sortField] as string | number;
       if (typeof aVal === "string") aVal = aVal.toLowerCase();
       if (typeof bVal === "string") bVal = bVal.toLowerCase();
       if (aVal < bVal) return sortDir === "asc" ? -1 : 1;
@@ -435,7 +374,7 @@ export const PurchaseInvoices: React.FC = () => {
     currentPage * perPage,
   );
 
-  // ─── Status Badge — matches existing pattern ───────────────────────────────
+  // ─── Status Badge ───────────────────────────────────────────────────────────
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -453,84 +392,76 @@ export const PurchaseInvoices: React.FC = () => {
   };
 
   const canEdit = (status: string) => status === "Draft";
-  const canDelete = (status: string) => status === "Draft";
+  const canDelete = (status: string) => status !== "Posted";
+  const canPost = (status: string) => status === "Draft";
 
   // ─── Form Helpers ───────────────────────────────────────────────────────────
 
   const recalcItem = (item: PurchaseItem): PurchaseItem => {
-    const subtotal = item.qty * item.unitPrice;
-    const discountAmt = subtotal * (item.discountPercent / 100);
-    const afterDiscount = subtotal - discountAmt;
-    const taxAmt = afterDiscount * 0.18;
+    const base = item.qty * item.unitPrice;
+    const discountAmt = base * (item.discountPercent / 100);
+    const taxable = base - discountAmt;
+    const taxAmt = taxable * (item.taxPercent / 100);
     return {
       ...item,
-      tax: Math.round(taxAmt * 100) / 100,
-      total: Math.round(afterDiscount * 100) / 100,
+      tax: round2(taxAmt),
+      total: round2(taxable + taxAmt),
     };
   };
 
-  const updateItem = (id: string, field: keyof PurchaseItem, value: any) => {
+  const updateItem = (
+    id: string,
+    field: keyof PurchaseItem,
+    value: string | number,
+  ) => {
     setFormItems((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
-        const updated = { ...item, [field]: value };
-        if (field === "product") {
-          const found = products.find((p) => p.name === value);
-          if (found) updated.unitPrice = found.price;
+        const updated = { ...item, [field]: value } as PurchaseItem;
+        if (field === "productId") {
+          const found = products.find((p) => p._id === value);
+          if (found) {
+            updated.product = found.productName ?? found.name ?? "";
+            updated.sku = found.sku ?? "";
+            const price =
+              found.buyPrice ??
+              found.buy_price ??
+              found.unit_price ??
+              found.sellPrice;
+            if (typeof price === "number") updated.unitPrice = price;
+          }
         }
         return recalcItem(updated);
       }),
     );
   };
 
-  const addItem = () => {
-    setFormItems((prev) => [
-      ...prev,
-      {
-        id: `new-${Date.now()}`,
-        product: "",
-        qty: 1,
-        unitPrice: 0,
-        discountPercent: 0,
-        tax: 0,
-        total: 0,
-      },
-    ]);
-  };
+  const addItem = () => setFormItems((prev) => [...prev, emptyItem()]);
 
-  const removeItem = (id: string) => {
+  const removeItem = (id: string) =>
     setFormItems((prev) =>
       prev.length <= 1 ? prev : prev.filter((i) => i.id !== id),
     );
-  };
 
-  const formSubtotal = formItems.reduce((sum, i) => sum + i.total, 0);
-  const formDiscount = formItems.reduce((sum, i) => {
-    const sub = i.qty * i.unitPrice;
-    return sum + sub * (i.discountPercent / 100);
-  }, 0);
+  const formSubtotal = formItems.reduce(
+    (sum, i) => sum + i.qty * i.unitPrice,
+    0,
+  );
+  const formDiscount = formItems.reduce(
+    (sum, i) => sum + i.qty * i.unitPrice * (i.discountPercent / 100),
+    0,
+  );
   const formTax = formItems.reduce((sum, i) => sum + i.tax, 0);
-  const formTotal = formSubtotal + formTax;
+  const formTotal = formSubtotal - formDiscount + formTax;
 
   const resetForm = () => {
     setFormInvoiceDate(new Date().toISOString().split("T")[0]);
     setFormDueDate("");
-    setFormVendor("");
-    setFormWarehouse("");
+    setFormVendorId("");
+    setFormWarehouseId("");
     setFormPaymentTerms("");
     setFormNotes("");
-    setFormSyncCalendar(false);
-    setFormItems([
-      {
-        id: "new-1",
-        product: "",
-        qty: 1,
-        unitPrice: 0,
-        discountPercent: 0,
-        tax: 0,
-        total: 0,
-      },
-    ]);
+    setFormItems([emptyItem()]);
     setEditingInvoice(null);
   };
 
@@ -541,100 +472,137 @@ export const PurchaseInvoices: React.FC = () => {
   };
 
   const handleEditInvoice = (invoice: PurchaseInvoice) => {
+    if (!canEdit(invoice.status)) {
+      showToast("Only draft invoices can be edited.", "info");
+      return;
+    }
     setEditingInvoice(invoice);
     setFormInvoiceDate(invoice.invoiceDate);
     setFormDueDate(invoice.dueDate);
-    setFormVendor(invoice.vendor);
-    setFormWarehouse(invoice.warehouse);
+    setFormVendorId(invoice.vendorId);
+    setFormWarehouseId(invoice.warehouseId);
     setFormPaymentTerms(invoice.paymentTerms);
     setFormNotes(invoice.notes);
-    setFormSyncCalendar(invoice.syncToCalendar);
     setFormItems(
       invoice.items.length > 0
-        ? invoice.items
-        : [
-            {
-              id: "new-1",
-              product: "",
-              qty: 1,
-              unitPrice: 0,
-              discountPercent: 0,
-              tax: 0,
-              total: 0,
-            },
-          ],
+        ? invoice.items.map((i) => ({ ...i }))
+        : [emptyItem()],
     );
     setIsEditing(true);
     setShowForm(true);
   };
 
-  const handleDeleteInvoice = (id: string) => {
-    if (confirm("Are you sure you want to delete this invoice?")) {
-      setInvoices((prev) => prev.filter((inv) => inv.id !== id));
-      showToast("Invoice deleted!", "success");
+  // ─── View (single) ──────────────────────────────────────────────────────────
+
+  const handleViewInvoice = async (invoice: PurchaseInvoice) => {
+    setViewInvoice(invoice);
+    setShowView(true);
+    setViewLoading(true);
+    try {
+      const data = await api.get<ApiInvoice>(
+        `/purchase/invoices/single/${invoice.id}`,
+      );
+      if (data) setViewInvoice(mapApiInvoice(data));
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't load invoice details."), "error");
+    } finally {
+      setViewLoading(false);
     }
   };
 
-  const handleSaveInvoice = () => {
-    if (!formVendor) {
-      showToast("Please select a vendor", "info");
-      return;
-    }
-    if (!formDueDate) {
-      showToast("Please select a due date", "info");
-      return;
-    }
-    if (!formWarehouse) {
-      showToast("Please select a warehouse", "info");
-      return;
-    }
+  // ─── Create / Update (optionally then Post) ─────────────────────────────────
 
-    if (isEditing && editingInvoice) {
-      setInvoices((prev) =>
-        prev.map((inv) =>
-          inv.id === editingInvoice.id
-            ? {
-                ...inv,
-                invoiceDate: formInvoiceDate,
-                dueDate: formDueDate,
-                vendor: formVendor,
-                warehouse: formWarehouse,
-                paymentTerms: formPaymentTerms,
-                notes: formNotes,
-                syncToCalendar: formSyncCalendar,
-                items: formItems,
-                subtotal: formSubtotal,
-                tax: formTax,
-                totalAmount: formTotal,
-                balance: formTotal,
-              }
-            : inv,
-        ),
-      );
-      showToast("Invoice updated!", "success");
-    } else {
-      const newInvoice: PurchaseInvoice = {
-        id: Date.now().toString(),
-        invoiceNumber: `PI-2026-02-${String(invoices.length + 1).padStart(3, "0")}`,
-        vendor: formVendor,
-        invoiceDate: formInvoiceDate,
-        dueDate: formDueDate,
-        subtotal: formSubtotal,
-        tax: formTax,
-        totalAmount: formTotal,
-        balance: formTotal,
-        status: "Draft",
-        warehouse: formWarehouse,
-        paymentTerms: formPaymentTerms,
-        notes: formNotes,
-        syncToCalendar: formSyncCalendar,
-        items: formItems,
-      };
-      setInvoices((prev) => [newInvoice, ...prev]);
-      showToast("Invoice created!", "success");
+  const buildPayload = () => ({
+    invoice_date: formInvoiceDate,
+    due_date: formDueDate,
+    vendor_id: formVendorId,
+    warehouse_id: formWarehouseId,
+    payment_terms: formPaymentTerms,
+    notes: formNotes,
+    items: formItems.map((i) => ({
+      product_id: i.productId,
+      quantity: i.qty,
+      unit_price: i.unitPrice,
+      discount_percentage: i.discountPercent,
+      tax_percentage: i.taxPercent,
+      taxes: i.taxPercent > 0 ? [{ tax_name: i.taxName, tax_rate: i.taxPercent }] : [],
+    })),
+  });
+
+  const handleSaveInvoice = async (postAfter: boolean) => {
+    if (!formInvoiceDate) return showToast("Please select an invoice date", "info");
+    if (!formDueDate) return showToast("Please select a due date", "info");
+    if (!formVendorId) return showToast("Please select a vendor", "info");
+    if (!formWarehouseId) return showToast("Please select a warehouse", "info");
+    if (!formItems.some((i) => i.productId))
+      return showToast("Please add at least one product", "info");
+
+    const payload = buildPayload();
+    setSaving(true);
+    try {
+      let invoiceId: string;
+      if (isEditing && editingInvoice) {
+        const updated = await api.patch<ApiInvoice>(
+          `/purchase/invoices/edit/${editingInvoice.id}`,
+          payload,
+        );
+        invoiceId = updated?._id ?? editingInvoice.id;
+        showToast("Invoice updated!", "success");
+      } else {
+        const created = await api.post<ApiInvoice>(
+          "/purchase/invoices/create",
+          payload,
+        );
+        invoiceId = created._id;
+        showToast("Invoice created!", "success");
+      }
+
+      if (postAfter && invoiceId) {
+        await api.patch(`/purchase/invoices/post/${invoiceId}`);
+        showToast("Invoice posted!", "success");
+      }
+
+      setShowForm(false);
+      resetForm();
+      await loadInvoices();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't save invoice."), "error");
+    } finally {
+      setSaving(false);
     }
-    setShowForm(false);
-    resetForm();
+  };
+
+  // ─── Post (status update) ─────────────────────────────────────────────────
+
+  const handlePostInvoice = async (invoice: PurchaseInvoice) => {
+    setProcessingId(invoice.id);
+    try {
+      await api.patch(`/purchase/invoices/post/${invoice.id}`);
+      showToast("Invoice posted!", "success");
+      await loadInvoices();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't post invoice."), "error");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // ─── Delete ─────────────────────────────────────────────────────────────────
+
+  const handleDeleteInvoice = async () => {
+    if (!invoiceToDelete) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/purchase/invoices/delete/${invoiceToDelete.id}`);
+      showToast("Invoice deleted!", "success");
+      setShowDeleteModal(false);
+      setInvoiceToDelete(null);
+      await loadInvoices();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't delete invoice."), "error");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   // ─── Sort Header ────────────────────────────────────────────────────────────
@@ -674,7 +642,10 @@ export const PurchaseInvoices: React.FC = () => {
             </button>
             <span>›</span>
             <button
-              onClick={() => navigate("/purchase/purchase-invoice")}
+              onClick={() => {
+                setShowForm(false);
+                resetForm();
+              }}
               className="hover:text-gray-700"
             >
               Purchase Invoices
@@ -751,14 +722,15 @@ export const PurchaseInvoices: React.FC = () => {
                   Vendor <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={formVendor}
-                  onChange={(e) => setFormVendor(e.target.value)}
+                  value={formVendorId}
+                  onChange={(e) => setFormVendorId(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm bg-white"
                 >
                   <option value="">Select Vendor</option>
                   {vendors.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
+                    <option key={v._id} value={v._id}>
+                      {v.name}
+                      {v.email ? ` (${v.email})` : ""}
                     </option>
                   ))}
                 </select>
@@ -768,14 +740,14 @@ export const PurchaseInvoices: React.FC = () => {
                   Warehouse <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={formWarehouse}
-                  onChange={(e) => setFormWarehouse(e.target.value)}
+                  value={formWarehouseId}
+                  onChange={(e) => setFormWarehouseId(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm bg-white"
                 >
                   <option value="">Select Warehouse</option>
                   {warehouses.map((w) => (
-                    <option key={w} value={w}>
-                      {w}
+                    <option key={w._id} value={w._id}>
+                      {(w.name ?? "").trim()}
                     </option>
                   ))}
                 </select>
@@ -783,7 +755,7 @@ export const PurchaseInvoices: React.FC = () => {
             </div>
 
             {/* Row 2 */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Payment Terms
@@ -809,21 +781,6 @@ export const PurchaseInvoices: React.FC = () => {
                 />
               </div>
             </div>
-
-            {/* Sync Toggle */}
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setFormSyncCalendar(!formSyncCalendar)}
-                className={`relative w-11 h-6 rounded-full transition-colors ${formSyncCalendar ? "bg-gray-900" : "bg-gray-300"}`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${formSyncCalendar ? "translate-x-5" : "translate-x-0"}`}
-                />
-              </button>
-              <span className="text-sm text-gray-700">
-                Sync to Google Calendar
-              </span>
-            </div>
           </div>
 
           {/* Purchase Invoice Items Card */}
@@ -846,7 +803,7 @@ export const PurchaseInvoices: React.FC = () => {
 
             {/* Items Table */}
             <div className="overflow-x-auto -mx-4 sm:mx-0">
-              <table className="w-full text-sm border-collapse min-w-[800px]">
+              <table className="w-full text-sm border-collapse min-w-[820px]">
                 <thead>
                   <tr className="border-b border-gray-200">
                     <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">
@@ -861,8 +818,11 @@ export const PurchaseInvoices: React.FC = () => {
                     <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-24">
                       Discount %
                     </th>
+                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-20">
+                      Tax %
+                    </th>
                     <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-24">
-                      Tax
+                      Tax Amt
                     </th>
                     <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-28">
                       Total
@@ -877,16 +837,17 @@ export const PurchaseInvoices: React.FC = () => {
                     <tr key={item.id} className="border-b border-gray-100">
                       <td className="px-2 py-3">
                         <select
-                          value={item.product}
+                          value={item.productId}
                           onChange={(e) =>
-                            updateItem(item.id, "product", e.target.value)
+                            updateItem(item.id, "productId", e.target.value)
                           }
                           className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 bg-white"
                         >
                           <option value="">Select Product</option>
                           {products.map((p) => (
-                            <option key={p.name} value={p.name}>
-                              {p.name}
+                            <option key={p._id} value={p._id}>
+                              {p.productName ?? p.name}
+                              {p.sku ? ` (${p.sku})` : ""}
                             </option>
                           ))}
                         </select>
@@ -938,8 +899,24 @@ export const PurchaseInvoices: React.FC = () => {
                           className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                         />
                       </td>
+                      <td className="px-2 py-3">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={item.taxPercent}
+                          onChange={(e) =>
+                            updateItem(
+                              item.id,
+                              "taxPercent",
+                              parseFloat(e.target.value) || 0,
+                            )
+                          }
+                          className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        />
+                      </td>
                       <td className="px-2 py-3 text-sm text-gray-600">
-                        {item.tax > 0 ? fmtCurrency(item.tax) : "No tax"}
+                        {item.tax > 0 ? fmtCurrency(item.tax) : "—"}
                       </td>
                       <td className="px-2 py-3 text-sm text-gray-900">
                         {fmtCurrency(item.total)}
@@ -980,9 +957,7 @@ export const PurchaseInvoices: React.FC = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Tax</span>
-                    <span className="text-gray-900">
-                      {fmtCurrency(formTax)}
-                    </span>
+                    <span className="text-gray-900">{fmtCurrency(formTax)}</span>
                   </div>
                   <div className="flex justify-between pt-3 border-t border-gray-200">
                     <span className="text-base font-semibold text-gray-900">
@@ -1004,25 +979,26 @@ export const PurchaseInvoices: React.FC = () => {
                 setShowForm(false);
                 resetForm();
               }}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm"
+              disabled={saving}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
-              onClick={() => {
-                showToast("Saved as draft", "success");
-                setShowForm(false);
-                resetForm();
-              }}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm"
+              onClick={() => handleSaveInvoice(false)}
+              disabled={saving}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               Save as Draft
             </button>
             <button
-              onClick={handleSaveInvoice}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+              onClick={() => handleSaveInvoice(true)}
+              disabled={saving}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Save & Send
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              Save &amp; Post
             </button>
           </div>
         </div>
@@ -1039,10 +1015,7 @@ export const PurchaseInvoices: React.FC = () => {
       {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-2">
         <div className="flex items-center gap-2 text-sm text-gray-500">
-          <button
-            onClick={() => navigate("/")}
-            className="hover:text-gray-700"
-          >
+          <button onClick={() => navigate("/")} className="hover:text-gray-700">
             Dashboard
           </button>
           <span>›</span>
@@ -1075,7 +1048,7 @@ export const PurchaseInvoices: React.FC = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by invoice number..."
+                placeholder="Search by invoice number or vendor..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -1085,10 +1058,10 @@ export const PurchaseInvoices: React.FC = () => {
               />
             </div>
             <button
-              onClick={() => showToast("Search applied", "info")}
+              onClick={() => loadInvoices()}
               className="px-4 py-1.5 bg-green-500 text-white text-sm rounded-md hover:bg-green-600"
             >
-              Search
+              Refresh
             </button>
           </div>
 
@@ -1145,7 +1118,7 @@ export const PurchaseInvoices: React.FC = () => {
                       Status
                     </span>
                   </div>
-                  {["All", "Draft", "Paid", "Posted", "Partial"].map((st) => (
+                  {["All", "Draft", "Posted", "Paid", "Partial"].map((st) => (
                     <button
                       key={st}
                       onClick={() => {
@@ -1167,7 +1140,16 @@ export const PurchaseInvoices: React.FC = () => {
 
       {/* Table / Grid */}
       <div className="flex-1 overflow-auto">
-        {viewMode === "list" ? (
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-20 text-gray-500">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm">Loading purchase invoices…</span>
+          </div>
+        ) : loadError ? (
+          <div className="py-16 text-center text-sm text-red-600">
+            {loadError}
+          </div>
+        ) : viewMode === "list" ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[1000px]">
               <thead className="bg-white sticky top-0 z-10 border-b border-gray-200">
@@ -1191,7 +1173,7 @@ export const PurchaseInvoices: React.FC = () => {
                   <tr key={inv.id} className="hover:bg-gray-50">
                     <td className="px-3 py-4">
                       <button
-                        onClick={() => handleEditInvoice(inv)}
+                        onClick={() => handleViewInvoice(inv)}
                         className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
                       >
                         {inv.invoiceNumber}
@@ -1224,6 +1206,13 @@ export const PurchaseInvoices: React.FC = () => {
                     <td className="px-3 py-4">
                       <div className="flex items-center gap-1">
                         <button
+                          onClick={() => handleViewInvoice(inv)}
+                          className="p-1.5 text-yellow-500 hover:text-yellow-600 hover:bg-yellow-50 rounded"
+                          title="View"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => showToast("Email sent", "success")}
                           className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
                           title="Email"
@@ -1231,50 +1220,53 @@ export const PurchaseInvoices: React.FC = () => {
                           <Mail className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() =>
-                            showToast("Downloading PDF...", "info")
-                          }
+                          onClick={() => showToast("Downloading PDF...", "info")}
                           className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
                           title="Download"
                         >
                           <Download className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() =>
-                            showToast("Opening preview...", "info")
-                          }
-                          className="p-1.5 text-yellow-500 hover:text-yellow-600 hover:bg-yellow-50 rounded"
-                          title="View"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        {canEdit(inv.status) && (
-                          <>
-                            <button
-                              onClick={() => showToast("Saving...", "info")}
-                              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                              title="Save"
-                            >
-                              <Save className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleEditInvoice(inv)}
-                              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                              title="Edit"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                        {canDelete(inv.status) && (
+                        {canPost(inv.status) && (
                           <button
-                            onClick={() => handleDeleteInvoice(inv.id)}
-                            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
-                            title="Delete"
+                            onClick={() => handlePostInvoice(inv)}
+                            disabled={processingId === inv.id}
+                            className="p-1.5 text-green-500 hover:text-green-700 hover:bg-green-50 rounded disabled:opacity-50"
+                            title="Post Invoice"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            {processingId === inv.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Send className="w-4 h-4" />
+                            )}
                           </button>
                         )}
+                        <button
+                          onClick={() => handleEditInvoice(inv)}
+                          disabled={!canEdit(inv.status)}
+                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                          title={
+                            canEdit(inv.status)
+                              ? "Edit"
+                              : "Only draft invoices can be edited"
+                          }
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setInvoiceToDelete(inv);
+                            setShowDeleteModal(true);
+                          }}
+                          disabled={!canDelete(inv.status)}
+                          className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-red-400"
+                          title={
+                            canDelete(inv.status)
+                              ? "Delete"
+                              : "Posted invoices can't be deleted"
+                          }
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1298,11 +1290,11 @@ export const PurchaseInvoices: React.FC = () => {
             {paginatedInvoices.map((inv) => (
               <div
                 key={inv.id}
-                className="bg-white rounded-lg border border-gray-200 p-4 hover:bg-gray-50 cursor-pointer"
+                className="bg-white rounded-lg border border-gray-200 p-4 hover:bg-gray-50"
               >
                 <div className="flex items-start justify-between mb-3">
                   <button
-                    onClick={() => handleEditInvoice(inv)}
+                    onClick={() => handleViewInvoice(inv)}
                     className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
                   >
                     {inv.invoiceNumber}
@@ -1333,6 +1325,13 @@ export const PurchaseInvoices: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-1 pt-2 border-t border-gray-100">
                   <button
+                    onClick={() => handleViewInvoice(inv)}
+                    className="p-1.5 text-yellow-500 hover:text-yellow-600 rounded"
+                    title="View"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </button>
+                  <button
                     onClick={() => showToast("Email sent", "success")}
                     className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
                     title="Email"
@@ -1346,31 +1345,47 @@ export const PurchaseInvoices: React.FC = () => {
                   >
                     <Download className="w-4 h-4" />
                   </button>
+                  {canPost(inv.status) && (
+                    <button
+                      onClick={() => handlePostInvoice(inv)}
+                      disabled={processingId === inv.id}
+                      className="p-1.5 text-green-500 hover:text-green-700 rounded disabled:opacity-50"
+                      title="Post Invoice"
+                    >
+                      {processingId === inv.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                    </button>
+                  )}
                   <button
-                    onClick={() => showToast("Opening preview...", "info")}
-                    className="p-1.5 text-yellow-500 hover:text-yellow-600 rounded"
-                    title="View"
+                    onClick={() => handleEditInvoice(inv)}
+                    disabled={!canEdit(inv.status)}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-400"
+                    title={
+                      canEdit(inv.status)
+                        ? "Edit"
+                        : "Only draft invoices can be edited"
+                    }
                   >
-                    <Eye className="w-4 h-4" />
+                    <Edit className="w-4 h-4" />
                   </button>
-                  {canEdit(inv.status) && (
-                    <button
-                      onClick={() => handleEditInvoice(inv)}
-                      className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
-                      title="Edit"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                  )}
-                  {canDelete(inv.status) && (
-                    <button
-                      onClick={() => handleDeleteInvoice(inv.id)}
-                      className="p-1.5 text-red-400 hover:text-red-600 rounded"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => {
+                      setInvoiceToDelete(inv);
+                      setShowDeleteModal(true);
+                    }}
+                    disabled={!canDelete(inv.status)}
+                    className="p-1.5 text-red-400 hover:text-red-600 rounded disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-red-400"
+                    title={
+                      canDelete(inv.status)
+                        ? "Delete"
+                        : "Posted invoices can't be deleted"
+                    }
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -1427,6 +1442,263 @@ export const PurchaseInvoices: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* View Invoice Modal */}
+      {showView && viewInvoice && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+        >
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {viewInvoice.invoiceNumber || "Purchase Invoice"}
+                </h2>
+                <span
+                  className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${getStatusColor(viewInvoice.status)}`}
+                >
+                  {viewInvoice.status}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowView(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {viewLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Loading details…</span>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                    <div>
+                      <p className="text-xs text-gray-500">Vendor</p>
+                      <p className="text-sm text-gray-900">
+                        {viewInvoice.vendor || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Warehouse</p>
+                      <p className="text-sm text-gray-900">
+                        {viewInvoice.warehouse || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Invoice Date</p>
+                      <p className="text-sm text-gray-900">
+                        {viewInvoice.invoiceDate || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Due Date</p>
+                      <p className="text-sm text-gray-900">
+                        {viewInvoice.dueDate || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Payment Terms</p>
+                      <p className="text-sm text-gray-900">
+                        {viewInvoice.paymentTerms || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Notes</p>
+                      <p className="text-sm text-gray-900">
+                        {viewInvoice.notes || "—"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Items */}
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg mb-6">
+                    <table className="w-full text-sm min-w-[640px]">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">
+                            Product
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Qty
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Unit Price
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Disc %
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Tax
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {viewInvoice.items.map((it) => (
+                          <tr key={it.id}>
+                            <td className="px-3 py-2 text-gray-900">
+                              {it.product}
+                              {it.sku ? (
+                                <span className="text-gray-400">
+                                  {" "}
+                                  ({it.sku})
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {it.qty}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {fmtCurrency(it.unitPrice)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {it.discountPercent}%
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {fmtCurrency(it.tax)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-900">
+                              {fmtCurrency(it.total)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Totals */}
+                  <div className="flex justify-end">
+                    <div className="w-full sm:w-72 space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Subtotal</span>
+                        <span className="text-gray-900">
+                          {fmtCurrency(viewInvoice.subtotal)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Discount</span>
+                        <span className="text-red-500">
+                          -{fmtCurrency(viewInvoice.discount)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Tax</span>
+                        <span className="text-gray-900">
+                          {fmtCurrency(viewInvoice.tax)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between pt-2 border-t border-gray-200">
+                        <span className="font-semibold text-gray-900">
+                          Total
+                        </span>
+                        <span className="font-semibold text-gray-900">
+                          {fmtCurrency(viewInvoice.totalAmount)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Paid</span>
+                        <span className="text-gray-900">
+                          {fmtCurrency(viewInvoice.paidAmount)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Balance</span>
+                        <span className="text-gray-900">
+                          {fmtCurrency(viewInvoice.balance)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
+              {!viewLoading && canPost(viewInvoice.status) && (
+                <button
+                  onClick={() => {
+                    setShowView(false);
+                    handlePostInvoice(viewInvoice);
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm inline-flex items-center gap-2"
+                >
+                  <Send className="w-4 h-4" />
+                  Post Invoice
+                </button>
+              )}
+              {!viewLoading && canEdit(viewInvoice.status) && (
+                <button
+                  onClick={() => {
+                    setShowView(false);
+                    handleEditInvoice(viewInvoice);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm inline-flex items-center gap-2"
+                >
+                  <Edit className="w-4 h-4" />
+                  Edit
+                </button>
+              )}
+              <button
+                onClick={() => setShowView(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && invoiceToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+        >
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Delete Invoice
+              </h3>
+              <p className="text-gray-500 mb-6">
+                Are you sure you want to delete{" "}
+                <span className="font-semibold">
+                  {invoiceToDelete.invoiceNumber}
+                </span>
+                ? This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleDeleteInvoice}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+                <button
+                  onClick={() => setShowDeleteModal(false)}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

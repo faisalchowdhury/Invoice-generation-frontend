@@ -32,8 +32,8 @@ import { Team } from "@/pages/Team";
 import { Banking } from "@/pages/Banking";
 
 import { GetHelp } from "@/pages/GetHelp";
-import { SettingsDropdown } from "@/pages/SettingsDropdown";
 import { Companies } from "@/pages/Companies";
+import { SettingsPage } from "@/pages/Settings";
 import { Vendors } from "@/pages/purchase/Vendors";
 import { PurchaseOrder } from "@/pages/purchase/PurchaseOrders";
 import { Bills } from "@/pages/purchase/Bills";
@@ -154,6 +154,9 @@ import MediaLibrary from "@/pages/mediaLibrary/MediaLibrary";
 import Messenger from "@/pages/messenger/Messenger";
 import EmailTemplates from "@/pages/EmailTemplates/EmailTemplates";
 import NotificationTemplates from "@/pages/notificationTemplates/NotificationTemplates";
+import { Plan } from "@/pages/plan/Plan";
+import { CheckoutSuccess } from "@/pages/plan/CheckoutSuccess";
+import { CheckoutCancel } from "@/pages/plan/CheckoutCancel";
 
 // Import your main app layout (update path as needed)
 // import { MainLayout } from "../components/layout/MainLayout";
@@ -591,7 +594,10 @@ export const route = createBrowserRouter([
       {
         path: "performance",
         children: [
-          { index: true, element: <Navigate to="performance-indicators" replace /> },
+          {
+            index: true,
+            element: <Navigate to="performance-indicators" replace />,
+          },
           {
             path: "performance-indicators",
             element: <PerformanceIndicators />,
@@ -822,6 +828,18 @@ export const route = createBrowserRouter([
         path: "companies",
         element: <Companies />,
       },
+      {
+        path: "plan",
+        element: <Plan />,
+      },
+      {
+        path: "checkout/success",
+        element: <CheckoutSuccess />,
+      },
+      {
+        path: "checkout/cancel",
+        element: <CheckoutCancel />,
+      },
 
       // Items
       {
@@ -855,7 +873,7 @@ export const route = createBrowserRouter([
       // Settongs
       {
         path: "settings",
-        element: <SettingsDropdown />,
+        element: <SettingsPage />,
       },
     ],
   },

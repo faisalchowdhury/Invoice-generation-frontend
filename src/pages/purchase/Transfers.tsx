@@ -1,185 +1,129 @@
 /**
- * File: src/pages/transfers/Transfers.tsx
- * Complete Transfers Management page with list view, create/edit modal, filters, pagination
- * Based on existing pattern — matching exact color codes and design style
+ * File: src/pages/purchase/Transfers.tsx
+ * Stock Transfers page — list, create modal, view modal, pagination.
+ *
+ * Backed by the warehouse transfer API:
+ *   GET  /purchase/warehouses/transfer/all?page=&limit=  -> list (paginated envelope)
+ *   GET  /purchase/warehouses/transfer/single/:id        -> one transfer (View modal)
+ *   POST /purchase/warehouses/transfer/create            -> create (applies immediately)
+ *
+ * A transfer is an immediate stock movement (the API returns "Stock transfer
+ * completed successfully"); there is no status, edit or delete endpoint.
+ * Product / warehouse selects load from /product/all and /purchase/warehouses/all.
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { api } from "../../lib/api/client";
+import { ApiError } from "../../lib/api/ApiError";
 import {
   Search,
   Plus,
-  Edit,
-  Trash2,
-  Filter,
+  Eye,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   ArrowUpDown,
   X,
-  CheckCircle,
-  Clock,
   ArrowRight,
   Package,
   Warehouse,
   Calendar,
+  Loader2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Transfer {
   id: string;
+  productId: string;
   product: string;
+  sku: string;
+  fromWarehouseId: string;
   fromWarehouse: string;
+  fromCity: string;
+  toWarehouseId: string;
   toWarehouse: string;
+  toCity: string;
   quantity: number;
-  date: string;
-  status: "Completed" | "Pending" | "In Transit";
-  referenceNumber: string;
+  date: string; // yyyy-mm-dd
   notes: string;
+  stock?: ApiStock;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
-
-const sampleTransfers: Transfer[] = [
-  {
-    id: "1",
-    product: "Face Cream",
-    fromWarehouse: "Southwest Depot",
-    toWarehouse: "West Coast Storage Facility",
-    quantity: 11,
-    date: "2026-06-17",
-    status: "Completed",
-    referenceNumber: "TR-2026-06-017",
-    notes: "",
-  },
-  {
-    id: "2",
-    product: "Watch",
-    fromWarehouse: "Mid-Atlantic Warehouse",
-    toWarehouse: "East Coast Logistics Hub",
-    quantity: 10,
-    date: "2026-06-06",
-    status: "Completed",
-    referenceNumber: "TR-2026-06-006",
-    notes: "",
-  },
-  {
-    id: "3",
-    product: "Coffee",
-    fromWarehouse: "Southern Distribution Hub",
-    toWarehouse: "Central Distribution Center",
-    quantity: 18,
-    date: "2026-05-31",
-    status: "In Transit",
-    referenceNumber: "TR-2026-05-031",
-    notes: "",
-  },
-  {
-    id: "4",
-    product: "Raspberry",
-    fromWarehouse: "Great Lakes Storage",
-    toWarehouse: "Florida Fulfillment Center",
-    quantity: 25,
-    date: "2026-05-25",
-    status: "Completed",
-    referenceNumber: "TR-2026-05-025",
-    notes: "",
-  },
-  {
-    id: "5",
-    product: "Ink Cartridge",
-    fromWarehouse: "Midwest Regional Warehouse",
-    toWarehouse: "Mountain Region Warehouse",
-    quantity: 5,
-    date: "2026-05-15",
-    status: "Completed",
-    referenceNumber: "TR-2026-05-015",
-    notes: "",
-  },
-  {
-    id: "6",
-    product: "Football",
-    fromWarehouse: "West Coast Storage Facility",
-    toWarehouse: "Florida Fulfillment Center",
-    quantity: 10,
-    date: "2026-05-05",
-    status: "Completed",
-    referenceNumber: "TR-2026-05-005",
-    notes: "",
-  },
-  {
-    id: "7",
-    product: "Car Engine Oil",
-    fromWarehouse: "Central Distribution Center",
-    toWarehouse: "Southwest Depot",
-    quantity: 8,
-    date: "2026-04-16",
-    status: "Completed",
-    referenceNumber: "TR-2026-04-016",
-    notes: "",
-  },
-  {
-    id: "8",
-    product: "Yoga Mat",
-    fromWarehouse: "Northeast Storage Complex",
-    toWarehouse: "Great Lakes Storage",
-    quantity: 10,
-    date: "2026-04-02",
-    status: "Pending",
-    referenceNumber: "TR-2026-04-002",
-    notes: "",
-  },
-  {
-    id: "9",
-    product: "Apple",
-    fromWarehouse: "Mountain Region Warehouse",
-    toWarehouse: "West Coast Storage Facility",
-    quantity: 5,
-    date: "2026-03-21",
-    status: "Completed",
-    referenceNumber: "TR-2026-03-021",
-    notes: "",
-  },
-];
-
-const warehouses = [
-  "Southwest Depot",
-  "West Coast Storage Facility",
-  "Mid-Atlantic Warehouse",
-  "East Coast Logistics Hub",
-  "Southern Distribution Hub",
-  "Central Distribution Center",
-  "Great Lakes Storage",
-  "Florida Fulfillment Center",
-  "Midwest Regional Warehouse",
-  "Mountain Region Warehouse",
-  "Northeast Storage Complex",
-];
-
-const products = [
-  "Face Cream",
-  "Watch",
-  "Coffee",
-  "Raspberry",
-  "Ink Cartridge",
-  "Football",
-  "Car Engine Oil",
-  "Yoga Mat",
-  "Apple",
-  "Laptop",
-  "Mobile Phone",
-  "Headphones",
-  "Smart Watch",
-  "Tablet",
-  "Printer",
-  "Monitor",
-  "Keyboard",
-  "Mouse",
-];
+interface ApiStock {
+  onHandStock?: number;
+  committedStock?: number;
+  availableForSale?: number;
+  toBeInvoiced?: number;
+  toBeBilled?: number;
+}
+interface ApiProductRef {
+  _id: string;
+  productName?: string;
+  name?: string;
+  sku?: string;
+  stock?: ApiStock;
+}
+interface ApiWarehouseRef {
+  _id: string;
+  name?: string;
+  city?: string;
+}
+interface ApiTransfer {
+  _id: string;
+  product_id: ApiProductRef | string;
+  from_warehouse: ApiWarehouseRef | string;
+  to_warehouse: ApiWarehouseRef | string;
+  quantity: number;
+  date: string;
+  notes?: string;
+}
+interface ApiProduct {
+  _id: string;
+  productName?: string;
+  name?: string;
+  sku?: string;
+}
+interface ApiWarehouse {
+  _id: string;
+  name: string;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const toDateInput = (iso?: string) => (iso ? iso.slice(0, 10) : "");
+const errMessage = (err: unknown, fallback: string) =>
+  err instanceof ApiError && err.message ? err.message : fallback;
+
+const productName = (ref: ApiProductRef | string | undefined): string =>
+  typeof ref === "object" && ref ? (ref.productName ?? ref.name ?? "") : "";
+const productSku = (ref: ApiProductRef | string | undefined): string =>
+  typeof ref === "object" && ref ? (ref.sku ?? "") : "";
+const whName = (ref: ApiWarehouseRef | string | undefined): string =>
+  typeof ref === "object" && ref ? (ref.name ?? "").trim() : "";
+const whCity = (ref: ApiWarehouseRef | string | undefined): string =>
+  typeof ref === "object" && ref ? (ref.city ?? "") : "";
+const refId = (ref: { _id: string } | string | undefined): string =>
+  typeof ref === "object" && ref ? ref._id : (ref ?? "");
+
+const mapApiTransfer = (t: ApiTransfer): Transfer => ({
+  id: t._id,
+  productId: refId(t.product_id),
+  product: productName(t.product_id),
+  sku: productSku(t.product_id),
+  fromWarehouseId: refId(t.from_warehouse),
+  fromWarehouse: whName(t.from_warehouse),
+  fromCity: whCity(t.from_warehouse),
+  toWarehouseId: refId(t.to_warehouse),
+  toWarehouse: whName(t.to_warehouse),
+  toCity: whCity(t.to_warehouse),
+  quantity: t.quantity ?? 0,
+  date: toDateInput(t.date),
+  notes: t.notes ?? "",
+  stock:
+    typeof t.product_id === "object" ? t.product_id.stock : undefined,
+});
 
 type SortField =
   | "product"
@@ -194,41 +138,82 @@ type SortDir = "asc" | "desc";
 export const Transfers: React.FC = () => {
   const navigate = useNavigate();
 
-  const [transfers, setTransfers] = useState<Transfer[]>(sampleTransfers);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
   const [sortField, setSortField] = useState<SortField>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [showFilters, setShowFilters] = useState(false);
 
-  // Modal states
+  // Create modal
   const [showModal, setShowModal] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editingTransfer, setEditingTransfer] = useState<Transfer | null>(null);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [transferToDelete, setTransferToDelete] = useState<Transfer | null>(
-    null,
-  );
+  const [saving, setSaving] = useState(false);
+
+  // View modal
+  const [showView, setShowView] = useState(false);
+  const [viewTransfer, setViewTransfer] = useState<Transfer | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+
+  // Dropdown sources
+  const [products, setProducts] = useState<ApiProduct[]>([]);
+  const [warehouses, setWarehouses] = useState<ApiWarehouse[]>([]);
 
   // Form state
   const [formData, setFormData] = useState({
-    product: "",
-    fromWarehouse: "",
-    toWarehouse: "",
+    productId: "",
+    fromWarehouseId: "",
+    toWarehouseId: "",
     quantity: 1,
     date: new Date().toISOString().split("T")[0],
-    status: "Pending" as "Completed" | "Pending" | "In Transit",
     notes: "",
   });
 
-  // Filtered products based on fromWarehouse selection (mock)
-  const getAvailableProducts = () => {
-    if (!formData.fromWarehouse) {
-      return [];
+  // ─── Data loading ────────────────────────────────────────────────────────
+
+  const loadTransfers = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await api.get<ApiTransfer[]>(
+        "/purchase/warehouses/transfer/all",
+        { params: { page: 1, limit: 1000 } },
+      );
+      setTransfers(Array.isArray(data) ? data.map(mapApiTransfer) : []);
+    } catch (err) {
+      const message = errMessage(err, "Couldn't load transfers.");
+      setLoadError(message);
+      showToast(message, "error");
+    } finally {
+      setLoading(false);
     }
-    return products;
-  };
+  }, []);
+
+  const loadOptions = useCallback(async () => {
+    try {
+      const [p, w] = await Promise.allSettled([
+        api.get<ApiProduct[]>("/product/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+        api.get<ApiWarehouse[]>("/purchase/warehouses/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+      ]);
+      if (p.status === "fulfilled" && Array.isArray(p.value))
+        setProducts(p.value);
+      if (w.status === "fulfilled" && Array.isArray(w.value))
+        setWarehouses(w.value);
+    } catch {
+      /* dropdowns degrade gracefully */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTransfers();
+    loadOptions();
+  }, [loadTransfers, loadOptions]);
 
   // ─── Sorting ────────────────────────────────────────────────────────────────
 
@@ -253,12 +238,12 @@ export const Transfers: React.FC = () => {
           t.product.toLowerCase().includes(q) ||
           t.fromWarehouse.toLowerCase().includes(q) ||
           t.toWarehouse.toLowerCase().includes(q) ||
-          t.referenceNumber.toLowerCase().includes(q),
+          t.sku.toLowerCase().includes(q),
       );
     }
     result.sort((a, b) => {
-      let aVal: any = a[sortField];
-      let bVal: any = b[sortField];
+      let aVal: string | number = a[sortField] as string | number;
+      let bVal: string | number = b[sortField] as string | number;
       if (typeof aVal === "string") aVal = aVal.toLowerCase();
       if (typeof bVal === "string") bVal = bVal.toLowerCase();
       if (aVal < bVal) return sortDir === "asc" ? -1 : 1;
@@ -274,145 +259,73 @@ export const Transfers: React.FC = () => {
     currentPage * perPage,
   );
 
-  // ─── Status Badge ───────────────────────────────────────────────────────────
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Completed":
-        return "bg-green-100 text-green-700 border border-green-200";
-      case "Pending":
-        return "bg-yellow-100 text-yellow-700 border border-yellow-200";
-      case "In Transit":
-        return "bg-blue-100 text-blue-700 border border-blue-200";
-      default:
-        return "bg-gray-100 text-gray-700 border border-gray-200";
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    if (status === "Completed") {
-      return <CheckCircle className="w-3 h-3" />;
-    }
-    if (status === "Pending") {
-      return <Clock className="w-3 h-3" />;
-    }
-    return <Package className="w-3 h-3" />;
-  };
-
   // ─── Form Helpers ───────────────────────────────────────────────────────────
 
   const resetForm = () => {
     setFormData({
-      product: "",
-      fromWarehouse: "",
-      toWarehouse: "",
+      productId: "",
+      fromWarehouseId: "",
+      toWarehouseId: "",
       quantity: 1,
       date: new Date().toISOString().split("T")[0],
-      status: "Pending",
       notes: "",
     });
-    setEditingTransfer(null);
   };
 
   const openCreateModal = () => {
     resetForm();
-    setIsEditing(false);
     setShowModal(true);
   };
 
-  const openEditModal = (transfer: Transfer) => {
-    setEditingTransfer(transfer);
-    setFormData({
-      product: transfer.product,
-      fromWarehouse: transfer.fromWarehouse,
-      toWarehouse: transfer.toWarehouse,
-      quantity: transfer.quantity,
-      date: transfer.date,
-      status: transfer.status,
-      notes: transfer.notes,
-    });
-    setIsEditing(true);
-    setShowModal(true);
+  const handleSaveTransfer = async () => {
+    if (!formData.fromWarehouseId)
+      return showToast("Please select the source warehouse", "info");
+    if (!formData.toWarehouseId)
+      return showToast("Please select the destination warehouse", "info");
+    if (formData.fromWarehouseId === formData.toWarehouseId)
+      return showToast("From and To warehouses cannot be the same", "info");
+    if (!formData.productId) return showToast("Please select a product", "info");
+    if (!formData.quantity || formData.quantity < 1)
+      return showToast("Please enter a valid quantity", "info");
+    if (!formData.date) return showToast("Please select a date", "info");
+
+    const payload = {
+      product_id: formData.productId,
+      from_warehouse: formData.fromWarehouseId,
+      to_warehouse: formData.toWarehouseId,
+      quantity: formData.quantity,
+      date: formData.date,
+      notes: formData.notes,
+    };
+
+    setSaving(true);
+    try {
+      await api.post("/purchase/warehouses/transfer/create", payload);
+      showToast("Stock transfer completed successfully!", "success");
+      setShowModal(false);
+      resetForm();
+      await loadTransfers();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't create transfer."), "error");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const openDeleteModal = (transfer: Transfer) => {
-    setTransferToDelete(transfer);
-    setShowDeleteModal(true);
-  };
-
-  const handleSaveTransfer = () => {
-    if (!formData.fromWarehouse) {
-      showToast("Please select from warehouse", "info");
-      return;
-    }
-    if (!formData.toWarehouse) {
-      showToast("Please select to warehouse", "info");
-      return;
-    }
-    if (formData.fromWarehouse === formData.toWarehouse) {
-      showToast("From warehouse and To warehouse cannot be the same", "info");
-      return;
-    }
-    if (!formData.product) {
-      showToast("Please select a product", "info");
-      return;
-    }
-    if (!formData.quantity || formData.quantity < 1) {
-      showToast("Please enter a valid quantity", "info");
-      return;
-    }
-
-    const referenceNumber = `TR-${formData.date}-${String(Math.floor(Math.random() * 1000)).padStart(3, "0")}`;
-
-    if (isEditing && editingTransfer) {
-      setTransfers((prev) =>
-        prev.map((t) =>
-          t.id === editingTransfer.id
-            ? {
-                ...t,
-                product: formData.product,
-                fromWarehouse: formData.fromWarehouse,
-                toWarehouse: formData.toWarehouse,
-                quantity: formData.quantity,
-                date: formData.date,
-                status: formData.status,
-                notes: formData.notes,
-              }
-            : t,
-        ),
+  const handleViewTransfer = async (transfer: Transfer) => {
+    setViewTransfer(transfer);
+    setShowView(true);
+    setViewLoading(true);
+    try {
+      const data = await api.get<ApiTransfer>(
+        `/purchase/warehouses/transfer/single/${transfer.id}`,
       );
-      showToast("Transfer updated successfully!", "success");
-    } else {
-      const newTransfer: Transfer = {
-        id: Date.now().toString(),
-        product: formData.product,
-        fromWarehouse: formData.fromWarehouse,
-        toWarehouse: formData.toWarehouse,
-        quantity: formData.quantity,
-        date: formData.date,
-        status: formData.status,
-        referenceNumber: referenceNumber,
-        notes: formData.notes,
-      };
-      setTransfers((prev) => [newTransfer, ...prev]);
-      showToast("Transfer created successfully!", "success");
+      if (data) setViewTransfer(mapApiTransfer(data));
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't load transfer details."), "error");
+    } finally {
+      setViewLoading(false);
     }
-    setShowModal(false);
-    resetForm();
-  };
-
-  const handleDeleteTransfer = () => {
-    if (transferToDelete) {
-      setTransfers((prev) => prev.filter((t) => t.id !== transferToDelete.id));
-      showToast("Transfer deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setTransferToDelete(null);
-    }
-  };
-
-  // Handle from warehouse change
-  const handleFromWarehouseChange = (value: string) => {
-    setFormData({ ...formData, fromWarehouse: value, product: "" });
   };
 
   // ─── Sort Header ────────────────────────────────────────────────────────────
@@ -443,10 +356,7 @@ export const Transfers: React.FC = () => {
       {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-2">
         <div className="flex items-center gap-2 text-sm text-gray-500">
-          <button
-            onClick={() => navigate("/")}
-            className="hover:text-gray-700"
-          >
+          <button onClick={() => navigate("/")} className="hover:text-gray-700">
             Dashboard
           </button>
           <span>›</span>
@@ -479,7 +389,7 @@ export const Transfers: React.FC = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search transfers..."
+                placeholder="Search by product or warehouse..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -489,10 +399,10 @@ export const Transfers: React.FC = () => {
               />
             </div>
             <button
-              onClick={() => showToast("Search applied", "info")}
+              onClick={() => loadTransfers()}
               className="px-4 py-1.5 bg-green-500 text-white text-sm rounded-md hover:bg-green-600"
             >
-              Search
+              Refresh
             </button>
           </div>
 
@@ -512,40 +422,6 @@ export const Transfers: React.FC = () => {
               <option value={25}>25 per page</option>
               <option value={50}>50 per page</option>
             </select>
-
-            {/* Filters */}
-            <div className="relative">
-              <button
-                onClick={() => setShowFilters(!showFilters)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-50"
-              >
-                <Filter className="w-4 h-4 text-gray-500" />
-                <span className="text-gray-700">Filters</span>
-                <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-              </button>
-
-              {showFilters && (
-                <div className="absolute right-0 top-10 w-48 bg-white rounded-md shadow-lg border border-gray-200 py-1 z-50">
-                  <div className="px-3 pb-1.5 mb-1 border-b border-gray-100">
-                    <span className="text-xs font-medium text-gray-500">
-                      Status
-                    </span>
-                  </div>
-                  {["All", "Completed", "Pending", "In Transit"].map((st) => (
-                    <button
-                      key={st}
-                      onClick={() => {
-                        // Filter logic would go here
-                        setShowFilters(false);
-                      }}
-                      className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 text-gray-700"
-                    >
-                      {st}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </div>
@@ -562,79 +438,83 @@ export const Transfers: React.FC = () => {
                 <SortHeader field="quantity" label="Quantity" />
                 <SortHeader field="date" label="Date" />
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">
-                  Status
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
-              {paginatedTransfers.map((transfer) => (
-                <tr key={transfer.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Package className="w-4 h-4 text-gray-400" />
-                      <span className="font-medium text-gray-900">
-                        {transfer.product}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <Warehouse className="w-3.5 h-3.5 text-gray-400" />
-                      {transfer.fromWarehouse}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
-                      {transfer.toWarehouse}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-gray-900 font-medium">
-                    {transfer.quantity}
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">{transfer.date}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
-                        transfer.status,
-                      )}`}
-                    >
-                      {getStatusIcon(transfer.status)}
-                      {transfer.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => openEditModal(transfer)}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
-                        title="Edit"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => openDeleteModal(transfer)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-16">
+                    <div className="flex items-center justify-center gap-2 text-gray-500">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span className="text-sm">Loading transfers…</span>
                     </div>
                   </td>
                 </tr>
-              ))}
-              {paginatedTransfers.length === 0 && (
+              ) : loadError ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={6}
+                    className="px-4 py-12 text-center text-sm text-red-600"
+                  >
+                    {loadError}
+                  </td>
+                </tr>
+              ) : paginatedTransfers.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
                     className="px-4 py-12 text-center text-gray-500"
                   >
                     No transfers found.
                   </td>
                 </tr>
+              ) : (
+                paginatedTransfers.map((transfer) => (
+                  <tr key={transfer.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Package className="w-4 h-4 text-gray-400" />
+                        <span className="font-medium text-gray-900">
+                          {transfer.product}
+                        </span>
+                        {transfer.sku && (
+                          <span className="text-xs text-gray-400">
+                            ({transfer.sku})
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <Warehouse className="w-3.5 h-3.5 text-gray-400" />
+                        {transfer.fromWarehouse}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
+                        {transfer.toWarehouse}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-900 font-medium">
+                      {transfer.quantity}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">{transfer.date}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleViewTransfer(transfer)}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                          title="View"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -686,7 +566,7 @@ export const Transfers: React.FC = () => {
         </div>
       </div>
 
-      {/* Create/Edit Transfer Modal - Transparent Background */}
+      {/* Create Transfer Modal - Transparent Background */}
       {showModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
@@ -697,12 +577,10 @@ export const Transfers: React.FC = () => {
             <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">
-                  {isEditing ? "Edit Transfer" : "Create Transfer"}
+                  Create Transfer
                 </h2>
                 <p className="text-sm text-gray-500 mt-0.5">
-                  {isEditing
-                    ? "Update transfer information"
-                    : "Create a new stock transfer between warehouses"}
+                  Move stock between warehouses
                 </p>
               </div>
               <button
@@ -721,14 +599,19 @@ export const Transfers: React.FC = () => {
                     From Warehouse <span className="text-red-500">*</span>
                   </label>
                   <select
-                    value={formData.fromWarehouse}
-                    onChange={(e) => handleFromWarehouseChange(e.target.value)}
+                    value={formData.fromWarehouseId}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        fromWarehouseId: e.target.value,
+                      })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
                   >
                     <option value="">Select warehouse</option>
                     {warehouses.map((w) => (
-                      <option key={w} value={w}>
-                        {w}
+                      <option key={w._id} value={w._id}>
+                        {(w.name ?? "").trim()}
                       </option>
                     ))}
                   </select>
@@ -739,26 +622,20 @@ export const Transfers: React.FC = () => {
                     To Warehouse <span className="text-red-500">*</span>
                   </label>
                   <select
-                    value={formData.toWarehouse}
+                    value={formData.toWarehouseId}
                     onChange={(e) =>
-                      setFormData({ ...formData, toWarehouse: e.target.value })
+                      setFormData({ ...formData, toWarehouseId: e.target.value })
                     }
-                    disabled={!formData.fromWarehouse}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
                   >
-                    <option value="">
-                      {formData.fromWarehouse
-                        ? "Select warehouse"
-                        : "Select from warehouse first"}
-                    </option>
-                    {formData.fromWarehouse &&
-                      warehouses
-                        .filter((w) => w !== formData.fromWarehouse)
-                        .map((w) => (
-                          <option key={w} value={w}>
-                            {w}
-                          </option>
-                        ))}
+                    <option value="">Select warehouse</option>
+                    {warehouses
+                      .filter((w) => w._id !== formData.fromWarehouseId)
+                      .map((w) => (
+                        <option key={w._id} value={w._id}>
+                          {(w.name ?? "").trim()}
+                        </option>
+                      ))}
                   </select>
                 </div>
 
@@ -767,21 +644,17 @@ export const Transfers: React.FC = () => {
                     Product <span className="text-red-500">*</span>
                   </label>
                   <select
-                    value={formData.product}
+                    value={formData.productId}
                     onChange={(e) =>
-                      setFormData({ ...formData, product: e.target.value })
+                      setFormData({ ...formData, productId: e.target.value })
                     }
-                    disabled={!formData.fromWarehouse}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
                   >
-                    <option value="">
-                      {formData.fromWarehouse
-                        ? "Select product"
-                        : "Select from warehouse first"}
-                    </option>
-                    {getAvailableProducts().map((p) => (
-                      <option key={p} value={p}>
-                        {p}
+                    <option value="">Select product</option>
+                    {products.map((p) => (
+                      <option key={p._id} value={p._id}>
+                        {p.productName ?? p.name}
+                        {p.sku ? ` (${p.sku})` : ""}
                       </option>
                     ))}
                   </select>
@@ -824,29 +697,6 @@ export const Transfers: React.FC = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Status
-                  </label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        status: e.target.value as
-                          | "Completed"
-                          | "Pending"
-                          | "In Transit",
-                      })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-                  >
-                    <option value="Pending">Pending</option>
-                    <option value="In Transit">In Transit</option>
-                    <option value="Completed">Completed</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Notes
                   </label>
                   <textarea
@@ -866,56 +716,161 @@ export const Transfers: React.FC = () => {
             <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
               <button
                 onClick={() => setShowModal(false)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm"
+                disabled={saving}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveTransfer}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+                disabled={saving}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isEditing ? "Save Changes" : "Create"}
+                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                {saving ? "Transferring…" : "Create"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && transferToDelete && (
+      {/* View Transfer Modal */}
+      {showView && viewTransfer && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
           style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
         >
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-            <div className="p-6 text-center">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
-                <Trash2 className="w-8 h-8 text-red-600" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                Delete Transfer
-              </h3>
-              <p className="text-gray-500 mb-6">
-                Are you sure you want to delete this transfer for{" "}
-                <span className="font-semibold">
-                  {transferToDelete.product}
-                </span>
-                ? This action cannot be undone.
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={handleDeleteTransfer}
-                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
-                >
-                  Delete
-                </button>
-                <button
-                  onClick={() => setShowDeleteModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Transfer Details
+              </h2>
+              <button
+                onClick={() => setShowView(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {viewLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Loading details…</span>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  {/* Product */}
+                  <div className="flex items-center gap-3 pb-4 border-b border-gray-100">
+                    <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center">
+                      <Package className="w-6 h-6 text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-semibold text-gray-900">
+                        {viewTransfer.product}
+                      </h3>
+                      {viewTransfer.sku && (
+                        <p className="text-xs text-gray-500">
+                          SKU: {viewTransfer.sku}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Movement */}
+                  <div className="flex items-center justify-between gap-3 bg-gray-50 rounded-lg p-4">
+                    <div className="text-center flex-1">
+                      <p className="text-xs text-gray-500">From</p>
+                      <p className="text-sm font-medium text-gray-900">
+                        {viewTransfer.fromWarehouse || "—"}
+                      </p>
+                      {viewTransfer.fromCity && (
+                        <p className="text-xs text-gray-400">
+                          {viewTransfer.fromCity}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-center text-blue-600">
+                      <ArrowRight className="w-5 h-5" />
+                      <span className="text-xs font-semibold mt-1">
+                        {viewTransfer.quantity}
+                      </span>
+                    </div>
+                    <div className="text-center flex-1">
+                      <p className="text-xs text-gray-500">To</p>
+                      <p className="text-sm font-medium text-gray-900">
+                        {viewTransfer.toWarehouse || "—"}
+                      </p>
+                      {viewTransfer.toCity && (
+                        <p className="text-xs text-gray-400">
+                          {viewTransfer.toCity}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Meta */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-500">Quantity</p>
+                      <p className="text-sm text-gray-900">
+                        {viewTransfer.quantity}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Date</p>
+                      <p className="text-sm text-gray-900">
+                        {viewTransfer.date || "—"}
+                      </p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-500">Notes</p>
+                      <p className="text-sm text-gray-900">
+                        {viewTransfer.notes || "—"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Stock snapshot */}
+                  {viewTransfer.stock && (
+                    <div className="pt-4 border-t border-gray-100">
+                      <p className="text-xs font-medium text-gray-500 mb-2">
+                        Product Stock
+                      </p>
+                      <div className="grid grid-cols-3 gap-3 text-center">
+                        <div className="bg-gray-50 rounded-lg p-2">
+                          <p className="text-xs text-gray-500">On Hand</p>
+                          <p className="text-sm font-semibold text-gray-900">
+                            {viewTransfer.stock.onHandStock ?? "—"}
+                          </p>
+                        </div>
+                        <div className="bg-gray-50 rounded-lg p-2">
+                          <p className="text-xs text-gray-500">Committed</p>
+                          <p className="text-sm font-semibold text-gray-900">
+                            {viewTransfer.stock.committedStock ?? "—"}
+                          </p>
+                        </div>
+                        <div className="bg-gray-50 rounded-lg p-2">
+                          <p className="text-xs text-gray-500">Available</p>
+                          <p className="text-sm font-semibold text-gray-900">
+                            {viewTransfer.stock.availableForSale ?? "—"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end">
+              <button
+                onClick={() => setShowView(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

@@ -1,20 +1,33 @@
 /**
  * File: src/pages/purchase/PurchaseReturns.tsx
- * Complete Purchase Returns page with list view, create/edit form, filters, pagination
- * Based on existing SalesInvoices pattern — matching exact color codes and design style
+ * Purchase Returns page — list, create form, view modal, approve / complete / delete.
+ *
+ * Backed by the purchase/returns API:
+ *   GET    /purchase/returns/all?page=&limit=   -> list (paginated envelope)
+ *   GET    /purchase/returns/single/:id         -> one return (View modal)
+ *   POST   /purchase/returns/create             -> create (status: draft)
+ *   PATCH  /purchase/returns/approve/:id         -> approve (auto-creates a debit note)
+ *   PATCH  /purchase/returns/complete/:id        -> complete
+ *   DELETE /purchase/returns/delete/:id          -> delete (draft only)
+ *
+ * A return is raised against a posted purchase invoice. Selecting the original
+ * invoice (GET /purchase/invoices/single/:id) supplies the vendor, warehouse and
+ * the returnable line items (each carries its original_invoice_item_id).
+ * Warehouses come from /purchase/warehouses/all; invoices from
+ * /purchase/invoices/all.
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { api } from "../../lib/api/client";
+import { ApiError } from "../../lib/api/ApiError";
 import {
   Search,
   Plus,
-  Edit,
   Trash2,
   Download,
   Eye,
-  Save,
   Calendar,
   ChevronLeft,
   ChevronRight,
@@ -26,15 +39,21 @@ import {
   ArrowLeft,
   RefreshCw,
   Check,
-  Mail,
+  CheckCheck,
+  Loader2,
+  X,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ReturnItem {
   id: string;
+  productId: string;
   product: string;
-  qty: number;
+  sku: string;
+  invoiceItemId: string; // original_invoice_item_id
+  originalQty: number;
+  qty: number; // return_quantity
   unitPrice: number;
   total: number;
 }
@@ -42,216 +61,147 @@ interface ReturnItem {
 interface PurchaseReturn {
   id: string;
   returnNumber: string;
+  vendorId: string;
   vendor: string;
+  warehouseId: string;
   warehouse: string;
-  returnDate: string;
-  totalAmount: number;
-  items: ReturnItem[];
-  status: "Draft" | "Completed" | "Approved" | "Rejected";
+  originalInvoiceId: string;
   originalInvoice: string;
-  returnReason: string;
+  returnDate: string; // yyyy-mm-dd
+  reason: string;
   notes: string;
+  status: string; // "Draft" | "Approved" | "Completed" | "Rejected"
+  subtotal: number;
+  tax: number;
+  discount: number;
+  totalAmount: number;
+  debitNoteId: string;
+  items: ReturnItem[];
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
-
-const sampleReturns: PurchaseReturn[] = [
-  {
-    id: "1",
-    returnNumber: "PR-2026-02-011",
-    vendor: "Alex Vendor",
-    warehouse: "Central Distribution Center",
-    returnDate: "2026-05-25",
-    totalAmount: 78.0,
-    items: [{ id: "i1", product: "Shoes", qty: 2, unitPrice: 39, total: 78 }],
-    status: "Approved",
-    originalInvoice: "PI-2026-02-015",
-    returnReason: "Defective",
-    notes: "",
-  },
-  {
-    id: "2",
-    returnNumber: "PR-2026-02-010",
-    vendor: "Prime Materials Ltd",
-    warehouse: "Texas Distribution Point",
-    returnDate: "2026-05-05",
-    totalAmount: 108.75,
-    items: [
-      {
-        id: "i1",
-        product: "Car Batteries",
-        qty: 1,
-        unitPrice: 108.75,
-        total: 108.75,
-      },
-    ],
-    status: "Completed",
-    originalInvoice: "PI-2026-02-014",
-    returnReason: "Defective",
-    notes: "",
-  },
-  {
-    id: "3",
-    returnNumber: "PR-2026-02-009",
-    vendor: "Global Supplies Co",
-    warehouse: "Midwest Regional Warehouse",
-    returnDate: "2026-04-15",
-    totalAmount: 23.4,
-    items: [
-      {
-        id: "i1",
-        product: "Soft Drink",
-        qty: 30,
-        unitPrice: 0.78,
-        total: 23.4,
-      },
-    ],
-    status: "Draft",
-    originalInvoice: "PI-2026-02-013",
-    returnReason: "Damaged",
-    notes: "",
-  },
-  {
-    id: "4",
-    returnNumber: "PR-2026-02-008",
-    vendor: "Tech Solutions Inc",
-    warehouse: "West Coast Storage Facility",
-    returnDate: "2026-04-05",
-    totalAmount: 65.0,
-    items: [{ id: "i1", product: "Rice", qty: 20, unitPrice: 3.25, total: 65 }],
-    status: "Approved",
-    originalInvoice: "PI-2026-02-012",
-    returnReason: "Wrong Item",
-    notes: "",
-  },
-  {
-    id: "5",
-    returnNumber: "PR-2026-02-007",
-    vendor: "Alex Vendor",
-    warehouse: "Central Distribution Center",
-    returnDate: "2026-03-20",
-    totalAmount: 35.1,
-    items: [
-      { id: "i1", product: "Shampoo", qty: 3, unitPrice: 11.7, total: 35.1 },
-    ],
-    status: "Completed",
-    originalInvoice: "PI-2026-02-011",
-    returnReason: "Defective",
-    notes: "",
-  },
-  {
-    id: "6",
-    returnNumber: "PR-2026-02-006",
-    vendor: "Quality Parts Corp",
-    warehouse: "Northeast Storage Complex",
-    returnDate: "2026-03-15",
-    totalAmount: 59.0,
-    items: [
-      {
-        id: "i1",
-        product: "Resistance Band",
-        qty: 5,
-        unitPrice: 11.8,
-        total: 59,
-      },
-    ],
-    status: "Draft",
-    originalInvoice: "PI-2026-02-010",
-    returnReason: "Wrong Item",
-    notes: "",
-  },
-  {
-    id: "7",
-    returnNumber: "PR-2026-02-005",
-    vendor: "Elite Vendors Group",
-    warehouse: "Florida Fulfillment Center",
-    returnDate: "2026-03-10",
-    totalAmount: 59.0,
-    items: [
-      { id: "i1", product: "Wall Decor", qty: 2, unitPrice: 29.5, total: 59 },
-    ],
-    status: "Approved",
-    originalInvoice: "PI-2026-02-009",
-    returnReason: "Damaged",
-    notes: "",
-  },
-  {
-    id: "8",
-    returnNumber: "PR-2026-02-004",
-    vendor: "Prime Materials Ltd",
-    warehouse: "Texas Distribution Point",
-    returnDate: "2026-02-28",
-    totalAmount: 130.5,
-    items: [
-      { id: "i1", product: "Stapler", qty: 20, unitPrice: 6.525, total: 130.5 },
-    ],
-    status: "Completed",
-    originalInvoice: "PI-2026-02-008",
-    returnReason: "Defective",
-    notes: "",
-  },
-  {
-    id: "9",
-    returnNumber: "PR-2026-02-003",
-    vendor: "Tech Solutions Inc",
-    warehouse: "West Coast Storage Facility",
-    returnDate: "2026-02-22",
-    totalAmount: 354.0,
-    items: [
-      { id: "i1", product: "Smart TV", qty: 1, unitPrice: 354, total: 354 },
-    ],
-    status: "Draft",
-    originalInvoice: "PI-2026-02-007",
-    returnReason: "Defective",
-    notes: "",
-  },
-];
-
-const vendors = [
-  "Alex Vendor",
-  "Prime Materials Ltd",
-  "Global Supplies Co",
-  "Tech Solutions Inc",
-  "Quality Parts Corp",
-  "Elite Vendors Group",
-  "Sam Supplier",
-];
-const warehouses = [
-  "Central Distribution Center",
-  "Texas Distribution Point",
-  "Midwest Regional Warehouse",
-  "West Coast Storage Facility",
-  "Northeast Storage Complex",
-  "Florida Fulfillment Center",
-  "Main Warehouse",
-];
-const invoices = [
-  "PI-2026-02-018",
-  "PI-2026-02-017",
-  "PI-2026-02-016",
-  "PI-2026-02-015",
-  "PI-2026-02-014",
-  "PI-2026-02-013",
-  "PI-2026-02-012",
-  "PI-2026-02-011",
-  "PI-2026-02-010",
-  "PI-2026-02-009",
-];
-const returnReasons = [
-  "Defective",
-  "Wrong Item",
-  "Damaged",
-  "Not as Described",
-  "Expired",
-  "Other",
-];
+/* ---- Raw API shapes ---- */
+interface ApiRef {
+  _id: string;
+  name?: string;
+  productName?: string;
+  sku?: string;
+  invoice_number?: string;
+}
+interface ApiReturnItem {
+  _id?: string;
+  product_id: ApiRef | string;
+  original_invoice_item_id?: string;
+  original_quantity?: number;
+  return_quantity?: number;
+  unit_price?: number;
+  total_amount?: number;
+}
+interface ApiReturn {
+  _id: string;
+  return_number: string;
+  return_date: string;
+  vendor_id: ApiRef | string;
+  warehouse_id: ApiRef | string;
+  original_invoice_id: ApiRef | string;
+  reason?: string;
+  notes?: string;
+  status?: string;
+  subtotal?: number;
+  tax_amount?: number;
+  discount_amount?: number;
+  total_amount?: number;
+  debit_note_id?: string;
+  items: ApiReturnItem[];
+}
+interface ApiInvoiceItem {
+  _id?: string;
+  product_id: ApiRef | string;
+  quantity?: number;
+  unit_price?: number;
+}
+interface ApiInvoice {
+  _id: string;
+  invoice_number: string;
+  status?: string;
+  vendor_id: ApiRef | string;
+  warehouse_id: ApiRef | string;
+  items: ApiInvoiceItem[];
+}
+interface ApiWarehouse {
+  _id: string;
+  name: string;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const fmtCurrency = (val: number) => {
-  const formatted = val.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const formatted = (val || 0)
+    .toFixed(2)
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `${formatted}$`;
 };
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const toDateInput = (iso?: string) => (iso ? iso.slice(0, 10) : "");
+const titleCase = (s?: string) =>
+  s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "";
+const errMessage = (err: unknown, fallback: string) =>
+  err instanceof ApiError && err.message ? err.message : fallback;
+
+const refName = (ref: ApiRef | string | undefined): string =>
+  typeof ref === "object" && ref
+    ? ref.name ?? ref.productName ?? ref.invoice_number ?? ""
+    : "";
+const refId = (ref: ApiRef | string | undefined): string =>
+  typeof ref === "object" && ref ? ref._id : (ref ?? "");
+
+const reasonLabel = (r: string) =>
+  r
+    ? r
+        .split("_")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ")
+    : "—";
+
+const mapApiReturn = (r: ApiReturn): PurchaseReturn => ({
+  id: r._id,
+  returnNumber: r.return_number ?? "",
+  vendorId: refId(r.vendor_id),
+  vendor: refName(r.vendor_id),
+  warehouseId: refId(r.warehouse_id),
+  warehouse: refName(r.warehouse_id),
+  originalInvoiceId: refId(r.original_invoice_id),
+  originalInvoice: refName(r.original_invoice_id),
+  returnDate: toDateInput(r.return_date),
+  reason: r.reason ?? "",
+  notes: r.notes ?? "",
+  status: titleCase(r.status) || "Draft",
+  subtotal: r.subtotal ?? 0,
+  tax: r.tax_amount ?? 0,
+  discount: r.discount_amount ?? 0,
+  totalAmount: r.total_amount ?? 0,
+  debitNoteId: r.debit_note_id ?? "",
+  items: (r.items ?? []).map((it, idx) => ({
+    id: it._id ?? `item-${idx}`,
+    productId: refId(it.product_id),
+    product: refName(it.product_id),
+    sku: typeof it.product_id === "object" ? (it.product_id.sku ?? "") : "",
+    invoiceItemId: it.original_invoice_item_id ?? "",
+    originalQty: it.original_quantity ?? 0,
+    qty: it.return_quantity ?? 0,
+    unitPrice: it.unit_price ?? 0,
+    total: it.total_amount ?? 0,
+  })),
+});
+
+const returnReasons = [
+  { value: "defective", label: "Defective" },
+  { value: "damaged", label: "Damaged" },
+  { value: "wrong_item", label: "Wrong Item" },
+  { value: "not_as_described", label: "Not as Described" },
+  { value: "expired", label: "Expired" },
+  { value: "other", label: "Other" },
+];
 
 type SortField =
   | "returnNumber"
@@ -268,7 +218,10 @@ type SortDir = "asc" | "desc";
 export const PurchaseReturns: React.FC = () => {
   const navigate = useNavigate();
 
-  const [returns, setReturns] = useState<PurchaseReturn[]>(sampleReturns);
+  const [returns, setReturns] = useState<PurchaseReturn[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [perPage, setPerPage] = useState(10);
@@ -279,59 +232,120 @@ export const PurchaseReturns: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editingReturn, setEditingReturn] = useState<PurchaseReturn | null>(
+  const [saving, setSaving] = useState(false);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+  // Dropdown sources
+  const [invoiceOptions, setInvoiceOptions] = useState<ApiInvoice[]>([]);
+  const [warehouses, setWarehouses] = useState<ApiWarehouse[]>([]);
+
+  // View modal
+  const [showView, setShowView] = useState(false);
+  const [viewReturn, setViewReturn] = useState<PurchaseReturn | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+
+  // Delete modal
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [returnToDelete, setReturnToDelete] = useState<PurchaseReturn | null>(
     null,
   );
+  const [deleting, setDeleting] = useState(false);
 
   // Form state
   const [formReturnDate, setFormReturnDate] = useState(
     () => new Date().toISOString().split("T")[0],
   );
-  const [formOriginalInvoice, setFormOriginalInvoice] = useState("");
-  const [formWarehouse, setFormWarehouse] = useState("");
-  const [formReturnReason, setFormReturnReason] = useState("");
+  const [formOriginalInvoiceId, setFormOriginalInvoiceId] = useState("");
+  const [formVendorId, setFormVendorId] = useState("");
+  const [formVendorName, setFormVendorName] = useState("");
+  const [formWarehouseId, setFormWarehouseId] = useState("");
+  const [formReason, setFormReason] = useState("");
   const [formNotes, setFormNotes] = useState("");
-  const [formVendor, setFormVendor] = useState("");
   const [formItems, setFormItems] = useState<ReturnItem[]>([]);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
 
-  // Helper to get vendor from invoice (mock)
-  const getVendorFromInvoice = (invoiceNumber: string) => {
-    const invoiceVendorMap: Record<string, string> = {
-      "PI-2026-02-018": "Tech Solutions Inc",
-      "PI-2026-02-017": "Sam Supplier",
-      "PI-2026-02-016": "Alex Vendor",
-      "PI-2026-02-015": "Elite Vendors Group",
-      "PI-2026-02-014": "Prime Materials Ltd",
-      "PI-2026-02-013": "Global Supplies Co",
-      "PI-2026-02-012": "Tech Solutions Inc",
-      "PI-2026-02-011": "Sam Supplier",
-      "PI-2026-02-010": "Alex Vendor",
-      "PI-2026-02-009": "Prime Materials Ltd",
-    };
-    return invoiceVendorMap[invoiceNumber] || "";
-  };
+  // ─── Data loading ────────────────────────────────────────────────────────
 
-  // Handle invoice selection
-  const handleInvoiceChange = (invoiceNumber: string) => {
-    setFormOriginalInvoice(invoiceNumber);
-    const vendor = getVendorFromInvoice(invoiceNumber);
-    setFormVendor(vendor);
+  const loadReturns = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await api.get<ApiReturn[]>("/purchase/returns/all", {
+        params: { page: 1, limit: 1000 },
+      });
+      setReturns(Array.isArray(data) ? data.map(mapApiReturn) : []);
+    } catch (err) {
+      const message = errMessage(err, "Couldn't load purchase returns.");
+      setLoadError(message);
+      showToast(message, "error");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-    // Mock items from invoice
-    if (invoiceNumber) {
-      const mockItems: ReturnItem[] = [
-        {
-          id: `item-${Date.now()}`,
-          product: "Sample Product",
-          qty: 1,
-          unitPrice: 100,
-          total: 100,
-        },
-      ];
-      setFormItems(mockItems);
-    } else {
-      setFormItems([]);
+  const loadOptions = useCallback(async () => {
+    try {
+      const [inv, wh] = await Promise.allSettled([
+        api.get<ApiInvoice[]>("/purchase/invoices/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+        api.get<ApiWarehouse[]>("/purchase/warehouses/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+      ]);
+      if (inv.status === "fulfilled" && Array.isArray(inv.value)) {
+        // Returns are raised against posted invoices.
+        setInvoiceOptions(
+          inv.value.filter(
+            (i) => (i.status ?? "").toLowerCase() === "posted",
+          ),
+        );
+      }
+      if (wh.status === "fulfilled" && Array.isArray(wh.value))
+        setWarehouses(wh.value);
+    } catch {
+      /* dropdowns degrade gracefully */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadReturns();
+    loadOptions();
+  }, [loadReturns, loadOptions]);
+
+  // When an original invoice is picked, pull its vendor / warehouse / items.
+  const handleInvoiceChange = async (invoiceId: string) => {
+    setFormOriginalInvoiceId(invoiceId);
+    setFormVendorId("");
+    setFormVendorName("");
+    setFormItems([]);
+    if (!invoiceId) return;
+    setInvoiceLoading(true);
+    try {
+      const inv = await api.get<ApiInvoice>(
+        `/purchase/invoices/single/${invoiceId}`,
+      );
+      setFormVendorId(refId(inv.vendor_id));
+      setFormVendorName(refName(inv.vendor_id));
+      setFormWarehouseId(refId(inv.warehouse_id));
+      setFormItems(
+        (inv.items ?? []).map((it, idx) => ({
+          id: it._id ?? `item-${idx}`,
+          productId: refId(it.product_id),
+          product: refName(it.product_id),
+          sku:
+            typeof it.product_id === "object" ? (it.product_id.sku ?? "") : "",
+          invoiceItemId: it._id ?? "",
+          originalQty: it.quantity ?? 0,
+          qty: 0,
+          unitPrice: it.unit_price ?? 0,
+          total: 0,
+        })),
+      );
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't load invoice items."), "error");
+    } finally {
+      setInvoiceLoading(false);
     }
   };
 
@@ -363,11 +377,14 @@ export const PurchaseReturns: React.FC = () => {
       result = result.filter((ret) => ret.status === statusFilter);
     }
     result.sort((a, b) => {
-      let aVal: any = a[sortField];
-      let bVal: any = b[sortField];
+      let aVal: string | number;
+      let bVal: string | number;
       if (sortField === "items") {
         aVal = a.items.length;
         bVal = b.items.length;
+      } else {
+        aVal = a[sortField] as string | number;
+        bVal = b[sortField] as string | number;
       }
       if (typeof aVal === "string") aVal = aVal.toLowerCase();
       if (typeof bVal === "string") bVal = bVal.toLowerCase();
@@ -384,7 +401,7 @@ export const PurchaseReturns: React.FC = () => {
     currentPage * perPage,
   );
 
-  // ─── Status Badge — matches existing pattern ───────────────────────────────
+  // ─── Status Badge ───────────────────────────────────────────────────────────
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -401,107 +418,139 @@ export const PurchaseReturns: React.FC = () => {
     }
   };
 
-  const canEdit = (status: string) => status === "Draft";
+  const canApprove = (status: string) => status === "Draft";
+  const canComplete = (status: string) => status === "Approved";
   const canDelete = (status: string) => status === "Draft";
 
   // ─── Form Helpers ───────────────────────────────────────────────────────────
 
+  const updateItemQty = (id: string, qty: number) => {
+    setFormItems((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? { ...item, qty, total: round2(qty * item.unitPrice) }
+          : item,
+      ),
+    );
+  };
+
+  const formTotal = formItems.reduce((sum, i) => sum + i.total, 0);
+
   const resetForm = () => {
     setFormReturnDate(new Date().toISOString().split("T")[0]);
-    setFormOriginalInvoice("");
-    setFormWarehouse("");
-    setFormReturnReason("");
+    setFormOriginalInvoiceId("");
+    setFormVendorId("");
+    setFormVendorName("");
+    setFormWarehouseId("");
+    setFormReason("");
     setFormNotes("");
-    setFormVendor("");
     setFormItems([]);
-    setEditingReturn(null);
   };
 
   const handleCreate = () => {
     resetForm();
-    setIsEditing(false);
     setShowForm(true);
   };
 
-  const handleEditReturn = (returnItem: PurchaseReturn) => {
-    setEditingReturn(returnItem);
-    setFormReturnDate(returnItem.returnDate);
-    setFormOriginalInvoice(returnItem.originalInvoice);
-    setFormWarehouse(returnItem.warehouse);
-    setFormReturnReason(returnItem.returnReason);
-    setFormNotes(returnItem.notes);
-    setFormVendor(returnItem.vendor);
-    setFormItems(returnItem.items);
-    setIsEditing(true);
-    setShowForm(true);
-  };
+  const handleSaveReturn = async () => {
+    if (!formReturnDate) return showToast("Please select a return date", "info");
+    if (!formOriginalInvoiceId)
+      return showToast("Please select an original invoice", "info");
+    if (!formWarehouseId) return showToast("Please select a warehouse", "info");
+    if (!formReason) return showToast("Please select a return reason", "info");
+    const itemsToReturn = formItems.filter((i) => i.qty > 0);
+    if (itemsToReturn.length === 0)
+      return showToast("Set a return quantity on at least one item", "info");
 
-  const handleDeleteReturn = (id: string) => {
-    if (confirm("Are you sure you want to delete this return?")) {
-      setReturns((prev) => prev.filter((ret) => ret.id !== id));
-      showToast("Return deleted!", "success");
+    const payload = {
+      return_date: formReturnDate,
+      vendor_id: formVendorId,
+      warehouse_id: formWarehouseId,
+      original_invoice_id: formOriginalInvoiceId,
+      reason: formReason,
+      notes: formNotes,
+      items: itemsToReturn.map((i) => ({
+        product_id: i.productId,
+        original_invoice_item_id: i.invoiceItemId,
+        return_quantity: i.qty,
+        unit_price: i.unitPrice,
+      })),
+    };
+
+    setSaving(true);
+    try {
+      await api.post("/purchase/returns/create", payload);
+      showToast("Purchase return created!", "success");
+      setShowForm(false);
+      resetForm();
+      await loadReturns();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't create purchase return."), "error");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleSaveReturn = () => {
-    if (!formOriginalInvoice) {
-      showToast("Please select an original invoice", "info");
-      return;
-    }
-    if (!formWarehouse) {
-      showToast("Please select a warehouse", "info");
-      return;
-    }
-    if (!formReturnReason) {
-      showToast("Please select a return reason", "info");
-      return;
-    }
+  // ─── View (single) ──────────────────────────────────────────────────────────
 
-    const totalAmount = formItems.reduce((sum, i) => sum + i.total, 0);
-
-    if (isEditing && editingReturn) {
-      setReturns((prev) =>
-        prev.map((ret) =>
-          ret.id === editingReturn.id
-            ? {
-                ...ret,
-                returnDate: formReturnDate,
-                originalInvoice: formOriginalInvoice,
-                warehouse: formWarehouse,
-                returnReason: formReturnReason,
-                notes: formNotes,
-                vendor: formVendor,
-                items: formItems,
-                totalAmount: totalAmount,
-              }
-            : ret,
-        ),
+  const handleViewReturn = async (ret: PurchaseReturn) => {
+    setViewReturn(ret);
+    setShowView(true);
+    setViewLoading(true);
+    try {
+      const data = await api.get<ApiReturn>(
+        `/purchase/returns/single/${ret.id}`,
       );
-      showToast("Return updated!", "success");
-    } else {
-      const newReturn: PurchaseReturn = {
-        id: Date.now().toString(),
-        returnNumber: `PR-2026-02-${String(returns.length + 1).padStart(3, "0")}`,
-        vendor: formVendor,
-        warehouse: formWarehouse,
-        returnDate: formReturnDate,
-        totalAmount: totalAmount,
-        items: formItems,
-        status: "Draft",
-        originalInvoice: formOriginalInvoice,
-        returnReason: formReturnReason,
-        notes: formNotes,
-      };
-      setReturns((prev) => [newReturn, ...prev]);
-      showToast("Return created!", "success");
+      if (data) setViewReturn(mapApiReturn(data));
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't load return details."), "error");
+    } finally {
+      setViewLoading(false);
     }
-    setShowForm(false);
-    resetForm();
   };
 
-  // Format items for display
-  const formatItems = (items: ReturnItem[]) => {
-    return items.map((i) => `${i.product} ×${i.qty}`).join(", ");
+  // ─── Approve / Complete / Delete ─────────────────────────────────────────
+
+  const handleApprove = async (ret: PurchaseReturn) => {
+    setProcessingId(ret.id);
+    try {
+      await api.patch(`/purchase/returns/approve/${ret.id}`);
+      showToast("Return approved. Debit note created automatically.", "success");
+      await loadReturns();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't approve return."), "error");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleComplete = async (ret: PurchaseReturn) => {
+    setProcessingId(ret.id);
+    try {
+      await api.patch(`/purchase/returns/complete/${ret.id}`);
+      showToast("Purchase return completed!", "success");
+      await loadReturns();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't complete return."), "error");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleDeleteReturn = async () => {
+    if (!returnToDelete) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/purchase/returns/delete/${returnToDelete.id}`);
+      showToast("Purchase return deleted!", "success");
+      setShowDeleteModal(false);
+      setReturnToDelete(null);
+      await loadReturns();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't delete return."), "error");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   // ─── Sort Header ────────────────────────────────────────────────────────────
@@ -524,7 +573,7 @@ export const PurchaseReturns: React.FC = () => {
   );
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // CREATE / EDIT FORM VIEW
+  // CREATE FORM VIEW
   // ═══════════════════════════════════════════════════════════════════════════
 
   if (showForm) {
@@ -541,14 +590,17 @@ export const PurchaseReturns: React.FC = () => {
             </button>
             <span>›</span>
             <button
-              onClick={() => navigate("/purchase/purchase-returns")}
+              onClick={() => {
+                setShowForm(false);
+                resetForm();
+              }}
               className="hover:text-gray-700"
             >
               Purchase Returns
             </button>
             <span>›</span>
             <span className="text-gray-900 font-medium">
-              {isEditing ? "Edit Purchase Return" : "Create Purchase Return"}
+              Create Purchase Return
             </span>
           </div>
         </div>
@@ -557,7 +609,7 @@ export const PurchaseReturns: React.FC = () => {
         <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">
-              {isEditing ? "Edit Purchase Return" : "Create Purchase Return"}
+              Create Purchase Return
             </h2>
             <button
               onClick={() => {
@@ -574,7 +626,7 @@ export const PurchaseReturns: React.FC = () => {
 
         {/* Form Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {/* Purchase Return Details Card */}
+          {/* Details Card */}
           <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 mb-6">
             <div className="flex items-center gap-2 mb-5">
               <RefreshCw className="w-5 h-5 text-gray-500" />
@@ -583,7 +635,6 @@ export const PurchaseReturns: React.FC = () => {
               </h3>
             </div>
 
-            {/* Form Fields */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -604,31 +655,43 @@ export const PurchaseReturns: React.FC = () => {
                   Original Invoice <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={formOriginalInvoice}
+                  value={formOriginalInvoiceId}
                   onChange={(e) => handleInvoiceChange(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm bg-white"
                 >
                   <option value="">Select Invoice</option>
-                  {invoices.map((inv) => (
-                    <option key={inv} value={inv}>
-                      {inv}
+                  {invoiceOptions.map((inv) => (
+                    <option key={inv._id} value={inv._id}>
+                      {inv.invoice_number}
                     </option>
                   ))}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Vendor
+                </label>
+                <input
+                  type="text"
+                  value={formVendorName}
+                  readOnly
+                  placeholder="Auto-filled from invoice"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-gray-50 text-gray-700"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Warehouse <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={formWarehouse}
-                  onChange={(e) => setFormWarehouse(e.target.value)}
+                  value={formWarehouseId}
+                  onChange={(e) => setFormWarehouseId(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm bg-white"
                 >
                   <option value="">Select Warehouse</option>
                   {warehouses.map((w) => (
-                    <option key={w} value={w}>
-                      {w}
+                    <option key={w._id} value={w._id}>
+                      {(w.name ?? "").trim()}
                     </option>
                   ))}
                 </select>
@@ -638,22 +701,21 @@ export const PurchaseReturns: React.FC = () => {
                   Return Reason <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={formReturnReason}
-                  onChange={(e) => setFormReturnReason(e.target.value)}
+                  value={formReason}
+                  onChange={(e) => setFormReason(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm bg-white"
                 >
                   <option value="">Select Reason</option>
-                  {returnReasons.map((reason) => (
-                    <option key={reason} value={reason}>
-                      {reason}
+                  {returnReasons.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
                     </option>
                   ))}
                 </select>
               </div>
             </div>
 
-            {/* Notes */}
-            <div className="mb-4">
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Notes
               </label>
@@ -665,38 +727,94 @@ export const PurchaseReturns: React.FC = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm resize-y"
               />
             </div>
+          </div>
 
-            {/* Selected Items Info */}
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Check className="w-5 h-5 text-blue-500" />
-                  <span className="text-sm text-gray-700">
-                    {formItems.length}{" "}
-                    {formItems.length === 1 ? "item" : "items"} selected for
-                    return
-                  </span>
-                </div>
-                {formItems.length > 0 && (
-                  <div className="text-sm font-medium text-gray-900">
-                    Total:{" "}
-                    {fmtCurrency(
-                      formItems.reduce((sum, i) => sum + i.total, 0),
-                    )}
-                  </div>
-                )}
-              </div>
-              {formItems.length > 0 && (
-                <div className="mt-3 text-xs text-gray-500">
-                  {formItems.map((item, idx) => (
-                    <span key={item.id}>
-                      {item.product} ×{item.qty}
-                      {idx < formItems.length - 1 && ", "}
-                    </span>
-                  ))}
-                </div>
-              )}
+          {/* Items Card */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 mb-6">
+            <div className="flex items-center gap-2 mb-5">
+              <Check className="w-5 h-5 text-gray-500" />
+              <h3 className="text-base font-semibold text-gray-900">
+                Items to Return
+              </h3>
             </div>
+
+            {invoiceLoading ? (
+              <div className="flex items-center justify-center gap-2 py-10 text-gray-500">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm">Loading invoice items…</span>
+              </div>
+            ) : formItems.length === 0 ? (
+              <div className="text-sm text-gray-500 py-8 text-center border border-dashed border-gray-200 rounded-lg">
+                Select an original invoice to load its items.
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <table className="w-full text-sm border-collapse min-w-[700px]">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">
+                          Product
+                        </th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-28">
+                          Invoiced Qty
+                        </th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-28">
+                          Return Qty
+                        </th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-28">
+                          Unit Price
+                        </th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-28">
+                          Total
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {formItems.map((item) => (
+                        <tr key={item.id} className="border-b border-gray-100">
+                          <td className="px-2 py-3 text-gray-900">
+                            {item.product}
+                            {item.sku ? (
+                              <span className="text-gray-400"> ({item.sku})</span>
+                            ) : null}
+                          </td>
+                          <td className="px-2 py-3 text-gray-600">
+                            {item.originalQty}
+                          </td>
+                          <td className="px-2 py-3">
+                            <input
+                              type="number"
+                              min={0}
+                              value={item.qty}
+                              onChange={(e) =>
+                                updateItemQty(
+                                  item.id,
+                                  Math.max(0, parseInt(e.target.value) || 0),
+                                )
+                              }
+                              className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                            />
+                          </td>
+                          <td className="px-2 py-3 text-gray-700">
+                            {fmtCurrency(item.unitPrice)}
+                          </td>
+                          <td className="px-2 py-3 text-gray-900">
+                            {fmtCurrency(item.total)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex justify-end mt-4">
+                  <div className="text-sm font-semibold text-gray-900">
+                    Total: {fmtCurrency(formTotal)}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Bottom Actions */}
@@ -706,15 +824,18 @@ export const PurchaseReturns: React.FC = () => {
                 setShowForm(false);
                 resetForm();
               }}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm"
+              disabled={saving}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               onClick={handleSaveReturn}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+              disabled={saving}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Create
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              {saving ? "Creating…" : "Create"}
             </button>
           </div>
         </div>
@@ -731,10 +852,7 @@ export const PurchaseReturns: React.FC = () => {
       {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-2">
         <div className="flex items-center gap-2 text-sm text-gray-500">
-          <button
-            onClick={() => navigate("/")}
-            className="hover:text-gray-700"
-          >
+          <button onClick={() => navigate("/")} className="hover:text-gray-700">
             Dashboard
           </button>
           <span>›</span>
@@ -767,7 +885,7 @@ export const PurchaseReturns: React.FC = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by return number..."
+                placeholder="Search by return number or vendor..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -777,10 +895,10 @@ export const PurchaseReturns: React.FC = () => {
               />
             </div>
             <button
-              onClick={() => showToast("Search applied", "info")}
+              onClick={() => loadReturns()}
               className="px-4 py-1.5 bg-green-500 text-white text-sm rounded-md hover:bg-green-600"
             >
-              Search
+              Refresh
             </button>
           </div>
 
@@ -837,7 +955,7 @@ export const PurchaseReturns: React.FC = () => {
                       Status
                     </span>
                   </div>
-                  {["All", "Draft", "Completed", "Approved", "Rejected"].map(
+                  {["All", "Draft", "Approved", "Completed", "Rejected"].map(
                     (st) => (
                       <button
                         key={st}
@@ -861,7 +979,16 @@ export const PurchaseReturns: React.FC = () => {
 
       {/* Table / Grid */}
       <div className="flex-1 overflow-auto">
-        {viewMode === "list" ? (
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-20 text-gray-500">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm">Loading purchase returns…</span>
+          </div>
+        ) : loadError ? (
+          <div className="py-16 text-center text-sm text-red-600">
+            {loadError}
+          </div>
+        ) : viewMode === "list" ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[1000px]">
               <thead className="bg-white sticky top-0 z-10 border-b border-gray-200">
@@ -883,7 +1010,7 @@ export const PurchaseReturns: React.FC = () => {
                   <tr key={ret.id} className="hover:bg-gray-50">
                     <td className="px-3 py-4">
                       <button
-                        onClick={() => handleEditReturn(ret)}
+                        onClick={() => handleViewReturn(ret)}
                         className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
                       >
                         {ret.returnNumber}
@@ -917,57 +1044,62 @@ export const PurchaseReturns: React.FC = () => {
                     <td className="px-3 py-4">
                       <div className="flex items-center gap-1">
                         <button
-                          onClick={() => showToast("Email sent", "success")}
-                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                          title="Email"
-                        >
-                          <Mail className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() =>
-                            showToast("Downloading PDF...", "info")
-                          }
-                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                          title="Download"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() =>
-                            showToast("Opening preview...", "info")
-                          }
+                          onClick={() => handleViewReturn(ret)}
                           className="p-1.5 text-yellow-500 hover:text-yellow-600 hover:bg-yellow-50 rounded"
                           title="View"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        {canEdit(ret.status) && (
-                          <>
-                            <button
-                              onClick={() => showToast("Saving...", "info")}
-                              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                              title="Save"
-                            >
-                              <Save className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleEditReturn(ret)}
-                              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                              title="Edit"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                        {canDelete(ret.status) && (
+                        <button
+                          onClick={() => showToast("Downloading PDF...", "info")}
+                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                          title="Download"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                        {canApprove(ret.status) && (
                           <button
-                            onClick={() => handleDeleteReturn(ret.id)}
-                            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
-                            title="Delete"
+                            onClick={() => handleApprove(ret)}
+                            disabled={processingId === ret.id}
+                            className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded disabled:opacity-50"
+                            title="Approve (creates debit note)"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            {processingId === ret.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Check className="w-4 h-4" />
+                            )}
                           </button>
                         )}
+                        {canComplete(ret.status) && (
+                          <button
+                            onClick={() => handleComplete(ret)}
+                            disabled={processingId === ret.id}
+                            className="p-1.5 text-green-500 hover:text-green-700 hover:bg-green-50 rounded disabled:opacity-50"
+                            title="Mark Completed"
+                          >
+                            {processingId === ret.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <CheckCheck className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setReturnToDelete(ret);
+                            setShowDeleteModal(true);
+                          }}
+                          disabled={!canDelete(ret.status)}
+                          className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-red-400"
+                          title={
+                            canDelete(ret.status)
+                              ? "Delete"
+                              : "Only draft returns can be deleted"
+                          }
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -991,11 +1123,11 @@ export const PurchaseReturns: React.FC = () => {
             {paginatedReturns.map((ret) => (
               <div
                 key={ret.id}
-                className="bg-white rounded-lg border border-gray-200 p-4 hover:bg-gray-50 cursor-pointer"
+                className="bg-white rounded-lg border border-gray-200 p-4 hover:bg-gray-50"
               >
                 <div className="flex items-start justify-between mb-3">
                   <button
-                    onClick={() => handleEditReturn(ret)}
+                    onClick={() => handleViewReturn(ret)}
                     className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
                   >
                     {ret.returnNumber}
@@ -1024,16 +1156,13 @@ export const PurchaseReturns: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                <div className="text-xs text-gray-500 mb-3">
-                  {formatItems(ret.items)}
-                </div>
                 <div className="flex items-center gap-1 pt-2 border-t border-gray-100">
                   <button
-                    onClick={() => showToast("Email sent", "success")}
-                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
-                    title="Email"
+                    onClick={() => handleViewReturn(ret)}
+                    className="p-1.5 text-yellow-500 hover:text-yellow-600 rounded"
+                    title="View"
                   >
-                    <Mail className="w-4 h-4" />
+                    <Eye className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => showToast("Downloading PDF...", "info")}
@@ -1042,31 +1171,49 @@ export const PurchaseReturns: React.FC = () => {
                   >
                     <Download className="w-4 h-4" />
                   </button>
+                  {canApprove(ret.status) && (
+                    <button
+                      onClick={() => handleApprove(ret)}
+                      disabled={processingId === ret.id}
+                      className="p-1.5 text-blue-500 hover:text-blue-700 rounded disabled:opacity-50"
+                      title="Approve (creates debit note)"
+                    >
+                      {processingId === ret.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Check className="w-4 h-4" />
+                      )}
+                    </button>
+                  )}
+                  {canComplete(ret.status) && (
+                    <button
+                      onClick={() => handleComplete(ret)}
+                      disabled={processingId === ret.id}
+                      className="p-1.5 text-green-500 hover:text-green-700 rounded disabled:opacity-50"
+                      title="Mark Completed"
+                    >
+                      {processingId === ret.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <CheckCheck className="w-4 h-4" />
+                      )}
+                    </button>
+                  )}
                   <button
-                    onClick={() => showToast("Opening preview...", "info")}
-                    className="p-1.5 text-yellow-500 hover:text-yellow-600 rounded"
-                    title="View"
+                    onClick={() => {
+                      setReturnToDelete(ret);
+                      setShowDeleteModal(true);
+                    }}
+                    disabled={!canDelete(ret.status)}
+                    className="p-1.5 text-red-400 hover:text-red-600 rounded disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-red-400"
+                    title={
+                      canDelete(ret.status)
+                        ? "Delete"
+                        : "Only draft returns can be deleted"
+                    }
                   >
-                    <Eye className="w-4 h-4" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
-                  {canEdit(ret.status) && (
-                    <button
-                      onClick={() => handleEditReturn(ret)}
-                      className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
-                      title="Edit"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                  )}
-                  {canDelete(ret.status) && (
-                    <button
-                      onClick={() => handleDeleteReturn(ret.id)}
-                      className="p-1.5 text-red-400 hover:text-red-600 rounded"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
                 </div>
               </div>
             ))}
@@ -1121,6 +1268,244 @@ export const PurchaseReturns: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* View Return Modal */}
+      {showView && viewReturn && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+        >
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {viewReturn.returnNumber || "Purchase Return"}
+                </h2>
+                <span
+                  className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${getStatusColor(viewReturn.status)}`}
+                >
+                  {viewReturn.status}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowView(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {viewLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Loading details…</span>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                    <div>
+                      <p className="text-xs text-gray-500">Vendor</p>
+                      <p className="text-sm text-gray-900">
+                        {viewReturn.vendor || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Warehouse</p>
+                      <p className="text-sm text-gray-900">
+                        {viewReturn.warehouse || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Original Invoice</p>
+                      <p className="text-sm text-gray-900">
+                        {viewReturn.originalInvoice || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Return Date</p>
+                      <p className="text-sm text-gray-900">
+                        {viewReturn.returnDate || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Reason</p>
+                      <p className="text-sm text-gray-900">
+                        {reasonLabel(viewReturn.reason)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Notes</p>
+                      <p className="text-sm text-gray-900">
+                        {viewReturn.notes || "—"}
+                      </p>
+                    </div>
+                    {viewReturn.debitNoteId && (
+                      <div className="sm:col-span-2">
+                        <p className="text-xs text-gray-500">Debit Note</p>
+                        <p className="text-sm text-gray-900">
+                          {viewReturn.debitNoteId}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Items */}
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg mb-6">
+                    <table className="w-full text-sm min-w-[560px]">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">
+                            Product
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Return Qty
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Unit Price
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {viewReturn.items.map((it) => (
+                          <tr key={it.id}>
+                            <td className="px-3 py-2 text-gray-900">
+                              {it.product}
+                              {it.sku ? (
+                                <span className="text-gray-400"> ({it.sku})</span>
+                              ) : null}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {it.qty}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {fmtCurrency(it.unitPrice)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-900">
+                              {fmtCurrency(it.total)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Totals */}
+                  <div className="flex justify-end">
+                    <div className="w-full sm:w-72 space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Subtotal</span>
+                        <span className="text-gray-900">
+                          {fmtCurrency(viewReturn.subtotal)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Discount</span>
+                        <span className="text-red-500">
+                          -{fmtCurrency(viewReturn.discount)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Tax</span>
+                        <span className="text-gray-900">
+                          {fmtCurrency(viewReturn.tax)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between pt-2 border-t border-gray-200">
+                        <span className="font-semibold text-gray-900">
+                          Total
+                        </span>
+                        <span className="font-semibold text-gray-900">
+                          {fmtCurrency(viewReturn.totalAmount)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
+              {!viewLoading && canApprove(viewReturn.status) && (
+                <button
+                  onClick={() => {
+                    setShowView(false);
+                    handleApprove(viewReturn);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm inline-flex items-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  Approve
+                </button>
+              )}
+              {!viewLoading && canComplete(viewReturn.status) && (
+                <button
+                  onClick={() => {
+                    setShowView(false);
+                    handleComplete(viewReturn);
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm inline-flex items-center gap-2"
+                >
+                  <CheckCheck className="w-4 h-4" />
+                  Complete
+                </button>
+              )}
+              <button
+                onClick={() => setShowView(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && returnToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+        >
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Delete Return
+              </h3>
+              <p className="text-gray-500 mb-6">
+                Are you sure you want to delete{" "}
+                <span className="font-semibold">
+                  {returnToDelete.returnNumber}
+                </span>
+                ? This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleDeleteReturn}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+                <button
+                  onClick={() => setShowDeleteModal(false)}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

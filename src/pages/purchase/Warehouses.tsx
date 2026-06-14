@@ -1,15 +1,28 @@
 /**
- * File: src/pages/warehouses/Warehouses.tsx
- * Complete Warehouses Management page with list view, create/edit modal, filters, pagination
- * Based on existing pattern — matching exact color codes and design style
+ * File: src/pages/purchase/Warehouses.tsx
+ * Complete Warehouses Management page with list view, create/edit/view modals,
+ * filters, sorting and pagination.
+ *
+ * Backed by the purchase/warehouses API:
+ *   GET    /purchase/warehouses/all?page=&limit=   -> list (paginated envelope)
+ *   GET    /purchase/warehouses/single/:id         -> one warehouse
+ *   POST   /purchase/warehouses/create             -> create
+ *   PATCH  /purchase/warehouses/edit/:id           -> update
+ *   DELETE /purchase/warehouses/delete/:id         -> soft-delete
+ *
+ * The backend is inconsistent about the zip field (`zipcode` on reads,
+ * `zip_code` on create), so reads accept both and writes send `zip_code`.
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { api } from "../../lib/api/client";
+import { ApiError } from "../../lib/api/ApiError";
 import {
   Search,
   Plus,
+  Eye,
   Edit,
   Trash2,
   Filter,
@@ -23,12 +36,12 @@ import {
   Building2,
   MapPin,
   Phone,
-  Mail,
-  Globe,
+  Loader2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/** UI-facing warehouse model, mapped from the API. */
 interface Warehouse {
   id: string;
   name: string;
@@ -37,169 +50,52 @@ interface Warehouse {
   zipCode: string;
   phone: string;
   email: string;
-  status: "Active" | "Inactive";
-  country: string;
-  state: string;
-  manager: string;
-  capacity: number;
+  isActive: boolean;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
-
-const sampleWarehouses: Warehouse[] = [
-  {
-    id: "1",
-    name: "Central Distribution Center",
-    address: "1250 Industrial Blvd",
-    city: "Los Angeles",
-    zipCode: "90021",
-    phone: "+12135550101",
-    email: "central@warehouse.com",
-    status: "Active",
-    country: "USA",
-    state: "California",
-    manager: "John Smith",
-    capacity: 50000,
-  },
-  {
-    id: "2",
-    name: "East Coast Logistics Hub",
-    address: "875 Commerce Drive",
-    city: "Atlanta",
-    zipCode: "30309",
-    phone: "+14045550102",
-    email: "eastcoast@warehouse.com",
-    status: "Active",
-    country: "USA",
-    state: "Georgia",
-    manager: "Sarah Johnson",
-    capacity: 75000,
-  },
-  {
-    id: "3",
-    name: "West Coast Storage Facility",
-    address: "2100 Pacific Avenue",
-    city: "Seattle",
-    zipCode: "98101",
-    phone: "+12065550103",
-    email: "westcoast@warehouse.com",
-    status: "Active",
-    country: "USA",
-    state: "Washington",
-    manager: "Michael Chen",
-    capacity: 45000,
-  },
-  {
-    id: "4",
-    name: "Midwest Regional Warehouse",
-    address: "3456 Manufacturing Way",
-    city: "Chicago",
-    zipCode: "60601",
-    phone: "+13125550104",
-    email: "midwest@warehouse.com",
-    status: "Active",
-    country: "USA",
-    state: "Illinois",
-    manager: "Emily Davis",
-    capacity: 60000,
-  },
-  {
-    id: "5",
-    name: "Texas Distribution Point",
-    address: "789 Freight Lane",
-    city: "Dallas",
-    zipCode: "75201",
-    phone: "+12145550105",
-    email: "texas@warehouse.com",
-    status: "Active",
-    country: "USA",
-    state: "Texas",
-    manager: "Robert Taylor",
-    capacity: 55000,
-  },
-  {
-    id: "6",
-    name: "Florida Fulfillment Center",
-    address: "1567 Logistics Park",
-    city: "Miami",
-    zipCode: "33101",
-    phone: "+13055550106",
-    email: "florida@warehouse.com",
-    status: "Active",
-    country: "USA",
-    state: "Florida",
-    manager: "Lisa Anderson",
-    capacity: 40000,
-  },
-  {
-    id: "7",
-    name: "Northeast Storage Complex",
-    address: "4321 Supply Chain Blvd",
-    city: "Boston",
-    zipCode: "02101",
-    phone: "+16175550107",
-    email: "northeast@warehouse.com",
-    status: "Active",
-    country: "USA",
-    state: "Massachusetts",
-    manager: "David Wilson",
-    capacity: 65000,
-  },
-  {
-    id: "8",
-    name: "Southwest Depot",
-    address: "987 Distribution Road",
-    city: "Phoenix",
-    zipCode: "85001",
-    phone: "+16025550108",
-    email: "southwest@warehouse.com",
-    status: "Active",
-    country: "USA",
-    state: "Arizona",
-    manager: "Jessica Martinez",
-    capacity: 35000,
-  },
-  {
-    id: "9",
-    name: "Mountain Region Warehouse",
-    address: "2468 Cargo Street",
-    city: "Denver",
-    zipCode: "80201",
-    phone: "+13035550109",
-    email: "mountain@warehouse.com",
-    status: "Active",
-    country: "USA",
-    state: "Colorado",
-    manager: "James Garcia",
-    capacity: 30000,
-  },
-  {
-    id: "10",
-    name: "Pacific Northwest Hub",
-    address: "5678 Harbor Drive",
-    city: "Portland",
-    zipCode: "97201",
-    phone: "+15035550110",
-    email: "pacific@warehouse.com",
-    status: "Active",
-    country: "USA",
-    state: "Oregon",
-    manager: "Amanda White",
-    capacity: 42000,
-  },
-];
+/** Raw warehouse as returned by the API (zip field name varies by endpoint). */
+interface ApiWarehouse {
+  _id: string;
+  name: string;
+  address?: string;
+  city?: string;
+  zipcode?: string;
+  zip_code?: string;
+  phone?: string;
+  email?: string;
+  is_active?: boolean;
+  status?: boolean;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 type SortField = "name" | "city" | "zipCode" | "phone" | "status";
 type SortDir = "asc" | "desc";
 
+/** Map a raw API warehouse to the UI model. */
+const mapApiWarehouse = (w: ApiWarehouse): Warehouse => ({
+  id: w._id,
+  name: (w.name ?? "").trim(),
+  address: w.address ?? "",
+  city: w.city ?? "",
+  zipCode: w.zipcode ?? w.zip_code ?? "",
+  phone: w.phone ?? "",
+  email: w.email ?? "",
+  isActive: w.is_active ?? w.status ?? true,
+});
+
+const errMessage = (err: unknown, fallback: string) =>
+  err instanceof ApiError && err.message ? err.message : fallback;
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const Warehouses: React.FC = () => {
   const navigate = useNavigate();
 
-  const [warehouses, setWarehouses] = useState<Warehouse[]>(sampleWarehouses);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -208,19 +104,28 @@ export const Warehouses: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [showFilters, setShowFilters] = useState(false);
 
-  // Modal states
+  // Create/Edit modal states
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(
     null,
   );
+  const [saving, setSaving] = useState(false);
+
+  // Delete modal states
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [warehouseToDelete, setWarehouseToDelete] = useState<Warehouse | null>(
     null,
   );
+  const [deleting, setDeleting] = useState(false);
+
+  // View modal states (loads the single warehouse on open)
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewWarehouse, setViewWarehouse] = useState<Warehouse | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
 
   // Form state
-  const [formData, setFormData] = useState({
+  const emptyForm = {
     name: "",
     address: "",
     city: "",
@@ -228,11 +133,33 @@ export const Warehouses: React.FC = () => {
     phone: "",
     email: "",
     status: "Active" as "Active" | "Inactive",
-    country: "USA",
-    state: "",
-    manager: "",
-    capacity: 0,
-  });
+  };
+  const [formData, setFormData] = useState(emptyForm);
+
+  // ─── Load warehouses from the backend ──────────────────────────────────────
+  // The endpoint is paginated; we pull a generous page so search/sort/paging can
+  // all run client-side (the dataset is small and the list stays in sync).
+  const loadWarehouses = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await api.raw.get("/purchase/warehouses/all", {
+        params: { page: 1, limit: 1000 },
+      });
+      const list: ApiWarehouse[] = res.data?.data ?? [];
+      setWarehouses(Array.isArray(list) ? list.map(mapApiWarehouse) : []);
+    } catch (err) {
+      const message = errMessage(err, "Couldn't load warehouses.");
+      setLoadError(message);
+      showToast(message, "error");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWarehouses();
+  }, [loadWarehouses]);
 
   // ─── Sorting ────────────────────────────────────────────────────────────────
 
@@ -261,13 +188,19 @@ export const Warehouses: React.FC = () => {
       );
     }
     if (statusFilter !== "All") {
-      result = result.filter((w) => w.status === statusFilter);
+      const wantActive = statusFilter === "Active";
+      result = result.filter((w) => w.isActive === wantActive);
     }
     result.sort((a, b) => {
-      let aVal: any = a[sortField];
-      let bVal: any = b[sortField];
-      if (typeof aVal === "string") aVal = aVal.toLowerCase();
-      if (typeof bVal === "string") bVal = bVal.toLowerCase();
+      let aVal: string | number;
+      let bVal: string | number;
+      if (sortField === "status") {
+        aVal = a.isActive ? 1 : 0;
+        bVal = b.isActive ? 1 : 0;
+      } else {
+        aVal = (a[sortField] as string).toLowerCase();
+        bVal = (b[sortField] as string).toLowerCase();
+      }
       if (aVal < bVal) return sortDir === "asc" ? -1 : 1;
       if (aVal > bVal) return sortDir === "asc" ? 1 : -1;
       return 0;
@@ -283,40 +216,24 @@ export const Warehouses: React.FC = () => {
 
   // ─── Status Badge ───────────────────────────────────────────────────────────
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Active":
-        return "bg-green-100 text-green-700 border border-green-200";
-      case "Inactive":
-        return "bg-red-100 text-red-700 border border-red-200";
-      default:
-        return "bg-gray-100 text-gray-700 border border-gray-200";
-    }
-  };
+  const statusLabel = (isActive: boolean) => (isActive ? "Active" : "Inactive");
 
-  const getStatusIcon = (status: string) => {
-    if (status === "Active") {
-      return <CheckCircle className="w-3 h-3" />;
-    }
-    return <XCircle className="w-3 h-3" />;
-  };
+  const getStatusColor = (isActive: boolean) =>
+    isActive
+      ? "bg-green-100 text-green-700 border border-green-200"
+      : "bg-red-100 text-red-700 border border-red-200";
+
+  const getStatusIcon = (isActive: boolean) =>
+    isActive ? (
+      <CheckCircle className="w-3 h-3" />
+    ) : (
+      <XCircle className="w-3 h-3" />
+    );
 
   // ─── Form Helpers ───────────────────────────────────────────────────────────
 
   const resetForm = () => {
-    setFormData({
-      name: "",
-      address: "",
-      city: "",
-      zipCode: "",
-      phone: "",
-      email: "",
-      status: "Active",
-      country: "USA",
-      state: "",
-      manager: "",
-      capacity: 0,
-    });
+    setFormData(emptyForm);
     setEditingWarehouse(null);
   };
 
@@ -335,14 +252,27 @@ export const Warehouses: React.FC = () => {
       zipCode: warehouse.zipCode,
       phone: warehouse.phone,
       email: warehouse.email,
-      status: warehouse.status,
-      country: warehouse.country,
-      state: warehouse.state,
-      manager: warehouse.manager,
-      capacity: warehouse.capacity,
+      status: warehouse.isActive ? "Active" : "Inactive",
     });
     setIsEditing(true);
     setShowModal(true);
+  };
+
+  // Loads the single warehouse from the API before showing the View modal.
+  const openViewModal = async (warehouse: Warehouse) => {
+    setViewWarehouse(warehouse);
+    setShowViewModal(true);
+    setViewLoading(true);
+    try {
+      const data = await api.get<ApiWarehouse>(
+        `/purchase/warehouses/single/${warehouse.id}`,
+      );
+      if (data) setViewWarehouse(mapApiWarehouse(data));
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't load warehouse details."), "error");
+    } finally {
+      setViewLoading(false);
+    }
   };
 
   const openDeleteModal = (warehouse: Warehouse) => {
@@ -350,76 +280,73 @@ export const Warehouses: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSaveWarehouse = () => {
-    if (!formData.name) {
+  // ─── Create / Update ──────────────────────────────────────────────────────
+
+  const handleSaveWarehouse = async () => {
+    if (!formData.name.trim()) {
       showToast("Please enter warehouse name", "info");
       return;
     }
-    if (!formData.address) {
+    if (!formData.address.trim()) {
       showToast("Please enter warehouse address", "info");
       return;
     }
-    if (!formData.city) {
+    if (!formData.city.trim()) {
       showToast("Please enter city", "info");
       return;
     }
-    if (!formData.zipCode) {
+    if (!formData.zipCode.trim()) {
       showToast("Please enter zip code", "info");
       return;
     }
 
-    if (isEditing && editingWarehouse) {
-      setWarehouses((prev) =>
-        prev.map((w) =>
-          w.id === editingWarehouse.id
-            ? {
-                ...w,
-                name: formData.name,
-                address: formData.address,
-                city: formData.city,
-                zipCode: formData.zipCode,
-                phone: formData.phone,
-                email: formData.email,
-                status: formData.status,
-                country: formData.country,
-                state: formData.state,
-                manager: formData.manager,
-                capacity: formData.capacity,
-              }
-            : w,
-        ),
-      );
-      showToast("Warehouse updated successfully!", "success");
-    } else {
-      const newWarehouse: Warehouse = {
-        id: Date.now().toString(),
-        name: formData.name,
-        address: formData.address,
-        city: formData.city,
-        zipCode: formData.zipCode,
-        phone: formData.phone,
-        email: formData.email,
-        status: formData.status,
-        country: formData.country,
-        state: formData.state,
-        manager: formData.manager,
-        capacity: formData.capacity,
-      };
-      setWarehouses((prev) => [...prev, newWarehouse]);
-      showToast("Warehouse created successfully!", "success");
+    const payload = {
+      name: formData.name.trim(),
+      address: formData.address.trim(),
+      city: formData.city.trim(),
+      zip_code: formData.zipCode.trim(),
+      phone: formData.phone.trim(),
+      email: formData.email.trim(),
+      is_active: formData.status === "Active",
+    };
+
+    setSaving(true);
+    try {
+      if (isEditing && editingWarehouse) {
+        await api.patch(
+          `/purchase/warehouses/edit/${editingWarehouse.id}`,
+          payload,
+        );
+        showToast("Warehouse updated successfully!", "success");
+      } else {
+        await api.post("/purchase/warehouses/create", payload);
+        showToast("Warehouse created successfully!", "success");
+      }
+      setShowModal(false);
+      resetForm();
+      await loadWarehouses();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't save warehouse."), "error");
+    } finally {
+      setSaving(false);
     }
-    setShowModal(false);
-    resetForm();
   };
 
-  const handleDeleteWarehouse = () => {
-    if (warehouseToDelete) {
-      setWarehouses((prev) =>
-        prev.filter((w) => w.id !== warehouseToDelete.id),
-      );
+  // ─── Delete ─────────────────────────────────────────────────────────────────
+
+  const handleDeleteWarehouse = async () => {
+    if (!warehouseToDelete) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/purchase/warehouses/delete/${warehouseToDelete.id}`);
       showToast("Warehouse deleted successfully!", "success");
       setShowDeleteModal(false);
       setWarehouseToDelete(null);
+      await loadWarehouses();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't delete warehouse."), "error");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -451,10 +378,7 @@ export const Warehouses: React.FC = () => {
       {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-2">
         <div className="flex items-center gap-2 text-sm text-gray-500">
-          <button
-            onClick={() => navigate("/")}
-            className="hover:text-gray-700"
-          >
+          <button onClick={() => navigate("/")} className="hover:text-gray-700">
             Dashboard
           </button>
           <span>›</span>
@@ -497,10 +421,10 @@ export const Warehouses: React.FC = () => {
               />
             </div>
             <button
-              onClick={() => showToast("Search applied", "info")}
+              onClick={() => loadWarehouses()}
               className="px-4 py-1.5 bg-green-500 text-white text-sm rounded-md hover:bg-green-600"
             >
-              Search
+              Refresh
             </button>
           </div>
 
@@ -583,63 +507,25 @@ export const Warehouses: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
-              {paginatedWarehouses.map((warehouse) => (
-                <tr key={warehouse.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="w-4 h-4 text-gray-400" />
-                      <span className="font-medium text-gray-900">
-                        {warehouse.name}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">
-                    <div className="flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                      {warehouse.address}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">{warehouse.city}</td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {warehouse.zipCode}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <Phone className="w-3.5 h-3.5 text-gray-400" />
-                      {warehouse.phone}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
-                        warehouse.status,
-                      )}`}
-                    >
-                      {getStatusIcon(warehouse.status)}
-                      {warehouse.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => openEditModal(warehouse)}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
-                        title="Edit"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => openDeleteModal(warehouse)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-16">
+                    <div className="flex items-center justify-center gap-2 text-gray-500">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span className="text-sm">Loading warehouses…</span>
                     </div>
                   </td>
                 </tr>
-              ))}
-              {paginatedWarehouses.length === 0 && (
+              ) : loadError ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-4 py-12 text-center text-sm text-red-600"
+                  >
+                    {loadError}
+                  </td>
+                </tr>
+              ) : paginatedWarehouses.length === 0 ? (
                 <tr>
                   <td
                     colSpan={7}
@@ -648,6 +534,72 @@ export const Warehouses: React.FC = () => {
                     No warehouses found.
                   </td>
                 </tr>
+              ) : (
+                paginatedWarehouses.map((warehouse) => (
+                  <tr key={warehouse.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-gray-400" />
+                        <span className="font-medium text-gray-900">
+                          {warehouse.name}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      <div className="flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                        {warehouse.address}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {warehouse.city}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {warehouse.zipCode}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <Phone className="w-3.5 h-3.5 text-gray-400" />
+                        {warehouse.phone}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                          warehouse.isActive,
+                        )}`}
+                      >
+                        {getStatusIcon(warehouse.isActive)}
+                        {statusLabel(warehouse.isActive)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => openViewModal(warehouse)}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                          title="View"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => openEditModal(warehouse)}
+                          className="p-1.5 text-gray-400 hover:text-green-600 rounded-lg hover:bg-green-50 transition-colors"
+                          title="Edit"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => openDeleteModal(warehouse)}
+                          className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -818,65 +770,6 @@ export const Warehouses: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    State
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.state}
-                    onChange={(e) =>
-                      setFormData({ ...formData, state: e.target.value })
-                    }
-                    placeholder="Enter state"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Country
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.country}
-                    onChange={(e) =>
-                      setFormData({ ...formData, country: e.target.value })
-                    }
-                    placeholder="Enter country"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Manager Name
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.manager}
-                    onChange={(e) =>
-                      setFormData({ ...formData, manager: e.target.value })
-                    }
-                    placeholder="Enter manager name"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Capacity (sq ft)
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.capacity || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        capacity: parseInt(e.target.value) || 0,
-                      })
-                    }
-                    placeholder="Enter capacity"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Status
                   </label>
                   <select
@@ -900,15 +793,119 @@ export const Warehouses: React.FC = () => {
             <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
               <button
                 onClick={() => setShowModal(false)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm"
+                disabled={saving}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveWarehouse}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+                disabled={saving}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isEditing ? "Save Changes" : "Create"}
+                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                {saving ? "Saving…" : isEditing ? "Save Changes" : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Warehouse Modal */}
+      {showViewModal && viewWarehouse && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+        >
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Warehouse Details
+              </h2>
+              <button
+                onClick={() => setShowViewModal(false)}
+                className="p-1 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-6">
+              {viewLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Loading details…</span>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 pb-4 border-b border-gray-100">
+                    <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center">
+                      <Building2 className="w-6 h-6 text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        {viewWarehouse.name}
+                      </h3>
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                          viewWarehouse.isActive,
+                        )}`}
+                      >
+                        {getStatusIcon(viewWarehouse.isActive)}
+                        {statusLabel(viewWarehouse.isActive)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-500">Address</p>
+                      <p className="text-sm text-gray-900">
+                        {viewWarehouse.address || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">City</p>
+                      <p className="text-sm text-gray-900">
+                        {viewWarehouse.city || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Zip Code</p>
+                      <p className="text-sm text-gray-900">
+                        {viewWarehouse.zipCode || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Phone</p>
+                      <p className="text-sm text-gray-900">
+                        {viewWarehouse.phone || "—"}
+                      </p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-xs text-gray-500">Email</p>
+                      <p className="text-sm text-gray-900">
+                        {viewWarehouse.email || "—"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3 p-4 border-t border-gray-100">
+              <button
+                onClick={() => {
+                  setShowViewModal(false);
+                  openEditModal(viewWarehouse);
+                }}
+                disabled={viewLoading}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Edit Warehouse
+              </button>
+              <button
+                onClick={() => setShowViewModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Close
               </button>
             </div>
           </div>
@@ -937,13 +934,16 @@ export const Warehouses: React.FC = () => {
               <div className="flex gap-3">
                 <button
                   onClick={handleDeleteWarehouse}
-                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Delete
+                  {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {deleting ? "Deleting…" : "Delete"}
                 </button>
                 <button
                   onClick={() => setShowDeleteModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>

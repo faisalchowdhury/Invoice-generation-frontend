@@ -1,345 +1,556 @@
 /**
- * File: src/pages/sales/Quotations.tsx
- * Complete Quotations Management page with list view, create/edit modal, filters, pagination
- * Based on existing pattern — matching exact color codes and design style
+ * File: src/pages/Quotation.tsx
+ * Quotations management — list, create/edit modal, view modal, delete.
+ *
+ * Backed by the quotation API:
+ *   GET    /quotation/all?page=&limit=  -> list (paginated envelope)
+ *   GET    /quotation/single/:id        -> one quotation (View modal)
+ *   POST   /quotation/create            -> create
+ *   PATCH  /quotation/:id               -> update
+ *   DELETE /quotation/delete/:id        -> delete (soft)
+ *
+ * The API stores customer_id / warehouse_id / product[].product_id as ids
+ * (customer_id arrives populated in the list, raw id in single), so they are
+ * resolved from:
+ *   /customer/all              -> customers
+ *   /purchase/warehouses/all   -> warehouses
+ *   /product/all               -> products
  */
 
-import React, { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
-import { showToast } from "../utils/toast";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
+  FileText,
   Search,
-  Plus,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
   Edit,
   Trash2,
   Filter,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  ArrowUpDown,
-  X,
-  Calendar,
-  Package,
-  DollarSign,
-  Percent,
-  FileText,
-  Send,
-  Eye,
   Download,
-  Printer,
+  Plus,
+  X,
   CheckCircle,
   Clock,
   AlertCircle,
+  Send,
+  Globe,
+  Save,
+  Loader2,
 } from "lucide-react";
+import { api } from "../lib/api/client";
+import { ApiError } from "../lib/api/ApiError";
+import { showToast } from "../utils/toast";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface QuotationItem {
   id: string;
-  product: string;
-  qty: number;
-  unitPrice: number;
-  discountPercent: number;
-  tax: number;
-  total: number;
+  productId: string;
+  quantity: number;
+  unitPrice: number; // rate
+  discount: number; // %
+  tax: number; // %
+  amount: number; // line subtotal (excl. tax)
 }
 
 interface Quotation {
   id: string;
   quotationNumber: string;
-  customer: string;
-  quotationDate: string;
-  dueDate: string;
+  customerId: string;
+  warehouseId: string;
+  quotationDate: string; // yyyy-mm-dd
+  dueDate: string; // yyyy-mm-dd
   subtotal: number;
   tax: number;
-  totalAmount: number;
-  status: "Draft" | "Sent" | "Accepted" | "Rejected" | "Expired";
-  warehouse: string;
-  paymentTerms: string;
+  total: number;
+  status: string;
   notes: string;
+  deposit: number;
+  discount: number;
+  shippingCost: number;
+  inlineDiscount: number;
+  discountBeforeTax: number;
   items: QuotationItem[];
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
-
-const sampleQuotations: Quotation[] = [
-  {
-    id: "1",
-    quotationNumber: "QT-2026-02-024",
-    customer: "Strategic Consulting",
-    quotationDate: "2026-02-09",
-    dueDate: "2026-02-23",
-    subtotal: 3.99,
-    tax: 0.52,
-    totalAmount: 4.51,
-    status: "Draft",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 15",
-    notes: "",
-    items: [],
-  },
-  {
-    id: "2",
-    quotationNumber: "QT-2026-01-023",
-    customer: "Jennifer Martinez",
-    quotationDate: "2026-01-22",
-    dueDate: "2026-02-05",
-    subtotal: 63.99,
-    tax: 7.61,
-    totalAmount: 71.6,
-    status: "Draft",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 15",
-    notes: "",
-    items: [],
-  },
-  {
-    id: "3",
-    quotationNumber: "QT-2026-01-022",
-    customer: "Quality Solutions Inc",
-    quotationDate: "2026-01-12",
-    dueDate: "2026-01-26",
-    subtotal: 18.99,
-    tax: 2.25,
-    totalAmount: 21.24,
-    status: "Sent",
-    warehouse: "East Coast Hub",
-    paymentTerms: "Net 30",
-    notes: "",
-    items: [],
-  },
-  {
-    id: "4",
-    quotationNumber: "QT-2025-11-021",
-    customer: "Prime Services Co",
-    quotationDate: "2025-11-23",
-    dueDate: "2025-12-07",
-    subtotal: 160.0,
-    tax: 14.24,
-    totalAmount: 174.24,
-    status: "Rejected",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 30",
-    notes: "",
-    items: [],
-  },
-  {
-    id: "5",
-    quotationNumber: "QT-2025-11-020",
-    customer: "Lisa Anderson",
-    quotationDate: "2025-11-18",
-    dueDate: "2025-12-02",
-    subtotal: 191.98,
-    tax: 20.65,
-    totalAmount: 212.63,
-    status: "Sent",
-    warehouse: "West Coast Hub",
-    paymentTerms: "Net 15",
-    notes: "",
-    items: [],
-  },
-  {
-    id: "6",
-    quotationNumber: "QT-2025-11-018",
-    customer: "Future Tech Ltd",
-    quotationDate: "2025-11-08",
-    dueDate: "2025-11-22",
-    subtotal: 274.99,
-    tax: 21.47,
-    totalAmount: 296.46,
-    status: "Draft",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 30",
-    notes: "",
-    items: [],
-  },
-  {
-    id: "7",
-    quotationNumber: "QT-2025-11-017",
-    customer: "Elite Enterprises",
-    quotationDate: "2025-11-03",
-    dueDate: "2025-11-17",
-    subtotal: 18.99,
-    tax: 2.95,
-    totalAmount: 21.94,
-    status: "Rejected",
-    warehouse: "East Coast Hub",
-    paymentTerms: "Net 15",
-    notes: "",
-    items: [],
-  },
-  {
-    id: "8",
-    quotationNumber: "QT-2025-10-016",
-    customer: "Dynamic Solutions",
-    quotationDate: "2025-10-29",
-    dueDate: "2025-11-12",
-    subtotal: 369.99,
-    tax: 28.27,
-    totalAmount: 398.26,
-    status: "Sent",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 30",
-    notes: "",
-    items: [],
-  },
-];
-
-const customers = [
-  "Strategic Consulting",
-  "Jennifer Martinez",
-  "Quality Solutions Inc",
-  "Prime Services Co",
-  "Lisa Anderson",
-  "Future Tech Ltd",
-  "Elite Enterprises",
-  "Dynamic Solutions",
-  "Tech Innovations Inc",
-  "Smart Systems Corp",
-];
-
-const warehouses = [
-  "Main Warehouse",
-  "East Coast Hub",
-  "West Coast Hub",
-  "Central Warehouse",
-];
-const products = [
-  { name: "Laptop Pro", price: 1200 },
-  { name: "Wireless Mouse", price: 25 },
-  { name: "Mechanical Keyboard", price: 80 },
-  { name: "USB-C Hub", price: 45 },
-  { name: 'Monitor 27"', price: 350 },
-  { name: "Webcam HD", price: 60 },
-  { name: "Headphones", price: 90 },
-  { name: "External SSD", price: 150 },
-];
+interface ApiQuotationItem {
+  product_id: string;
+  quantity: number;
+  rate: number;
+  tax: number;
+  discount: number;
+  amount: number;
+}
+interface ApiQuotation {
+  _id: string;
+  customer_id?: string | { _id: string; name?: string } | null;
+  warehouse_id?: string | null;
+  quotation_number: string;
+  quotation_date: string;
+  due_date: string;
+  discount_before_tax?: number;
+  product?: ApiQuotationItem[];
+  service?: unknown[];
+  status?: string;
+  notes?: string;
+  deposit?: number;
+  discount?: number;
+  shipping_cost?: number;
+  inline_discount?: number;
+  tax?: number;
+  sub_total?: number;
+  total?: number;
+}
+interface ApiCustomer {
+  _id: string;
+  name?: string;
+  customerName?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}
+interface ApiWarehouse {
+  _id: string;
+  name?: string;
+}
+interface ApiProduct {
+  _id: string;
+  productName?: string;
+  name?: string;
+  sku?: string;
+  pricing?: { sellPrice?: number; buyPrice?: number };
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const fmtCurrency = (val: number) => {
-  const formatted = val.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${formatted}$`;
-};
+const toDateInput = (iso?: string) => (iso ? iso.slice(0, 10) : "");
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const num = (v: string | number) => Number(v) || 0;
+const errMessage = (err: unknown, fallback: string) =>
+  err instanceof ApiError && err.message ? err.message : fallback;
 
-type SortField =
-  | "quotationNumber"
-  | "customer"
-  | "quotationDate"
-  | "dueDate"
-  | "subtotal"
-  | "tax"
-  | "totalAmount"
-  | "status";
-type SortDir = "asc" | "desc";
+const refId = (ref: { _id: string } | string | null | undefined): string =>
+  typeof ref === "object" && ref ? ref._id : (ref ?? "");
+const customerLabel = (c: ApiCustomer): string =>
+  c.name ??
+  c.customerName ??
+  [c.firstName, c.lastName].filter(Boolean).join(" ") ??
+  c.email ??
+  c._id;
+const productLabel = (p: ApiProduct): string =>
+  p.productName ?? p.name ?? p._id;
 
-// ─── Component ────────────────────────────────────────────────────────────────
+const mapApiQuotation = (q: ApiQuotation): Quotation => ({
+  id: q._id,
+  quotationNumber: q.quotation_number ?? "",
+  customerId: refId(q.customer_id),
+  warehouseId: q.warehouse_id ?? "",
+  quotationDate: toDateInput(q.quotation_date),
+  dueDate: toDateInput(q.due_date),
+  subtotal: q.sub_total ?? 0,
+  tax: q.tax ?? 0,
+  total: q.total ?? 0,
+  status: q.status ?? "Draft",
+  notes: q.notes ?? "",
+  deposit: q.deposit ?? 0,
+  discount: q.discount ?? 0,
+  shippingCost: q.shipping_cost ?? 0,
+  inlineDiscount: q.inline_discount ?? 0,
+  discountBeforeTax: q.discount_before_tax ?? 0,
+  items: (q.product ?? []).map((it, idx) => ({
+    id: `item-${idx}`,
+    productId: it.product_id,
+    quantity: it.quantity ?? 0,
+    unitPrice: it.rate ?? 0,
+    discount: it.discount ?? 0,
+    tax: it.tax ?? 0,
+    amount: it.amount ?? 0,
+  })),
+});
+
+const newItem = (): QuotationItem => ({
+  id: `new-${Math.random().toString(36).slice(2)}`,
+  productId: "",
+  quantity: 1,
+  unitPrice: 0,
+  discount: 0,
+  tax: 0,
+  amount: 0,
+});
+
+const languages = [
+  { code: "en", name: "English", flag: "🇬🇧" },
+  { code: "es", name: "Spanish", flag: "🇪🇸" },
+  { code: "fr", name: "French", flag: "🇫🇷" },
+];
+
+const STATUS_OPTIONS = ["Draft", "Sent", "Accepted", "Partial", "Rejected"];
 
 export const Quotations: React.FC = () => {
-  const navigate = useNavigate();
+  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [quotations, setQuotations] = useState<Quotation[]>(sampleQuotations);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [perPage, setPerPage] = useState(10);
+  const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [sortField, setSortField] = useState<SortField>("quotationNumber");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [selectedLanguage, setSelectedLanguage] = useState("en");
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("All");
 
-  // Modal states
+  // Create/Edit modal
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(
-    null,
-  );
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [quotationToDelete, setQuotationToDelete] = useState<Quotation | null>(
-    null,
-  );
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // View modal
+  const [showView, setShowView] = useState(false);
+  const [viewQuotation, setViewQuotation] = useState<Quotation | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+
+  // Delete modal
+  const [showDelete, setShowDelete] = useState(false);
+  const [toDelete, setToDelete] = useState<Quotation | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Option sources
+  const [customers, setCustomers] = useState<ApiCustomer[]>([]);
+  const [warehouses, setWarehouses] = useState<ApiWarehouse[]>([]);
+  const [products, setProducts] = useState<ApiProduct[]>([]);
 
   // Form state
-  const [formQuotationDate, setFormQuotationDate] = useState(
-    () => new Date().toISOString().split("T")[0],
-  );
-  const [formDueDate, setFormDueDate] = useState("");
-  const [formCustomer, setFormCustomer] = useState("");
-  const [formWarehouse, setFormWarehouse] = useState("");
-  const [formPaymentTerms, setFormPaymentTerms] = useState("");
-  const [formNotes, setFormNotes] = useState("");
-  const [formItems, setFormItems] = useState<QuotationItem[]>([
-    {
-      id: "new-1",
-      product: "",
-      qty: 1,
-      unitPrice: 0,
-      discountPercent: 0,
-      tax: 0,
-      total: 0,
-    },
+  const [formData, setFormData] = useState({
+    customerId: "",
+    warehouseId: "",
+    quotationNumber: "",
+    quotationDate: new Date().toISOString().split("T")[0],
+    dueDate: "",
+    status: "Draft",
+    notes: "",
+    deposit: 0,
+    discount: 0,
+    shippingCost: 0,
+    inlineDiscount: 0,
+    discountBeforeTax: 0,
+  });
+  const [quotationItems, setQuotationItems] = useState<QuotationItem[]>([
+    newItem(),
   ]);
 
-  // ─── Sorting ────────────────────────────────────────────────────────────────
+  // ─── Lookup maps ───────────────────────────────────────────────────────────
+  const customerNameById = useMemo(() => {
+    const m: Record<string, string> = {};
+    customers.forEach((c) => (m[c._id] = customerLabel(c)));
+    return m;
+  }, [customers]);
+  const warehouseNameById = useMemo(() => {
+    const m: Record<string, string> = {};
+    warehouses.forEach((w) => (m[w._id] = (w.name ?? "").trim()));
+    return m;
+  }, [warehouses]);
+  const productNameById = useMemo(() => {
+    const m: Record<string, string> = {};
+    products.forEach((p) => (m[p._id] = productLabel(p)));
+    return m;
+  }, [products]);
 
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortField(field);
-      setSortDir("asc");
+  // ─── Data loading ──────────────────────────────────────────────────────────
+  const loadQuotations = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await api.get<ApiQuotation[]>("/quotation/all", {
+        params: { page: 1, limit: 1000 },
+      });
+      setQuotations(Array.isArray(data) ? data.map(mapApiQuotation) : []);
+    } catch (err) {
+      const message = errMessage(err, "Couldn't load quotations.");
+      setLoadError(message);
+      showToast(message, "error");
+    } finally {
+      setLoading(false);
     }
+  }, []);
+
+  const loadOptions = useCallback(async () => {
+    try {
+      const [c, w, p] = await Promise.allSettled([
+        api.get<ApiCustomer[]>("/customer/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+        api.get<ApiWarehouse[]>("/purchase/warehouses/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+        api.get<ApiProduct[]>("/product/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+      ]);
+      if (c.status === "fulfilled" && Array.isArray(c.value))
+        setCustomers(c.value);
+      if (w.status === "fulfilled" && Array.isArray(w.value))
+        setWarehouses(w.value);
+      if (p.status === "fulfilled" && Array.isArray(p.value))
+        setProducts(p.value);
+    } catch {
+      /* dropdowns degrade gracefully */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadQuotations();
+    loadOptions();
+  }, [loadQuotations, loadOptions]);
+
+  // ─── Totals ────────────────────────────────────────────────────────────────
+  const calculateTotals = () => {
+    let subtotal = 0;
+    let totalDiscount = 0;
+    let totalTax = 0;
+    quotationItems.forEach((item) => {
+      const base = item.quantity * item.unitPrice;
+      const discountAmount = base * (item.discount / 100);
+      const taxable = base - discountAmount;
+      subtotal += taxable;
+      totalDiscount += discountAmount;
+      totalTax += taxable * (item.tax / 100);
+    });
+    const total =
+      subtotal +
+      totalTax +
+      num(formData.shippingCost) -
+      num(formData.discount) -
+      num(formData.inlineDiscount) -
+      num(formData.discountBeforeTax);
+    return {
+      subtotal: round2(subtotal),
+      totalDiscount: round2(totalDiscount),
+      totalTax: round2(totalTax),
+      total: round2(total),
+    };
+  };
+  const { subtotal, totalDiscount, totalTax, total } = calculateTotals();
+
+  // ─── Item helpers ──────────────────────────────────────────────────────────
+  const recalcAmount = (item: QuotationItem): number => {
+    const base = item.quantity * item.unitPrice;
+    return round2(base - base * (item.discount / 100));
+  };
+
+  const addItemRow = () => setQuotationItems((prev) => [...prev, newItem()]);
+  const removeItemRow = (id: string) =>
+    setQuotationItems((prev) =>
+      prev.length > 1 ? prev.filter((i) => i.id !== id) : prev,
+    );
+
+  const updateItem = (
+    id: string,
+    field: keyof QuotationItem,
+    value: string | number,
+  ) => {
+    setQuotationItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const updated = { ...item, [field]: value } as QuotationItem;
+        if (field === "productId") {
+          const found = products.find((p) => p._id === value);
+          const price = found?.pricing?.sellPrice ?? found?.pricing?.buyPrice;
+          if (typeof price === "number") updated.unitPrice = price;
+        }
+        updated.amount = recalcAmount(updated);
+        return updated;
+      }),
+    );
+  };
+
+  // ─── Form open / reset ─────────────────────────────────────────────────────
+  const resetForm = () => {
+    setFormData({
+      customerId: "",
+      warehouseId: "",
+      quotationNumber: `QUO-${String(Math.floor(Math.random() * 900) + 100)}`,
+      quotationDate: new Date().toISOString().split("T")[0],
+      dueDate: "",
+      status: "Draft",
+      notes: "",
+      deposit: 0,
+      discount: 0,
+      shippingCost: 0,
+      inlineDiscount: 0,
+      discountBeforeTax: 0,
+    });
+    setQuotationItems([newItem()]);
+    setEditingId(null);
+  };
+
+  const openCreate = () => {
+    resetForm();
+    setIsEditing(false);
+    setShowModal(true);
+  };
+
+  const openEdit = (q: Quotation) => {
+    setEditingId(q.id);
+    setFormData({
+      customerId: q.customerId,
+      warehouseId: q.warehouseId,
+      quotationNumber: q.quotationNumber,
+      quotationDate: q.quotationDate,
+      dueDate: q.dueDate,
+      status: q.status,
+      notes: q.notes,
+      deposit: q.deposit,
+      discount: q.discount,
+      shippingCost: q.shippingCost,
+      inlineDiscount: q.inlineDiscount,
+      discountBeforeTax: q.discountBeforeTax,
+    });
+    setQuotationItems(
+      q.items.length > 0 ? q.items.map((i) => ({ ...i })) : [newItem()],
+    );
+    setIsEditing(true);
+    setShowModal(true);
+  };
+
+  // ─── View (single) ─────────────────────────────────────────────────────────
+  const openView = async (q: Quotation) => {
+    setViewQuotation(q);
+    setShowView(true);
+    setViewLoading(true);
+    try {
+      const data = await api.get<ApiQuotation>(`/quotation/single/${q.id}`);
+      if (data) setViewQuotation(mapApiQuotation(data));
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't load quotation details."), "error");
+    } finally {
+      setViewLoading(false);
+    }
+  };
+
+  // ─── Create / Update ───────────────────────────────────────────────────────
+  const handleSaveQuotation = async () => {
+    if (!formData.customerId)
+      return showToast("Please select a customer", "info");
+    if (!formData.warehouseId)
+      return showToast("Please select a warehouse", "info");
+    if (!formData.quotationNumber.trim())
+      return showToast("Please enter a quotation number", "info");
+    const items = quotationItems.filter((i) => i.productId);
+    if (items.length === 0)
+      return showToast("Please add at least one product", "info");
+
+    const payload = {
+      customer_id: formData.customerId,
+      warehouse_id: formData.warehouseId,
+      quotation_number: formData.quotationNumber.trim(),
+      quotation_date: formData.quotationDate,
+      due_date: formData.dueDate,
+      discount_before_tax: num(formData.discountBeforeTax),
+      status: formData.status,
+      notes: formData.notes,
+      deposit: num(formData.deposit),
+      discount: num(formData.discount),
+      shipping_cost: num(formData.shippingCost),
+      inline_discount: num(formData.inlineDiscount),
+      tax: totalTax,
+      total,
+      isDeleted: false,
+      archive: false,
+      product: items.map((i) => ({
+        product_id: i.productId,
+        quantity: i.quantity,
+        rate: i.unitPrice,
+        tax: i.tax,
+        discount: i.discount,
+        amount: recalcAmount(i),
+      })),
+      service: [],
+    };
+
+    setSaving(true);
+    try {
+      if (isEditing && editingId) {
+        await api.patch(`/quotation/edit/${editingId}`, payload);
+        showToast("Quotation updated successfully!", "success");
+      } else {
+        await api.post("/quotation/create", payload);
+        showToast("Quotation created successfully!", "success");
+      }
+      setShowModal(false);
+      resetForm();
+      await loadQuotations();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't save quotation."), "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ─── Delete ────────────────────────────────────────────────────────────────
+  const handleDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/quotation/delete/${toDelete.id}`);
+      showToast("Quotation deleted successfully!", "success");
+      setShowDelete(false);
+      setToDelete(null);
+      await loadQuotations();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't delete quotation."), "error");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // ─── Filter / paginate ─────────────────────────────────────────────────────
+  const filteredQuotations = quotations.filter((q) => {
+    const term = searchTerm.toLowerCase();
+    const matchesSearch =
+      q.quotationNumber.toLowerCase().includes(term) ||
+      (customerNameById[q.customerId] ?? "").toLowerCase().includes(term);
+    const matchesStatus = statusFilter === "All" || q.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const totalPages = Math.ceil(filteredQuotations.length / itemsPerPage);
+  const paginatedQuotations = filteredQuotations.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage,
+  );
+
+  const handlePageChange = (page: number) => setCurrentPage(page);
+  const handleItemsPerPageChange = (value: number) => {
+    setItemsPerPage(value);
     setCurrentPage(1);
   };
 
-  // ─── Filtered & Sorted ─────────────────────────────────────────────────────
-
-  const filteredQuotations = useMemo(() => {
-    let result = [...quotations];
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (qtn) =>
-          qtn.quotationNumber.toLowerCase().includes(q) ||
-          qtn.customer.toLowerCase().includes(q),
-      );
-    }
-    if (statusFilter !== "All") {
-      result = result.filter((qtn) => qtn.status === statusFilter);
-    }
-    result.sort((a, b) => {
-      let aVal: any = a[sortField];
-      let bVal: any = b[sortField];
-      if (typeof aVal === "string") aVal = aVal.toLowerCase();
-      if (typeof bVal === "string") bVal = bVal.toLowerCase();
-      if (aVal < bVal) return sortDir === "asc" ? -1 : 1;
-      if (aVal > bVal) return sortDir === "asc" ? 1 : -1;
-      return 0;
-    });
-    return result;
-  }, [quotations, searchQuery, statusFilter, sortField, sortDir]);
-
-  const totalPages = Math.ceil(filteredQuotations.length / perPage);
-  const paginatedQuotations = filteredQuotations.slice(
-    (currentPage - 1) * perPage,
-    currentPage * perPage,
-  );
-
-  // ─── Status Badge ───────────────────────────────────────────────────────────
+  const formatCurrency = (value: number): string =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value || 0);
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Draft":
-        return "bg-gray-100 text-gray-700 border border-gray-200";
+        return "bg-gray-100 text-gray-700";
       case "Sent":
-        return "bg-blue-100 text-blue-700 border border-blue-200";
+        return "bg-blue-100 text-blue-700";
       case "Accepted":
-        return "bg-green-100 text-green-700 border border-green-200";
+        return "bg-green-100 text-green-700";
+      case "Partial":
+        return "bg-yellow-100 text-yellow-700";
       case "Rejected":
-        return "bg-red-100 text-red-700 border border-red-200";
+        return "bg-red-100 text-red-700";
       case "Expired":
-        return "bg-orange-100 text-orange-700 border border-orange-200";
+        return "bg-orange-100 text-orange-700";
       default:
-        return "bg-gray-100 text-gray-700 border border-gray-200";
+        return "bg-gray-100 text-gray-700";
     }
   };
 
@@ -351,6 +562,8 @@ export const Quotations: React.FC = () => {
         return <Send className="w-3 h-3" />;
       case "Accepted":
         return <CheckCircle className="w-3 h-3" />;
+      case "Partial":
+        return <Clock className="w-3 h-3" />;
       case "Rejected":
         return <X className="w-3 h-3" />;
       case "Expired":
@@ -360,872 +573,1002 @@ export const Quotations: React.FC = () => {
     }
   };
 
-  // Check if overdue
-  const isOverdue = (dueDate: string, status: string) => {
-    if (status === "Accepted" || status === "Rejected") return false;
-    const today = new Date().toISOString().split("T")[0];
-    return dueDate < today;
-  };
+  return (
+    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+      <div className="max-w-[1600px] mx-auto">
+        {/* Breadcrumb */}
+        <div className="mb-4 flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <span>Dashboard</span>
+            <span>/</span>
+            <span className="text-gray-900 font-medium">Quotations</span>
+          </div>
 
-  // ─── Form Helpers ───────────────────────────────────────────────────────────
+          {/* Language Selector */}
+          <div className="relative">
+            <button
+              onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              <Globe className="w-4 h-4" />
+              {languages.find((lang) => lang.code === selectedLanguage)?.name}
+              <ChevronRight className="w-3 h-3 rotate-90" />
+            </button>
+            {showLanguageDropdown && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setShowLanguageDropdown(false)}
+                />
+                <div className="absolute right-0 mt-2 w-32 bg-white border border-gray-200 rounded-lg shadow-lg z-20">
+                  {languages.map((lang) => (
+                    <button
+                      key={lang.code}
+                      onClick={() => {
+                        setSelectedLanguage(lang.code);
+                        setShowLanguageDropdown(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg flex items-center gap-2 ${
+                        selectedLanguage === lang.code
+                          ? "bg-blue-50 text-blue-600"
+                          : "text-gray-700"
+                      }`}
+                    >
+                      <span>{lang.flag}</span>
+                      {lang.name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
 
-  const recalcItem = (item: QuotationItem): QuotationItem => {
-    const subtotal = item.qty * item.unitPrice;
-    const discountAmt = subtotal * (item.discountPercent / 100);
-    const afterDiscount = subtotal - discountAmt;
-    const taxAmt = afterDiscount * 0.18;
-    return {
-      ...item,
-      tax: Math.round(taxAmt * 100) / 100,
-      total: Math.round(afterDiscount * 100) / 100,
-    };
-  };
-
-  const updateItem = (id: string, field: keyof QuotationItem, value: any) => {
-    setFormItems((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
-        const updated = { ...item, [field]: value };
-        if (field === "product") {
-          const found = products.find((p) => p.name === value);
-          if (found) updated.unitPrice = found.price;
-        }
-        return recalcItem(updated);
-      }),
-    );
-  };
-
-  const addItem = () => {
-    setFormItems((prev) => [
-      ...prev,
-      {
-        id: `new-${Date.now()}`,
-        product: "",
-        qty: 1,
-        unitPrice: 0,
-        discountPercent: 0,
-        tax: 0,
-        total: 0,
-      },
-    ]);
-  };
-
-  const removeItem = (id: string) => {
-    setFormItems((prev) =>
-      prev.length <= 1 ? prev : prev.filter((i) => i.id !== id),
-    );
-  };
-
-  const formSubtotal = formItems.reduce((sum, i) => sum + i.total, 0);
-  const formDiscount = formItems.reduce((sum, i) => {
-    const sub = i.qty * i.unitPrice;
-    return sum + sub * (i.discountPercent / 100);
-  }, 0);
-  const formTax = formItems.reduce((sum, i) => sum + i.tax, 0);
-  const formTotal = formSubtotal + formTax;
-
-  const resetForm = () => {
-    setFormQuotationDate(new Date().toISOString().split("T")[0]);
-    setFormDueDate("");
-    setFormCustomer("");
-    setFormWarehouse("");
-    setFormPaymentTerms("");
-    setFormNotes("");
-    setFormItems([
-      {
-        id: "new-1",
-        product: "",
-        qty: 1,
-        unitPrice: 0,
-        discountPercent: 0,
-        tax: 0,
-        total: 0,
-      },
-    ]);
-    setEditingQuotation(null);
-  };
-
-  const openCreateModal = () => {
-    resetForm();
-    setIsEditing(false);
-    setShowModal(true);
-  };
-
-  const openEditModal = (quotation: Quotation) => {
-    setEditingQuotation(quotation);
-    setFormQuotationDate(quotation.quotationDate);
-    setFormDueDate(quotation.dueDate);
-    setFormCustomer(quotation.customer);
-    setFormWarehouse(quotation.warehouse);
-    setFormPaymentTerms(quotation.paymentTerms);
-    setFormNotes(quotation.notes);
-    setFormItems(
-      quotation.items.length > 0
-        ? quotation.items
-        : [
-            {
-              id: "new-1",
-              product: "",
-              qty: 1,
-              unitPrice: 0,
-              discountPercent: 0,
-              tax: 0,
-              total: 0,
-            },
-          ],
-    );
-    setIsEditing(true);
-    setShowModal(true);
-  };
-
-  const openDeleteModal = (quotation: Quotation) => {
-    setQuotationToDelete(quotation);
-    setShowDeleteModal(true);
-  };
-
-  const handleSaveQuotation = () => {
-    if (!formCustomer) {
-      showToast("Please select a customer", "info");
-      return;
-    }
-    if (!formDueDate) {
-      showToast("Please select a due date", "info");
-      return;
-    }
-    if (!formWarehouse) {
-      showToast("Please select a warehouse", "info");
-      return;
-    }
-
-    if (isEditing && editingQuotation) {
-      setQuotations((prev) =>
-        prev.map((q) =>
-          q.id === editingQuotation.id
-            ? {
-                ...q,
-                quotationDate: formQuotationDate,
-                dueDate: formDueDate,
-                customer: formCustomer,
-                warehouse: formWarehouse,
-                paymentTerms: formPaymentTerms,
-                notes: formNotes,
-                items: formItems,
-                subtotal: formSubtotal,
-                tax: formTax,
-                totalAmount: formTotal,
-              }
-            : q,
-        ),
-      );
-      showToast("Quotation updated successfully!", "success");
-    } else {
-      const newQuotation: Quotation = {
-        id: Date.now().toString(),
-        quotationNumber: `QT-${new Date().toISOString().split("T")[0]}-${String(quotations.length + 1).padStart(3, "0")}`,
-        customer: formCustomer,
-        quotationDate: formQuotationDate,
-        dueDate: formDueDate,
-        subtotal: formSubtotal,
-        tax: formTax,
-        totalAmount: formTotal,
-        status: "Draft",
-        warehouse: formWarehouse,
-        paymentTerms: formPaymentTerms,
-        notes: formNotes,
-        items: formItems,
-      };
-      setQuotations((prev) => [newQuotation, ...prev]);
-      showToast("Quotation created successfully!", "success");
-    }
-    setShowModal(false);
-    resetForm();
-  };
-
-  const handleDeleteQuotation = () => {
-    if (quotationToDelete) {
-      setQuotations((prev) =>
-        prev.filter((q) => q.id !== quotationToDelete.id),
-      );
-      showToast("Quotation deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setQuotationToDelete(null);
-    }
-  };
-
-  const handleSendQuotation = (quotation: Quotation) => {
-    setQuotations((prev) =>
-      prev.map((q) =>
-        q.id === quotation.id && q.status === "Draft"
-          ? { ...q, status: "Sent" as const }
-          : q,
-      ),
-    );
-    showToast(
-      `Quotation ${quotation.quotationNumber} sent to customer!`,
-      "success",
-    );
-  };
-
-  // ─── Sort Header ────────────────────────────────────────────────────────────
-
-  const SortHeader: React.FC<{ field: SortField; label: string }> = ({
-    field,
-    label,
-  }) => (
-    <th
-      className="px-3 py-3 text-left text-xs font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-50 whitespace-nowrap"
-      onClick={() => handleSort(field)}
-    >
-      <div className="flex items-center gap-1">
-        {label}
-        <ArrowUpDown
-          className={`w-3 h-3 ${sortField === field ? "text-gray-900" : "text-gray-400"}`}
-        />
-      </div>
-    </th>
-  );
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // CREATE/EDIT MODAL
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  const QuotationModal = () => (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
-      style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
-    >
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+        {/* Header */}
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">
-              {isEditing ? "Edit Quotation" : "Create Quotation"}
-            </h2>
-            <p className="text-sm text-gray-500 mt-0.5">
-              {isEditing
-                ? "Update quotation information"
-                : "Create a new quotation for customer"}
+            <h1 className="text-xl md:text-2xl font-semibold text-gray-900">
+              Manage Quotations
+            </h1>
+            <p className="text-sm text-gray-500 mt-1">
+              Create and manage sales quotations for your customers
             </p>
           </div>
           <button
-            onClick={() => setShowModal(false)}
-            className="p-2 hover:bg-gray-100 rounded-lg"
+            onClick={openCreate}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <Plus className="w-4 h-4" />
+            Create Quotation
           </button>
         </div>
 
-        <div className="p-6">
-          {/* Quotation Details */}
-          <div className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
-            <div className="flex items-center gap-2 mb-4">
-              <FileText className="w-5 h-5 text-gray-500" />
-              <h3 className="text-base font-semibold text-gray-900">
-                Quotation Details
-              </h3>
+        {/* Search and Filters */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search quotations..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Quotation Date <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="date"
-                    value={formQuotationDate}
-                    onChange={(e) => setFormQuotationDate(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Due Date <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="date"
-                    value={formDueDate}
-                    onChange={(e) => setFormDueDate(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Customer <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={formCustomer}
-                  onChange={(e) => setFormCustomer(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-                >
-                  <option value="">Select Customer</option>
-                  {customers.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Warehouse <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={formWarehouse}
-                  onChange={(e) => setFormWarehouse(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-                >
-                  <option value="">Select Warehouse</option>
-                  {warehouses.map((w) => (
-                    <option key={w} value={w}>
-                      {w}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Payment Terms
-                </label>
-                <input
-                  type="text"
-                  value={formPaymentTerms}
-                  onChange={(e) => setFormPaymentTerms(e.target.value)}
-                  placeholder="e.g., Net 30"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Notes
-                </label>
-                <textarea
-                  value={formNotes}
-                  onChange={(e) => setFormNotes(e.target.value)}
-                  placeholder="Additional notes..."
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-y"
-                />
-              </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                <Filter className="w-4 h-4" />
+                Filters
+              </button>
+              <button
+                onClick={() => loadQuotations()}
+                className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Refresh
+              </button>
             </div>
           </div>
 
-          {/* Quotation Items */}
-          <div className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Package className="w-5 h-5 text-gray-500" />
-                <h3 className="text-base font-semibold text-gray-900">
-                  Quotation Items
-                </h3>
+          {showFilters && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="flex flex-wrap gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">Status:</span>
+                  <div className="flex gap-2 flex-wrap">
+                    {["All", ...STATUS_OPTIONS].map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => {
+                          setStatusFilter(status);
+                          setCurrentPage(1);
+                        }}
+                        className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                          statusFilter === status
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        }`}
+                      >
+                        {status}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Table */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  {[
+                    "Quotation Number",
+                    "Customer",
+                    "Quotation Date",
+                    "Due Date",
+                    "Subtotal",
+                    "Tax",
+                    "Total Amount",
+                    "Status",
+                    "Actions",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-16">
+                      <div className="flex items-center justify-center gap-2 text-gray-500">
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span className="text-sm">Loading quotations…</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : loadError ? (
+                  <tr>
+                    <td
+                      colSpan={9}
+                      className="px-4 py-12 text-center text-sm text-red-600"
+                    >
+                      {loadError}
+                    </td>
+                  </tr>
+                ) : paginatedQuotations.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={9}
+                      className="px-4 py-12 text-center text-sm text-gray-500"
+                    >
+                      No quotations found.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedQuotations.map((q) => (
+                    <tr
+                      key={q.id}
+                      className="hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => openView(q)}
+                          className="font-medium text-blue-600 hover:text-blue-800 hover:underline text-sm"
+                        >
+                          {q.quotationNumber}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {customerNameById[q.customerId] || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {q.quotationDate}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {q.dueDate}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {formatCurrency(q.subtotal)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {formatCurrency(q.tax)}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                        {formatCurrency(q.total)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                            q.status,
+                          )}`}
+                        >
+                          {getStatusIcon(q.status)}
+                          {q.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => openView(q)}
+                            className="p-1.5 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                            title="View"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => openEdit(q)}
+                            className="p-1.5 text-gray-400 hover:text-green-600 rounded-lg hover:bg-green-50 transition-colors"
+                            title="Edit"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setToDelete(q);
+                              setShowDelete(true);
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-500">Show</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) =>
+                  handleItemsPerPageChange(Number(e.target.value))
+                }
+                className="px-2 py-1 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+              </select>
+              <span className="text-sm text-gray-500">per page</span>
+            </div>
+
+            <div className="text-sm text-gray-500">
+              Showing{" "}
+              {filteredQuotations.length === 0
+                ? 0
+                : (currentPage - 1) * itemsPerPage + 1}{" "}
+              to{" "}
+              {Math.min(currentPage * itemsPerPage, filteredQuotations.length)}{" "}
+              of {filteredQuotations.length} results
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm border border-gray-200 rounded-lg hover:bg-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Previous
+              </button>
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                let pageNumber;
+                if (totalPages <= 5) pageNumber = i + 1;
+                else if (currentPage <= 3) pageNumber = i + 1;
+                else if (currentPage >= totalPages - 2)
+                  pageNumber = totalPages - 4 + i;
+                else pageNumber = currentPage - 2 + i;
+                return (
+                  <button
+                    key={pageNumber}
+                    onClick={() => handlePageChange(pageNumber)}
+                    className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                      currentPage === pageNumber
+                        ? "bg-blue-600 text-white"
+                        : "border border-gray-200 text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    {pageNumber}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages || totalPages === 0}
+                className="px-3 py-1 text-sm border border-gray-200 rounded-lg hover:bg-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Create / Edit Quotation Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-[90vw] max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between z-10">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">
+                  {isEditing ? "Edit Quotation" : "Create Quotation"}
+                </h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Fill in the details to {isEditing ? "update" : "create"} a
+                  quotation
+                </p>
               </div>
               <button
-                onClick={addItem}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
+                onClick={() => setShowModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
-                <Plus className="w-4 h-4" />
-                Add Item
+                <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[700px]">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">
-                      Product *
-                    </th>
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-20">
-                      Qty *
-                    </th>
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-28">
-                      Unit Price *
-                    </th>
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-24">
-                      Discount %
-                    </th>
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-24">
-                      Tax
-                    </th>
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-28">
-                      Total
-                    </th>
-                    <th className="px-2 py-2 text-center text-xs font-medium text-gray-600 w-16">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {formItems.map((item) => (
-                    <tr key={item.id} className="border-b border-gray-100">
-                      <td className="px-2 py-2">
+            {/* Body */}
+            <div className="p-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Left */}
+                <div className="lg:col-span-2 space-y-6">
+                  <div className="bg-gray-50 rounded-lg p-5">
+                    <h3 className="text-base font-semibold text-gray-900 mb-4">
+                      Quotation Details
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Customer *
+                        </label>
                         <select
-                          value={item.product}
+                          value={formData.customerId}
                           onChange={(e) =>
-                            updateItem(item.id, "product", e.target.value)
+                            setFormData({
+                              ...formData,
+                              customerId: e.target.value,
+                            })
                           }
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                         >
-                          <option value="">Select product</option>
-                          {products.map((p) => (
-                            <option key={p.name} value={p.name}>
-                              {p.name}
+                          <option value="">Select Customer</option>
+                          {customers.map((c) => (
+                            <option key={c._id} value={c._id}>
+                              {customerLabel(c)}
                             </option>
                           ))}
                         </select>
-                      </td>
-                      <td className="px-2 py-2">
-                        <input
-                          type="number"
-                          min={1}
-                          value={item.qty}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Warehouse *
+                        </label>
+                        <select
+                          value={formData.warehouseId}
                           onChange={(e) =>
-                            updateItem(
-                              item.id,
-                              "qty",
-                              Math.max(1, parseInt(e.target.value) || 1),
-                            )
+                            setFormData({
+                              ...formData,
+                              warehouseId: e.target.value,
+                            })
                           }
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          value={item.unitPrice}
-                          onChange={(e) =>
-                            updateItem(
-                              item.id,
-                              "unitPrice",
-                              parseFloat(e.target.value) || 0,
-                            )
-                          }
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={item.discountPercent}
-                          onChange={(e) =>
-                            updateItem(
-                              item.id,
-                              "discountPercent",
-                              parseFloat(e.target.value) || 0,
-                            )
-                          }
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </td>
-                      <td className="px-2 py-2 text-sm text-gray-600">
-                        {item.tax > 0 ? fmtCurrency(item.tax) : "No tax"}
-                      </td>
-                      <td className="px-2 py-2 text-sm text-gray-900 font-medium">
-                        {fmtCurrency(item.total)}
-                      </td>
-                      <td className="px-2 py-2 text-center">
-                        <button
-                          onClick={() => removeItem(item.id)}
-                          className="p-1 text-red-500 hover:text-red-700"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                         >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                          <option value="">Select Warehouse</option>
+                          {warehouses.map((w) => (
+                            <option key={w._id} value={w._id}>
+                              {(w.name ?? "").trim()}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Quotation Number *
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.quotationNumber}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              quotationNumber: e.target.value,
+                            })
+                          }
+                          placeholder="QUO-001"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Status
+                        </label>
+                        <select
+                          value={formData.status}
+                          onChange={(e) =>
+                            setFormData({ ...formData, status: e.target.value })
+                          }
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        >
+                          {STATUS_OPTIONS.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Quotation Date
+                        </label>
+                        <input
+                          type="date"
+                          value={formData.quotationDate}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              quotationDate: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Due Date
+                        </label>
+                        <input
+                          type="date"
+                          value={formData.dueDate}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              dueDate: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
 
-            {/* Quotation Summary */}
-            <div className="flex justify-end mt-6">
-              <div className="w-full sm:w-72">
-                <h4 className="text-base font-semibold text-gray-900 mb-3">
-                  Quotation Summary
-                </h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Subtotal</span>
-                    <span className="text-gray-900">
-                      {fmtCurrency(formSubtotal)}
-                    </span>
+                  {/* Notes */}
+                  <div className="bg-gray-50 rounded-lg p-5">
+                    <h3 className="text-base font-semibold text-gray-900 mb-4">
+                      Notes
+                    </h3>
+                    <textarea
+                      value={formData.notes}
+                      onChange={(e) =>
+                        setFormData({ ...formData, notes: e.target.value })
+                      }
+                      rows={3}
+                      placeholder="Additional notes..."
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    />
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Discount</span>
-                    <span className="text-red-500">
-                      -{fmtCurrency(formDiscount)}
-                    </span>
+
+                  {/* Items */}
+                  <div className="bg-gray-50 rounded-lg p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-base font-semibold text-gray-900">
+                        Quotation Items
+                      </h3>
+                      <button
+                        onClick={addItemRow}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Item
+                      </button>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-white">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">
+                              Product
+                            </th>
+                            <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600">
+                              Qty
+                            </th>
+                            <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600">
+                              Unit Price
+                            </th>
+                            <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600">
+                              Discount %
+                            </th>
+                            <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600">
+                              Tax %
+                            </th>
+                            <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">
+                              Amount
+                            </th>
+                            <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600">
+                              Action
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {quotationItems.map((item) => (
+                            <tr
+                              key={item.id}
+                              className="border-t border-gray-200"
+                            >
+                              <td className="px-3 py-2">
+                                <select
+                                  value={item.productId}
+                                  onChange={(e) =>
+                                    updateItem(
+                                      item.id,
+                                      "productId",
+                                      e.target.value,
+                                    )
+                                  }
+                                  className="w-full min-w-[160px] px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                >
+                                  <option value="">Select Product</option>
+                                  {products.map((p) => (
+                                    <option key={p._id} value={p._id}>
+                                      {productLabel(p)}
+                                      {p.sku ? ` (${p.sku})` : ""}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={item.quantity}
+                                  onChange={(e) =>
+                                    updateItem(
+                                      item.id,
+                                      "quantity",
+                                      parseFloat(e.target.value) || 0,
+                                    )
+                                  }
+                                  className="w-20 px-2 py-1 text-sm border border-gray-200 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={0.01}
+                                  value={item.unitPrice}
+                                  onChange={(e) =>
+                                    updateItem(
+                                      item.id,
+                                      "unitPrice",
+                                      parseFloat(e.target.value) || 0,
+                                    )
+                                  }
+                                  className="w-24 px-2 py-1 text-sm border border-gray-200 rounded text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={item.discount}
+                                  onChange={(e) =>
+                                    updateItem(
+                                      item.id,
+                                      "discount",
+                                      parseFloat(e.target.value) || 0,
+                                    )
+                                  }
+                                  className="w-16 px-2 py-1 text-sm border border-gray-200 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={item.tax}
+                                  onChange={(e) =>
+                                    updateItem(
+                                      item.id,
+                                      "tax",
+                                      parseFloat(e.target.value) || 0,
+                                    )
+                                  }
+                                  className="w-16 px-2 py-1 text-sm border border-gray-200 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-right text-sm font-medium text-gray-900">
+                                {formatCurrency(item.amount)}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <button
+                                  onClick={() => removeItemRow(item.id)}
+                                  className="p-1 text-red-500 hover:bg-red-50 rounded transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Tax</span>
-                    <span className="text-gray-900">
-                      {fmtCurrency(formTax)}
-                    </span>
+
+                  {/* Additional charges */}
+                  <div className="bg-gray-50 rounded-lg p-5">
+                    <h3 className="text-base font-semibold text-gray-900 mb-4">
+                      Additional Charges
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {(
+                        [
+                          ["shippingCost", "Shipping Cost"],
+                          ["discount", "Discount"],
+                          ["inlineDiscount", "Inline Discount"],
+                          ["discountBeforeTax", "Discount Before Tax"],
+                          ["deposit", "Deposit"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <div key={key}>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {label}
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={formData[key]}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                [key]: parseFloat(e.target.value) || 0,
+                              })
+                            }
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex justify-between pt-3 border-t border-gray-200">
-                    <span className="text-base font-semibold text-gray-900">
-                      Total
-                    </span>
-                    <span className="text-base font-semibold text-blue-600">
-                      {fmtCurrency(formTotal)}
-                    </span>
+                </div>
+
+                {/* Right - Summary */}
+                <div className="lg:col-span-1">
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-5 sticky top-6">
+                    <h3 className="text-base font-semibold text-gray-900 mb-4">
+                      Quotation Summary
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Subtotal:</span>
+                        <span className="font-medium text-gray-900">
+                          {formatCurrency(subtotal)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Item Discount:</span>
+                        <span className="font-medium text-red-600">
+                          -{formatCurrency(totalDiscount)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Tax:</span>
+                        <span className="font-medium text-gray-900">
+                          {formatCurrency(totalTax)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Shipping:</span>
+                        <span className="font-medium text-gray-900">
+                          {formatCurrency(num(formData.shippingCost))}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Other Discounts:</span>
+                        <span className="font-medium text-red-600">
+                          -
+                          {formatCurrency(
+                            num(formData.discount) +
+                              num(formData.inlineDiscount) +
+                              num(formData.discountBeforeTax),
+                          )}
+                        </span>
+                      </div>
+                      <div className="border-t border-gray-200 pt-3 mt-3">
+                        <div className="flex justify-between text-base font-bold">
+                          <span className="text-gray-900">Total:</span>
+                          <span className="text-blue-600">
+                            {formatCurrency(total)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="mt-4 text-sm text-gray-500">
-              {formItems.length} {formItems.length === 1 ? "item" : "items"}{" "}
-              added
-            </div>
-          </div>
-
-          {/* Footer Actions */}
-          <div className="flex flex-col sm:flex-row justify-end gap-3">
-            <button
-              onClick={() => setShowModal(false)}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSaveQuotation}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-            >
-              {isEditing ? "Save Changes" : "Create"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  // Delete Modal
-  const DeleteModal = () => (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
-    >
-      <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-        <div className="p-6 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
-            <Trash2 className="w-8 h-8 text-red-600" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">
-            Delete Quotation
-          </h3>
-          <p className="text-gray-500 mb-6">
-            Are you sure you want to delete{" "}
-            <span className="font-semibold">
-              {quotationToDelete?.quotationNumber}
-            </span>
-            ? This action cannot be undone.
-          </p>
-          <div className="flex gap-3">
-            <button
-              onClick={handleDeleteQuotation}
-              className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-            >
-              Delete
-            </button>
-            <button
-              onClick={() => setShowDeleteModal(false)}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // LIST VIEW
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  return (
-    <div className="flex-1 bg-[#FAFBFC] overflow-hidden flex flex-col">
-      {/* Breadcrumb */}
-      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-2">
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <button
-            onClick={() => navigate("/")}
-            className="hover:text-gray-700"
-          >
-            Dashboard
-          </button>
-          <span>›</span>
-          <span className="text-gray-900 font-medium">Quotations</span>
-        </div>
-      </div>
-
-      {/* Page Header */}
-      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">
-            Manage Quotations
-          </h2>
-          <button
-            onClick={openCreateModal}
-            className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center hover:bg-blue-700"
-            title="Create Quotation"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Toolbar */}
-      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="relative flex-1 sm:flex-none">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search by quotation number..."
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full sm:w-64 pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
-              />
-            </div>
-            <button
-              onClick={() => showToast("Search applied", "info")}
-              className="px-4 py-1.5 bg-green-500 text-white text-sm rounded-md hover:bg-green-600"
-            >
-              Search
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
-            <select
-              value={perPage}
-              onChange={(e) => {
-                setPerPage(Number(e.target.value));
-                setCurrentPage(1);
-              }}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white"
-            >
-              <option value={5}>5 per page</option>
-              <option value={10}>10 per page</option>
-              <option value={25}>25 per page</option>
-              <option value={50}>50 per page</option>
-            </select>
-
-            <div className="relative">
+            {/* Footer */}
+            <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
               <button
-                onClick={() => setShowFilters(!showFilters)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-50"
+                onClick={() => setShowModal(false)}
+                disabled={saving}
+                className="px-4 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Filter className="w-4 h-4 text-gray-500" />
-                <span className="text-gray-700">Filters</span>
-                <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+                Cancel
               </button>
-              {showFilters && (
-                <div className="absolute right-0 top-10 w-48 bg-white rounded-md shadow-lg border border-gray-200 py-1 z-50">
-                  <div className="px-3 pb-1.5 mb-1 border-b border-gray-100">
-                    <span className="text-xs font-medium text-gray-500">
-                      Status
-                    </span>
-                  </div>
-                  {[
-                    "All",
-                    "Draft",
-                    "Sent",
-                    "Accepted",
-                    "Rejected",
-                    "Expired",
-                  ].map((st) => (
-                    <button
-                      key={st}
-                      onClick={() => {
-                        setStatusFilter(st);
-                        setCurrentPage(1);
-                        setShowFilters(false);
-                      }}
-                      className={`w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 ${statusFilter === st ? "text-blue-600 font-medium bg-blue-50" : "text-gray-700"}`}
-                    >
-                      {st}
-                    </button>
-                  ))}
+              <button
+                onClick={handleSaveQuotation}
+                disabled={saving}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                {saving
+                  ? "Saving…"
+                  : isEditing
+                    ? "Update Quotation"
+                    : "Create Quotation"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Quotation Modal */}
+      {showView && viewQuotation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between z-10">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">
+                  {viewQuotation.quotationNumber}
+                </h2>
+                <span
+                  className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(viewQuotation.status)}`}
+                >
+                  {getStatusIcon(viewQuotation.status)}
+                  {viewQuotation.status}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowView(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {viewLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Loading details…</span>
                 </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                    <div>
+                      <p className="text-xs text-gray-500">Customer</p>
+                      <p className="text-sm text-gray-900">
+                        {customerNameById[viewQuotation.customerId] ||
+                          viewQuotation.customerId ||
+                          "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Warehouse</p>
+                      <p className="text-sm text-gray-900">
+                        {warehouseNameById[viewQuotation.warehouseId] ||
+                          viewQuotation.warehouseId ||
+                          "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Quotation Date</p>
+                      <p className="text-sm text-gray-900">
+                        {viewQuotation.quotationDate || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Due Date</p>
+                      <p className="text-sm text-gray-900">
+                        {viewQuotation.dueDate || "—"}
+                      </p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-xs text-gray-500">Notes</p>
+                      <p className="text-sm text-gray-900">
+                        {viewQuotation.notes || "—"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg mb-6">
+                    <table className="w-full text-sm min-w-[560px]">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">
+                            Product
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Qty
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Rate
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Disc %
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Tax %
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Amount
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {viewQuotation.items.map((it) => (
+                          <tr key={it.id}>
+                            <td className="px-3 py-2 text-gray-900">
+                              {productNameById[it.productId] || it.productId}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {it.quantity}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {formatCurrency(it.unitPrice)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {it.discount}%
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {it.tax}%
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-900">
+                              {formatCurrency(it.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <div className="w-full sm:w-72 space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Subtotal</span>
+                        <span className="text-gray-900">
+                          {formatCurrency(viewQuotation.subtotal)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Tax</span>
+                        <span className="text-gray-900">
+                          {formatCurrency(viewQuotation.tax)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Shipping</span>
+                        <span className="text-gray-900">
+                          {formatCurrency(viewQuotation.shippingCost)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Deposit</span>
+                        <span className="text-gray-900">
+                          {formatCurrency(viewQuotation.deposit)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between pt-2 border-t border-gray-200">
+                        <span className="font-semibold text-gray-900">
+                          Total
+                        </span>
+                        <span className="font-semibold text-gray-900">
+                          {formatCurrency(viewQuotation.total)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
               )}
+            </div>
+
+            <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
+              {!viewLoading && (
+                <button
+                  onClick={() => {
+                    setShowView(false);
+                    openEdit(viewQuotation);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                >
+                  <Edit className="w-4 h-4" />
+                  Edit
+                </button>
+              )}
+              <button
+                onClick={() => setShowView(false)}
+                className="px-4 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Table */}
-      <div className="flex-1 overflow-auto">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[1100px]">
-            <thead className="bg-white sticky top-0 z-10 border-b border-gray-200">
-              <tr>
-                <SortHeader field="quotationNumber" label="Quotation Number" />
-                <SortHeader field="customer" label="Customer" />
-                <SortHeader field="quotationDate" label="Quotation Date" />
-                <SortHeader field="dueDate" label="Due Date" />
-                <SortHeader field="subtotal" label="Subtotal" />
-                <SortHeader field="tax" label="Tax" />
-                <SortHeader field="totalAmount" label="Total Amount" />
-                <SortHeader field="status" label="Status" />
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-600">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-100">
-              {paginatedQuotations.map((qtn) => (
-                <tr key={qtn.id} className="hover:bg-gray-50">
-                  <td className="px-3 py-4">
-                    <button
-                      onClick={() => openEditModal(qtn)}
-                      className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
-                    >
-                      {qtn.quotationNumber}
-                    </button>
-                  </td>
-                  <td className="px-3 py-4 text-gray-900">{qtn.customer}</td>
-                  <td className="px-3 py-4 text-gray-600">
-                    {qtn.quotationDate}
-                  </td>
-                  <td className="px-3 py-4">
-                    <span
-                      className={
-                        isOverdue(qtn.dueDate, qtn.status) &&
-                        qtn.status !== "Accepted"
-                          ? "text-red-500 font-medium"
-                          : "text-gray-600"
-                      }
-                    >
-                      {qtn.dueDate}
-                      {isOverdue(qtn.dueDate, qtn.status) &&
-                        qtn.status !== "Accepted" &&
-                        " (Overdue)"}
-                    </span>
-                  </td>
-                  <td className="px-3 py-4 text-gray-900">
-                    {fmtCurrency(qtn.subtotal)}
-                  </td>
-                  <td className="px-3 py-4 text-gray-900">
-                    {fmtCurrency(qtn.tax)}
-                  </td>
-                  <td className="px-3 py-4 text-gray-900 font-medium">
-                    {fmtCurrency(qtn.totalAmount)}
-                  </td>
-                  <td className="px-3 py-4">
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(qtn.status)}`}
-                    >
-                      {getStatusIcon(qtn.status)}
-                      {qtn.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-4">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => openEditModal(qtn)}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 rounded hover:bg-blue-50"
-                        title="Edit"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      {qtn.status === "Draft" && (
-                        <button
-                          onClick={() => handleSendQuotation(qtn)}
-                          className="p-1.5 text-gray-400 hover:text-green-600 rounded hover:bg-green-50"
-                          title="Send"
-                        >
-                          <Send className="w-4 h-4" />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => openDeleteModal(qtn)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-red-50"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {paginatedQuotations.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={9}
-                    className="px-3 py-12 text-center text-gray-500"
-                  >
-                    No quotations found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Pagination */}
-      <div className="bg-white border-t border-gray-200 px-4 sm:px-6 py-3">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div className="text-sm text-gray-500">
-            Showing{" "}
-            {filteredQuotations.length === 0
-              ? 0
-              : (currentPage - 1) * perPage + 1}{" "}
-            to {Math.min(currentPage * perPage, filteredQuotations.length)} of{" "}
-            {filteredQuotations.length} results
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              <span className="hidden sm:inline">Previous</span>
-            </button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-              <button
-                key={page}
-                onClick={() => setCurrentPage(page)}
-                className={`w-8 h-8 text-sm rounded-md flex items-center justify-center ${
-                  currentPage === page
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-700 hover:bg-gray-100"
-                }`}
-              >
-                {page}
-              </button>
-            ))}
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages || totalPages === 0}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <span className="hidden sm:inline">Next</span>
-              <ChevronRight className="w-4 h-4" />
-            </button>
+      {/* Delete Confirmation Modal */}
+      {showDelete && toDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Delete Quotation
+              </h3>
+              <p className="text-gray-500 mb-6">
+                Are you sure you want to delete{" "}
+                <span className="font-semibold">
+                  {toDelete.quotationNumber}
+                </span>
+                ? This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+                <button
+                  onClick={() => setShowDelete(false)}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-
-      {/* Modals */}
-      {showModal && <QuotationModal />}
-      {showDeleteModal && <DeleteModal />}
+      )}
     </div>
   );
 };

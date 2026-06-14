@@ -1,20 +1,32 @@
 /**
- * File: src/pages/sales/SalesReturns.tsx
- * Complete Sales Returns page with list view, create/edit form, filters, pagination
- * Based on existing SalesInvoices pattern — matching exact color codes and design style
+ * File: src/pages/sales/SalesInvoiceReturns.tsx
+ * Sales (Invoice) Returns — list, create/edit form, view modal, approve & delete.
+ *
+ * Backed by the invoice-return API:
+ *   GET    /invoice-return/all?page=&limit=  -> list (paginated envelope)
+ *   GET    /invoice-return/single/:id        -> one return (View modal)
+ *   POST   /invoice-return/create            -> create (status: Returned)
+ *   PATCH  /invoice-return/edit/:id          -> update
+ *   PATCH  /invoice-return/approve/:id       -> approve (auto-creates a draft credit note)
+ *   DELETE /invoice-return/delete/:id        -> delete
+ *
+ * A return references a whole sales invoice (no line items). invoice_id and
+ * warehouse_id arrive populated; the invoice's customer_id is a raw id resolved
+ * from /customer/all. Invoices come from /invoice/all, warehouses from
+ * /purchase/warehouses/all.
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { api } from "../../lib/api/client";
+import { ApiError } from "../../lib/api/ApiError";
 import {
   Search,
   Plus,
   Edit,
   Trash2,
-  Download,
   Eye,
-  Save,
   X,
   Calendar,
   ChevronLeft,
@@ -25,255 +37,114 @@ import {
   List,
   LayoutGrid,
   ArrowLeft,
-  Settings,
-  Check,
   RefreshCw,
+  Check,
+  Loader2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface ReturnItem {
-  id: string;
-  product: string;
-  qty: number;
-  unitPrice: number;
-  total: number;
-}
-
 interface SalesReturn {
   id: string;
-  returnNumber: string;
-  customer: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  customerId: string;
+  warehouseId: string;
   warehouse: string;
-  returnDate: string;
-  totalAmount: number;
-  items: ReturnItem[];
-  status: "Draft" | "Completed" | "Approved" | "Rejected";
-  originalInvoice: string;
+  warehouseCity: string;
+  returnDate: string; // yyyy-mm-dd
   returnReason: string;
   notes: string;
+  status: string; // "Returned" | "Approved" | ...
+  creditNoteId: string;
+  invoiceTotal: number;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+/* ---- Raw API shapes ---- */
+interface ApiInvoiceRef {
+  _id: string;
+  invoice_number?: string;
+  customer_id?: string | { _id: string } | null;
+  total?: number;
+}
+interface ApiWarehouseRef {
+  _id: string;
+  name?: string;
+  city?: string;
+}
+interface ApiReturn {
+  _id: string;
+  invoice_id?: ApiInvoiceRef | string | null;
+  warehouse_id?: ApiWarehouseRef | string | null;
+  return_date: string;
+  return_reason?: string;
+  notes?: string;
+  status?: string;
+  credit_note_id?: string;
+}
+interface ApiInvoiceOption {
+  _id: string;
+  invoice_number: string;
+  warehouse_id?: string | null;
+  customer_id?: string | { _id: string; name?: string } | null;
+  total?: number;
+}
+interface ApiCustomer {
+  _id: string;
+  name?: string;
+  customerName?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}
+interface ApiWarehouse {
+  _id: string;
+  name?: string;
+}
 
-const sampleReturns: SalesReturn[] = [
-  {
-    id: "1",
-    returnNumber: "SR-2026-02-010",
-    customer: "Lisa Anderson",
-    warehouse: "Florida Fulfillment Center",
-    returnDate: "2026-05-28",
-    totalAmount: 129.805,
-    items: [
-      {
-        id: "i1",
-        product: "Wall Decor",
-        qty: 2,
-        unitPrice: 64.9025,
-        total: 129.805,
-      },
-    ],
-    status: "Draft",
-    originalInvoice: "SI-2026-02-015",
-    returnReason: "Defective",
-    notes: "",
-  },
-  {
-    id: "2",
-    returnNumber: "SR-2026-02-009",
-    customer: "Emily Davis",
-    warehouse: "Central Distribution Center",
-    returnDate: "2026-05-20",
-    totalAmount: 59.005,
-    items: [
-      { id: "i1", product: "Calculator", qty: 1, unitPrice: 29.5, total: 29.5 },
-      { id: "i2", product: "Pen", qty: 2, unitPrice: 14.7525, total: 29.505 },
-    ],
-    status: "Completed",
-    originalInvoice: "SI-2026-02-014",
-    returnReason: "Wrong Item",
-    notes: "",
-  },
-  {
-    id: "3",
-    returnNumber: "SR-2026-02-008",
-    customer: "Amanda White",
-    warehouse: "East Coast Logistics Hub",
-    returnDate: "2026-05-05",
-    totalAmount: 725.005,
-    items: [
-      {
-        id: "i1",
-        product: "Belt",
-        qty: 2,
-        unitPrice: 362.5025,
-        total: 725.005,
-      },
-    ],
-    status: "Approved",
-    originalInvoice: "SI-2026-02-012",
-    returnReason: "Size Mismatch",
-    notes: "",
-  },
-  {
-    id: "4",
-    returnNumber: "SR-2026-02-007",
-    customer: "Jennifer Martinez",
-    warehouse: "Midwest Regional Warehouse",
-    returnDate: "2026-04-15",
-    totalAmount: 1061.995,
-    items: [
-      {
-        id: "i1",
-        product: "Laptop",
-        qty: 1,
-        unitPrice: 1061.995,
-        total: 1061.995,
-      },
-    ],
-    status: "Completed",
-    originalInvoice: "SI-2026-02-011",
-    returnReason: "Defective",
-    notes: "",
-  },
-  {
-    id: "5",
-    returnNumber: "SR-2026-02-006",
-    customer: "Lisa Anderson",
-    warehouse: "East Coast Logistics Hub",
-    returnDate: "2026-03-05",
-    totalAmount: 191.405,
-    items: [
-      {
-        id: "i1",
-        product: "Mobile Stand",
-        qty: 1,
-        unitPrice: 95.7025,
-        total: 95.7025,
-      },
-      {
-        id: "i2",
-        product: "Soundbar",
-        qty: 1,
-        unitPrice: 95.7025,
-        total: 95.7025,
-      },
-    ],
-    status: "Draft",
-    originalInvoice: "SI-2026-02-009",
-    returnReason: "Wrong Item",
-    notes: "",
-  },
-  {
-    id: "6",
-    returnNumber: "SR-2026-02-005",
-    customer: "Sarah Johnson",
-    warehouse: "Midwest Regional Warehouse",
-    returnDate: "2026-02-26",
-    totalAmount: 130.505,
-    items: [
-      {
-        id: "i1",
-        product: "Car Engine Oil",
-        qty: 2,
-        unitPrice: 65.2525,
-        total: 130.505,
-      },
-    ],
-    status: "Approved",
-    originalInvoice: "SI-2026-02-008",
-    returnReason: "Defective",
-    notes: "",
-  },
-  {
-    id: "7",
-    returnNumber: "SR-2026-02-004",
-    customer: "Maria Rodriguez",
-    warehouse: "East Coast Logistics Hub",
-    returnDate: "2026-02-22",
-    totalAmount: 362.505,
-    items: [
-      { id: "i1", product: "Belt", qty: 1, unitPrice: 362.505, total: 362.505 },
-    ],
-    status: "Completed",
-    originalInvoice: "SI-2026-02-007",
-    returnReason: "Size Mismatch",
-    notes: "",
-  },
-  {
-    id: "8",
-    returnNumber: "SR-2026-02-003",
-    customer: "Lisa Anderson",
-    warehouse: "Midwest Regional Warehouse",
-    returnDate: "2026-02-16",
-    totalAmount: 347.945,
-    items: [
-      {
-        id: "i1",
-        product: "Jeans",
-        qty: 4,
-        unitPrice: 86.98625,
-        total: 347.945,
-      },
-    ],
-    status: "Completed",
-    originalInvoice: "SI-2026-02-006",
-    returnReason: "Wrong Item",
-    notes: "",
-  },
-  {
-    id: "9",
-    returnNumber: "SR-2026-02-002",
-    customer: "Sarah Johnson",
-    warehouse: "West Coast Storage Facility",
-    returnDate: "2026-02-14",
-    totalAmount: 156.005,
-    items: [
-      {
-        id: "i1",
-        product: "Soundbar",
-        qty: 1,
-        unitPrice: 156.005,
-        total: 156.005,
-      },
-    ],
-    status: "Completed",
-    originalInvoice: "SI-2026-02-005",
-    returnReason: "Defective",
-    notes: "",
-  },
-];
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const customers = [
-  "Jennifer Martinez",
-  "Lisa Anderson",
-  "Emily Davis",
-  "Sarah Johnson",
-  "Amanda White",
-  "Maria Rodriguez",
-];
+const fmtCurrency = (val: number) => {
+  const formatted = (val || 0)
+    .toFixed(2)
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${formatted}$`;
+};
 
-const warehouses = [
-  "Florida Fulfillment Center",
-  "Central Distribution Center",
-  "East Coast Logistics Hub",
-  "Midwest Regional Warehouse",
-  "West Coast Storage Facility",
-  "Main Warehouse",
-];
+const toDateInput = (iso?: string) => (iso ? iso.slice(0, 10) : "");
+const errMessage = (err: unknown, fallback: string) =>
+  err instanceof ApiError && err.message ? err.message : fallback;
 
-const invoices = [
-  "SI-2026-02-018",
-  "SI-2026-02-017",
-  "SI-2026-02-016",
-  "SI-2026-02-015",
-  "SI-2026-02-014",
-  "SI-2026-02-013",
-  "SI-2026-02-012",
-  "SI-2026-02-011",
-  "SI-2026-02-010",
-  "SI-2026-02-009",
-];
+const refId = (ref: { _id: string } | string | null | undefined): string =>
+  typeof ref === "object" && ref ? ref._id : (ref ?? "");
+const customerLabel = (c: ApiCustomer): string =>
+  c.name ??
+  c.customerName ??
+  [c.firstName, c.lastName].filter(Boolean).join(" ") ??
+  c.email ??
+  c._id;
+
+const mapApiReturn = (r: ApiReturn): SalesReturn => {
+  const inv = r.invoice_id;
+  const wh = r.warehouse_id;
+  return {
+    id: r._id,
+    invoiceId: refId(inv),
+    invoiceNumber:
+      typeof inv === "object" && inv ? (inv.invoice_number ?? "") : "",
+    customerId:
+      typeof inv === "object" && inv ? refId(inv.customer_id ?? "") : "",
+    warehouseId: refId(wh),
+    warehouse: typeof wh === "object" && wh ? (wh.name ?? "").trim() : "",
+    warehouseCity: typeof wh === "object" && wh ? (wh.city ?? "") : "",
+    returnDate: toDateInput(r.return_date),
+    returnReason: r.return_reason ?? "",
+    notes: r.notes ?? "",
+    status: r.status ?? "Returned",
+    creditNoteId: r.credit_note_id ?? "",
+    invoiceTotal: typeof inv === "object" && inv ? (inv.total ?? 0) : 0,
+  };
+};
 
 const returnReasons = [
   "Defective",
@@ -284,20 +155,12 @@ const returnReasons = [
   "Other",
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const fmtCurrency = (val: number) => {
-  const formatted = val.toFixed(3).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${formatted}$`;
-};
-
 type SortField =
-  | "returnNumber"
+  | "invoiceNumber"
   | "customer"
   | "warehouse"
   | "returnDate"
-  | "totalAmount"
-  | "items"
+  | "returnReason"
   | "status";
 type SortDir = "asc" | "desc";
 
@@ -306,65 +169,119 @@ type SortDir = "asc" | "desc";
 export const SalesInvoiceReturns: React.FC = () => {
   const navigate = useNavigate();
 
-  const [returns, setReturns] = useState<SalesReturn[]>(sampleReturns);
+  const [returns, setReturns] = useState<SalesReturn[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
-  const [sortField, setSortField] = useState<SortField>("returnNumber");
+  const [sortField, setSortField] = useState<SortField>("returnDate");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [showFilters, setShowFilters] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editingReturn, setEditingReturn] = useState<SalesReturn | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+  // Option sources
+  const [invoiceOptions, setInvoiceOptions] = useState<ApiInvoiceOption[]>([]);
+  const [warehouses, setWarehouses] = useState<ApiWarehouse[]>([]);
+  const [customers, setCustomers] = useState<ApiCustomer[]>([]);
+
+  // View modal
+  const [showView, setShowView] = useState(false);
+  const [viewReturn, setViewReturn] = useState<SalesReturn | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+
+  // Delete modal
+  const [showDelete, setShowDelete] = useState(false);
+  const [toDelete, setToDelete] = useState<SalesReturn | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Form state
   const [formReturnDate, setFormReturnDate] = useState(
     () => new Date().toISOString().split("T")[0],
   );
-  const [formOriginalInvoice, setFormOriginalInvoice] = useState("");
-  const [formWarehouse, setFormWarehouse] = useState("");
-  const [formReturnReason, setFormReturnReason] = useState("");
+  const [formInvoiceId, setFormInvoiceId] = useState("");
+  const [formWarehouseId, setFormWarehouseId] = useState("");
+  const [formReason, setFormReason] = useState("");
   const [formNotes, setFormNotes] = useState("");
-  const [formCustomer, setFormCustomer] = useState("");
-  const [formItems, setFormItems] = useState<ReturnItem[]>([]);
 
-  // Helper to get customer from invoice (mock)
-  const getCustomerFromInvoice = (invoiceNumber: string) => {
-    const invoiceCustomerMap: Record<string, string> = {
-      "SI-2026-02-018": "Jennifer Martinez",
-      "SI-2026-02-017": "Lisa Anderson",
-      "SI-2026-02-016": "Emily Davis",
-      "SI-2026-02-015": "Sarah Johnson",
-      "SI-2026-02-014": "Amanda White",
-      "SI-2026-02-013": "Maria Rodriguez",
-    };
-    return invoiceCustomerMap[invoiceNumber] || "";
+  // ─── Lookup maps ───────────────────────────────────────────────────────────
+  const customerNameById = useMemo(() => {
+    const m: Record<string, string> = {};
+    customers.forEach((c) => (m[c._id] = customerLabel(c)));
+    return m;
+  }, [customers]);
+
+  const invoiceCustomerById = useMemo(() => {
+    const m: Record<string, string> = {};
+    invoiceOptions.forEach((i) => (m[i._id] = refId(i.customer_id ?? "")));
+    return m;
+  }, [invoiceOptions]);
+
+  const displayCustomer = (ret: SalesReturn) => {
+    const custId = ret.customerId || invoiceCustomerById[ret.invoiceId] || "";
+    return customerNameById[custId] || "—";
   };
 
-  // Handle invoice selection
-  const handleInvoiceChange = (invoiceNumber: string) => {
-    setFormOriginalInvoice(invoiceNumber);
-    const customer = getCustomerFromInvoice(invoiceNumber);
-    setFormCustomer(customer);
-
-    // Mock items from invoice
-    if (invoiceNumber) {
-      const mockItems: ReturnItem[] = [
-        {
-          id: `item-${Date.now()}`,
-          product: "Sample Product",
-          qty: 1,
-          unitPrice: 100,
-          total: 100,
-        },
-      ];
-      setFormItems(mockItems);
-    } else {
-      setFormItems([]);
+  // ─── Data loading ──────────────────────────────────────────────────────────
+  const loadReturns = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await api.get<ApiReturn[]>("/invoice-return/all", {
+        params: { page: 1, limit: 1000 },
+      });
+      setReturns(Array.isArray(data) ? data.map(mapApiReturn) : []);
+    } catch (err) {
+      const message = errMessage(err, "Couldn't load invoice returns.");
+      setLoadError(message);
+      showToast(message, "error");
+    } finally {
+      setLoading(false);
     }
+  }, []);
+
+  const loadOptions = useCallback(async () => {
+    try {
+      const [inv, wh, cust] = await Promise.allSettled([
+        api.get<ApiInvoiceOption[]>("/invoice/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+        api.get<ApiWarehouse[]>("/purchase/warehouses/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+        api.get<ApiCustomer[]>("/customer/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+      ]);
+      if (inv.status === "fulfilled" && Array.isArray(inv.value))
+        setInvoiceOptions(inv.value);
+      if (wh.status === "fulfilled" && Array.isArray(wh.value))
+        setWarehouses(wh.value);
+      if (cust.status === "fulfilled" && Array.isArray(cust.value))
+        setCustomers(cust.value);
+    } catch {
+      /* dropdowns degrade gracefully */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadReturns();
+    loadOptions();
+  }, [loadReturns, loadOptions]);
+
+  // Pick an invoice -> default its warehouse.
+  const handleInvoiceChange = (invoiceId: string) => {
+    setFormInvoiceId(invoiceId);
+    const inv = invoiceOptions.find((i) => i._id === invoiceId);
+    if (inv?.warehouse_id) setFormWarehouseId(inv.warehouse_id);
   };
 
   // ─── Sorting ────────────────────────────────────────────────────────────────
@@ -387,20 +304,23 @@ export const SalesInvoiceReturns: React.FC = () => {
       const q = searchQuery.toLowerCase();
       result = result.filter(
         (ret) =>
-          ret.returnNumber.toLowerCase().includes(q) ||
-          ret.customer.toLowerCase().includes(q),
+          ret.invoiceNumber.toLowerCase().includes(q) ||
+          ret.returnReason.toLowerCase().includes(q) ||
+          displayCustomer(ret).toLowerCase().includes(q),
       );
     }
     if (statusFilter !== "All") {
       result = result.filter((ret) => ret.status === statusFilter);
     }
     result.sort((a, b) => {
-      let aVal: any = a[sortField];
-      let bVal: any = b[sortField];
-      if (sortField === "items") {
-        aVal = a.items.length;
-        bVal = b.items.length;
-      }
+      let aVal: string | number =
+        sortField === "customer"
+          ? displayCustomer(a)
+          : (a[sortField] as string | number);
+      let bVal: string | number =
+        sortField === "customer"
+          ? displayCustomer(b)
+          : (b[sortField] as string | number);
       if (typeof aVal === "string") aVal = aVal.toLowerCase();
       if (typeof bVal === "string") bVal = bVal.toLowerCase();
       if (aVal < bVal) return sortDir === "asc" ? -1 : 1;
@@ -408,7 +328,16 @@ export const SalesInvoiceReturns: React.FC = () => {
       return 0;
     });
     return result;
-  }, [returns, searchQuery, statusFilter, sortField, sortDir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    returns,
+    searchQuery,
+    statusFilter,
+    sortField,
+    sortDir,
+    customerNameById,
+    invoiceCustomerById,
+  ]);
 
   const totalPages = Math.ceil(filteredReturns.length / perPage);
   const paginatedReturns = filteredReturns.slice(
@@ -416,16 +345,16 @@ export const SalesInvoiceReturns: React.FC = () => {
     currentPage * perPage,
   );
 
-  // ─── Status Badge — matches existing pattern ───────────────────────────────
+  // ─── Status Badge ───────────────────────────────────────────────────────────
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "Draft":
+      case "Returned":
         return "bg-gray-100 text-gray-700 border border-gray-200";
-      case "Completed":
-        return "bg-green-100 text-green-700 border border-green-200";
       case "Approved":
         return "bg-blue-100 text-blue-700 border border-blue-200";
+      case "Completed":
+        return "bg-green-100 text-green-700 border border-green-200";
       case "Rejected":
         return "bg-red-100 text-red-700 border border-red-200";
       default:
@@ -433,20 +362,18 @@ export const SalesInvoiceReturns: React.FC = () => {
     }
   };
 
-  const canEdit = (status: string) => status === "Draft";
-  const canDelete = (status: string) => status === "Draft";
+  const canApprove = (status: string) => status === "Returned";
+  const canEdit = (status: string) => status === "Returned";
 
   // ─── Form Helpers ───────────────────────────────────────────────────────────
 
   const resetForm = () => {
     setFormReturnDate(new Date().toISOString().split("T")[0]);
-    setFormOriginalInvoice("");
-    setFormWarehouse("");
-    setFormReturnReason("");
+    setFormInvoiceId("");
+    setFormWarehouseId("");
+    setFormReason("");
     setFormNotes("");
-    setFormCustomer("");
-    setFormItems([]);
-    setEditingReturn(null);
+    setEditingId(null);
   };
 
   const handleCreate = () => {
@@ -455,85 +382,99 @@ export const SalesInvoiceReturns: React.FC = () => {
     setShowForm(true);
   };
 
-  const handleEditReturn = (returnItem: SalesReturn) => {
-    setEditingReturn(returnItem);
-    setFormReturnDate(returnItem.returnDate);
-    setFormOriginalInvoice(returnItem.originalInvoice);
-    setFormWarehouse(returnItem.warehouse);
-    setFormReturnReason(returnItem.returnReason);
-    setFormNotes(returnItem.notes);
-    setFormCustomer(returnItem.customer);
-    setFormItems(returnItem.items);
+  const handleEditReturn = (ret: SalesReturn) => {
+    if (!canEdit(ret.status)) {
+      showToast("Only returns awaiting approval can be edited.", "info");
+      return;
+    }
+    setEditingId(ret.id);
+    setFormReturnDate(ret.returnDate);
+    setFormInvoiceId(ret.invoiceId);
+    setFormWarehouseId(ret.warehouseId);
+    setFormReason(ret.returnReason);
+    setFormNotes(ret.notes);
     setIsEditing(true);
     setShowForm(true);
   };
 
-  const handleDeleteReturn = (id: string) => {
-    if (confirm("Are you sure you want to delete this return?")) {
-      setReturns((prev) => prev.filter((ret) => ret.id !== id));
-      showToast("Return deleted!", "success");
+  const handleSaveReturn = async () => {
+    if (!formReturnDate) return showToast("Please select a return date", "info");
+    if (!formInvoiceId)
+      return showToast("Please select an original invoice", "info");
+    if (!formWarehouseId) return showToast("Please select a warehouse", "info");
+    if (!formReason) return showToast("Please select a return reason", "info");
+
+    const payload = {
+      invoice_id: formInvoiceId,
+      warehouse_id: formWarehouseId,
+      return_date: formReturnDate,
+      return_reason: formReason,
+      notes: formNotes,
+    };
+
+    setSaving(true);
+    try {
+      if (isEditing && editingId) {
+        await api.patch(`/invoice-return/edit/${editingId}`, payload);
+        showToast("Invoice return updated!", "success");
+      } else {
+        await api.post("/invoice-return/create", payload);
+        showToast("Invoice return created!", "success");
+      }
+      setShowForm(false);
+      resetForm();
+      await loadReturns();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't save invoice return."), "error");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleSaveReturn = () => {
-    if (!formOriginalInvoice) {
-      showToast("Please select an original invoice", "info");
-      return;
+  // ─── View (single) ─────────────────────────────────────────────────────────
+  const openView = async (ret: SalesReturn) => {
+    setViewReturn(ret);
+    setShowView(true);
+    setViewLoading(true);
+    try {
+      const data = await api.get<ApiReturn>(`/invoice-return/single/${ret.id}`);
+      if (data) setViewReturn(mapApiReturn(data));
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't load return details."), "error");
+    } finally {
+      setViewLoading(false);
     }
-    if (!formWarehouse) {
-      showToast("Please select a warehouse", "info");
-      return;
-    }
-    if (!formReturnReason) {
-      showToast("Please select a return reason", "info");
-      return;
-    }
-
-    const totalAmount = formItems.reduce((sum, i) => sum + i.total, 0);
-
-    if (isEditing && editingReturn) {
-      setReturns((prev) =>
-        prev.map((ret) =>
-          ret.id === editingReturn.id
-            ? {
-                ...ret,
-                returnDate: formReturnDate,
-                originalInvoice: formOriginalInvoice,
-                warehouse: formWarehouse,
-                returnReason: formReturnReason,
-                notes: formNotes,
-                customer: formCustomer,
-                items: formItems,
-                totalAmount: totalAmount,
-              }
-            : ret,
-        ),
-      );
-      showToast("Return updated!", "success");
-    } else {
-      const newReturn: SalesReturn = {
-        id: Date.now().toString(),
-        returnNumber: `SR-2026-02-${String(returns.length + 1).padStart(3, "0")}`,
-        customer: formCustomer,
-        warehouse: formWarehouse,
-        returnDate: formReturnDate,
-        totalAmount: totalAmount,
-        items: formItems,
-        status: "Draft",
-        originalInvoice: formOriginalInvoice,
-        returnReason: formReturnReason,
-        notes: formNotes,
-      };
-      setReturns((prev) => [newReturn, ...prev]);
-      showToast("Return created!", "success");
-    }
-    setShowForm(false);
-    resetForm();
   };
 
-  // Format items for display
-  const formatItems = (items: ReturnItem[]) => {
-    return items.map((i) => i.product).join(", ");
+  // ─── Approve ───────────────────────────────────────────────────────────────
+  const handleApprove = async (ret: SalesReturn) => {
+    setProcessingId(ret.id);
+    try {
+      await api.patch(`/invoice-return/approve/${ret.id}`);
+      showToast("Return approved; draft credit note created.", "success");
+      await loadReturns();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't approve return."), "error");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // ─── Delete ────────────────────────────────────────────────────────────────
+  const handleDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/invoice-return/delete/${toDelete.id}`);
+      showToast("Invoice return deleted!", "success");
+      setShowDelete(false);
+      setToDelete(null);
+      await loadReturns();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't delete return."), "error");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   // ─── Sort Header ────────────────────────────────────────────────────────────
@@ -573,7 +514,10 @@ export const SalesInvoiceReturns: React.FC = () => {
             </button>
             <span>›</span>
             <button
-              onClick={() => navigate("/sales/sales-invoice-returns")}
+              onClick={() => {
+                setShowForm(false);
+                resetForm();
+              }}
               className="hover:text-gray-700"
             >
               Sales Returns
@@ -606,7 +550,6 @@ export const SalesInvoiceReturns: React.FC = () => {
 
         {/* Form Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {/* Sales Return Details Card */}
           <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 mb-6">
             <div className="flex items-center gap-2 mb-5">
               <RefreshCw className="w-5 h-5 text-gray-500" />
@@ -615,7 +558,6 @@ export const SalesInvoiceReturns: React.FC = () => {
               </h3>
             </div>
 
-            {/* Form Fields */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -636,14 +578,14 @@ export const SalesInvoiceReturns: React.FC = () => {
                   Original Invoice <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={formOriginalInvoice}
+                  value={formInvoiceId}
                   onChange={(e) => handleInvoiceChange(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm bg-white"
                 >
                   <option value="">Select Invoice</option>
-                  {invoices.map((inv) => (
-                    <option key={inv} value={inv}>
-                      {inv}
+                  {invoiceOptions.map((inv) => (
+                    <option key={inv._id} value={inv._id}>
+                      {inv.invoice_number}
                     </option>
                   ))}
                 </select>
@@ -653,14 +595,14 @@ export const SalesInvoiceReturns: React.FC = () => {
                   Warehouse <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={formWarehouse}
-                  onChange={(e) => setFormWarehouse(e.target.value)}
+                  value={formWarehouseId}
+                  onChange={(e) => setFormWarehouseId(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm bg-white"
                 >
                   <option value="">Select Warehouse</option>
                   {warehouses.map((w) => (
-                    <option key={w} value={w}>
-                      {w}
+                    <option key={w._id} value={w._id}>
+                      {(w.name ?? "").trim()}
                     </option>
                   ))}
                 </select>
@@ -670,8 +612,8 @@ export const SalesInvoiceReturns: React.FC = () => {
                   Return Reason <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={formReturnReason}
-                  onChange={(e) => setFormReturnReason(e.target.value)}
+                  value={formReason}
+                  onChange={(e) => setFormReason(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm bg-white"
                 >
                   <option value="">Select Reason</option>
@@ -684,8 +626,7 @@ export const SalesInvoiceReturns: React.FC = () => {
               </div>
             </div>
 
-            {/* Notes */}
-            <div className="mb-4">
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Notes
               </label>
@@ -697,56 +638,27 @@ export const SalesInvoiceReturns: React.FC = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm resize-y"
               />
             </div>
-
-            {/* Selected Items Info */}
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Check className="w-5 h-5 text-blue-500" />
-                  <span className="text-sm text-gray-700">
-                    {formItems.length}{" "}
-                    {formItems.length === 1 ? "item" : "items"} selected for
-                    return
-                  </span>
-                </div>
-                {formItems.length > 0 && (
-                  <div className="text-sm font-medium text-gray-900">
-                    Total:{" "}
-                    {fmtCurrency(
-                      formItems.reduce((sum, i) => sum + i.total, 0),
-                    )}
-                  </div>
-                )}
-              </div>
-              {formItems.length > 0 && (
-                <div className="mt-3 text-xs text-gray-500">
-                  {formItems.map((item, idx) => (
-                    <span key={item.id}>
-                      {item.product} x{item.qty}
-                      {idx < formItems.length - 1 && ", "}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
 
-          {/* Bottom Actions — matches existing pattern */}
+          {/* Bottom Actions */}
           <div className="flex flex-col sm:flex-row justify-end gap-2 pb-6">
             <button
               onClick={() => {
                 setShowForm(false);
                 resetForm();
               }}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm"
+              disabled={saving}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               onClick={handleSaveReturn}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+              disabled={saving}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Create
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              {saving ? "Saving…" : isEditing ? "Update" : "Create"}
             </button>
           </div>
         </div>
@@ -763,10 +675,7 @@ export const SalesInvoiceReturns: React.FC = () => {
       {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-2">
         <div className="flex items-center gap-2 text-sm text-gray-500">
-          <button
-            onClick={() => navigate("/")}
-            className="hover:text-gray-700"
-          >
+          <button onClick={() => navigate("/")} className="hover:text-gray-700">
             Dashboard
           </button>
           <span>›</span>
@@ -799,20 +708,20 @@ export const SalesInvoiceReturns: React.FC = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by return number..."
+                placeholder="Search by invoice, customer or reason..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full sm:w-64 pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
+                className="w-full sm:w-72 pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
               />
             </div>
             <button
-              onClick={() => showToast("Search applied", "info")}
+              onClick={() => loadReturns()}
               className="px-4 py-1.5 bg-green-500 text-white text-sm rounded-md hover:bg-green-600"
             >
-              Search
+              Refresh
             </button>
           </div>
 
@@ -869,7 +778,7 @@ export const SalesInvoiceReturns: React.FC = () => {
                       Status
                     </span>
                   </div>
-                  {["All", "Draft", "Completed", "Approved", "Rejected"].map(
+                  {["All", "Returned", "Approved", "Completed", "Rejected"].map(
                     (st) => (
                       <button
                         key={st}
@@ -893,17 +802,25 @@ export const SalesInvoiceReturns: React.FC = () => {
 
       {/* Table / Grid */}
       <div className="flex-1 overflow-auto">
-        {viewMode === "list" ? (
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-20 text-gray-500">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm">Loading invoice returns…</span>
+          </div>
+        ) : loadError ? (
+          <div className="py-16 text-center text-sm text-red-600">
+            {loadError}
+          </div>
+        ) : viewMode === "list" ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[900px]">
               <thead className="bg-white sticky top-0 z-10 border-b border-gray-200">
                 <tr>
-                  <SortHeader field="returnNumber" label="Return Number" />
+                  <SortHeader field="invoiceNumber" label="Invoice Number" />
                   <SortHeader field="customer" label="Customer" />
                   <SortHeader field="warehouse" label="Warehouse" />
                   <SortHeader field="returnDate" label="Return Date" />
-                  <SortHeader field="totalAmount" label="Total Amount" />
-                  <SortHeader field="items" label="Items" />
+                  <SortHeader field="returnReason" label="Reason" />
                   <SortHeader field="status" label="Status" />
                   <th className="px-3 py-3 text-left text-xs font-medium text-gray-600">
                     Actions
@@ -915,29 +832,23 @@ export const SalesInvoiceReturns: React.FC = () => {
                   <tr key={ret.id} className="hover:bg-gray-50">
                     <td className="px-3 py-4">
                       <button
-                        onClick={() => handleEditReturn(ret)}
+                        onClick={() => openView(ret)}
                         className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
                       >
-                        {ret.returnNumber}
+                        {ret.invoiceNumber || "—"}
                       </button>
                     </td>
-                    <td className="px-3 py-4 text-gray-900">{ret.customer}</td>
-                    <td className="px-3 py-4 text-gray-600">{ret.warehouse}</td>
+                    <td className="px-3 py-4 text-gray-900">
+                      {displayCustomer(ret)}
+                    </td>
+                    <td className="px-3 py-4 text-gray-600">
+                      {ret.warehouse || "—"}
+                    </td>
                     <td className="px-3 py-4 text-gray-600">
                       {ret.returnDate}
                     </td>
-                    <td className="px-3 py-4 text-gray-900">
-                      {fmtCurrency(ret.totalAmount)}
-                    </td>
-                    <td className="px-3 py-4">
-                      <div className="flex flex-col">
-                        {ret.items.map((item, idx) => (
-                          <span key={item.id} className="text-xs text-gray-600">
-                            {item.product} x{item.qty}
-                            {idx < ret.items.length - 1 && ", "}
-                          </span>
-                        ))}
-                      </div>
+                    <td className="px-3 py-4 text-gray-600">
+                      {ret.returnReason || "—"}
                     </td>
                     <td className="px-3 py-4">
                       <span
@@ -949,50 +860,48 @@ export const SalesInvoiceReturns: React.FC = () => {
                     <td className="px-3 py-4">
                       <div className="flex items-center gap-1">
                         <button
-                          onClick={() =>
-                            showToast("Downloading PDF...", "info")
-                          }
-                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                          title="Download"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() =>
-                            showToast("Opening preview...", "info")
-                          }
+                          onClick={() => openView(ret)}
                           className="p-1.5 text-yellow-500 hover:text-yellow-600 hover:bg-yellow-50 rounded"
                           title="View"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        {canEdit(ret.status) && (
-                          <>
-                            <button
-                              onClick={() => showToast("Saving...", "info")}
-                              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                              title="Save"
-                            >
-                              <Save className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleEditReturn(ret)}
-                              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                              title="Edit"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                        {canDelete(ret.status) && (
+                        {canApprove(ret.status) && (
                           <button
-                            onClick={() => handleDeleteReturn(ret.id)}
-                            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
-                            title="Delete"
+                            onClick={() => handleApprove(ret)}
+                            disabled={processingId === ret.id}
+                            className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded disabled:opacity-50"
+                            title="Approve (creates credit note)"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            {processingId === ret.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Check className="w-4 h-4" />
+                            )}
                           </button>
                         )}
+                        <button
+                          onClick={() => handleEditReturn(ret)}
+                          disabled={!canEdit(ret.status)}
+                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                          title={
+                            canEdit(ret.status)
+                              ? "Edit"
+                              : "Approved returns can't be edited"
+                          }
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setToDelete(ret);
+                            setShowDelete(true);
+                          }}
+                          className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1000,7 +909,7 @@ export const SalesInvoiceReturns: React.FC = () => {
                 {paginatedReturns.length === 0 && (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={7}
                       className="px-3 py-12 text-center text-gray-500"
                     >
                       No returns found.
@@ -1016,14 +925,14 @@ export const SalesInvoiceReturns: React.FC = () => {
             {paginatedReturns.map((ret) => (
               <div
                 key={ret.id}
-                className="bg-white rounded-lg border border-gray-200 p-4 hover:bg-gray-50 cursor-pointer"
+                className="bg-white rounded-lg border border-gray-200 p-4 hover:bg-gray-50"
               >
                 <div className="flex items-start justify-between mb-3">
                   <button
-                    onClick={() => handleEditReturn(ret)}
+                    onClick={() => openView(ret)}
                     className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
                   >
-                    {ret.returnNumber}
+                    {ret.invoiceNumber || "Return"}
                   </button>
                   <span
                     className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(ret.status)}`}
@@ -1031,60 +940,70 @@ export const SalesInvoiceReturns: React.FC = () => {
                     {ret.status}
                   </span>
                 </div>
-                <div className="text-sm text-gray-900 mb-1">{ret.customer}</div>
+                <div className="text-sm text-gray-900 mb-1">
+                  {displayCustomer(ret)}
+                </div>
                 <div className="text-xs text-gray-500 mb-3">
-                  {ret.returnDate} • {ret.warehouse}
+                  {ret.returnDate} • {ret.warehouse || "—"}
                 </div>
                 <div className="flex items-center justify-between mb-3 pt-3 border-t border-gray-100">
                   <div>
-                    <div className="text-xs text-gray-500">Total Amount</div>
-                    <div className="text-sm font-semibold text-gray-900">
-                      {fmtCurrency(ret.totalAmount)}
+                    <div className="text-xs text-gray-500">Reason</div>
+                    <div className="text-sm font-medium text-gray-900">
+                      {ret.returnReason || "—"}
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-xs text-gray-500">Items</div>
+                    <div className="text-xs text-gray-500">Invoice Total</div>
                     <div className="text-sm font-semibold text-gray-900">
-                      {ret.items.length}
+                      {fmtCurrency(ret.invoiceTotal)}
                     </div>
                   </div>
                 </div>
-                <div className="text-xs text-gray-500 mb-3">
-                  {formatItems(ret.items)}
-                </div>
                 <div className="flex items-center gap-1 pt-2 border-t border-gray-100">
                   <button
-                    onClick={() => showToast("Downloading PDF...", "info")}
-                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
-                    title="Download"
-                  >
-                    <Download className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => showToast("Opening preview...", "info")}
+                    onClick={() => openView(ret)}
                     className="p-1.5 text-yellow-500 hover:text-yellow-600 rounded"
                     title="View"
                   >
                     <Eye className="w-4 h-4" />
                   </button>
-                  {canEdit(ret.status) && (
+                  {canApprove(ret.status) && (
                     <button
-                      onClick={() => handleEditReturn(ret)}
-                      className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
-                      title="Edit"
+                      onClick={() => handleApprove(ret)}
+                      disabled={processingId === ret.id}
+                      className="p-1.5 text-blue-500 hover:text-blue-700 rounded disabled:opacity-50"
+                      title="Approve (creates credit note)"
                     >
-                      <Edit className="w-4 h-4" />
+                      {processingId === ret.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Check className="w-4 h-4" />
+                      )}
                     </button>
                   )}
-                  {canDelete(ret.status) && (
-                    <button
-                      onClick={() => handleDeleteReturn(ret.id)}
-                      className="p-1.5 text-red-400 hover:text-red-600 rounded"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => handleEditReturn(ret)}
+                    disabled={!canEdit(ret.status)}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-400"
+                    title={
+                      canEdit(ret.status)
+                        ? "Edit"
+                        : "Approved returns can't be edited"
+                    }
+                  >
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setToDelete(ret);
+                      setShowDelete(true);
+                    }}
+                    className="p-1.5 text-red-400 hover:text-red-600 rounded"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -1097,7 +1016,7 @@ export const SalesInvoiceReturns: React.FC = () => {
         )}
       </div>
 
-      {/* Pagination — matches screenshot exactly */}
+      {/* Pagination */}
       <div className="bg-white border-t border-gray-200 px-4 sm:px-6 py-3">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="text-sm text-gray-500">
@@ -1139,6 +1058,176 @@ export const SalesInvoiceReturns: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* View Return Modal */}
+      {showView && viewReturn && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+        >
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Return · {viewReturn.invoiceNumber || "Invoice"}
+                </h2>
+                <span
+                  className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${getStatusColor(viewReturn.status)}`}
+                >
+                  {viewReturn.status}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowView(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {viewLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Loading details…</span>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500">Invoice Number</p>
+                    <p className="text-sm text-gray-900">
+                      {viewReturn.invoiceNumber || "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Customer</p>
+                    <p className="text-sm text-gray-900">
+                      {displayCustomer(viewReturn)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Warehouse</p>
+                    <p className="text-sm text-gray-900">
+                      {viewReturn.warehouse || "—"}
+                      {viewReturn.warehouseCity
+                        ? ` (${viewReturn.warehouseCity})`
+                        : ""}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Return Date</p>
+                    <p className="text-sm text-gray-900">
+                      {viewReturn.returnDate || "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Reason</p>
+                    <p className="text-sm text-gray-900">
+                      {viewReturn.returnReason || "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Invoice Total</p>
+                    <p className="text-sm text-gray-900">
+                      {fmtCurrency(viewReturn.invoiceTotal)}
+                    </p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <p className="text-xs text-gray-500">Notes</p>
+                    <p className="text-sm text-gray-900">
+                      {viewReturn.notes || "—"}
+                    </p>
+                  </div>
+                  {viewReturn.creditNoteId && (
+                    <div className="sm:col-span-2">
+                      <p className="text-xs text-gray-500">Credit Note</p>
+                      <p className="text-sm text-gray-900">
+                        {viewReturn.creditNoteId}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
+              {!viewLoading && canApprove(viewReturn.status) && (
+                <button
+                  onClick={() => {
+                    setShowView(false);
+                    handleApprove(viewReturn);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm inline-flex items-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  Approve
+                </button>
+              )}
+              {!viewLoading && canEdit(viewReturn.status) && (
+                <button
+                  onClick={() => {
+                    setShowView(false);
+                    handleEditReturn(viewReturn);
+                  }}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm inline-flex items-center gap-2"
+                >
+                  <Edit className="w-4 h-4" />
+                  Edit
+                </button>
+              )}
+              <button
+                onClick={() => setShowView(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDelete && toDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+        >
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Delete Return
+              </h3>
+              <p className="text-gray-500 mb-6">
+                Are you sure you want to delete this return for{" "}
+                <span className="font-semibold">
+                  {toDelete.invoiceNumber || "this invoice"}
+                </span>
+                ? This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+                <button
+                  onClick={() => setShowDelete(false)}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

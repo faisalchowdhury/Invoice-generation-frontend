@@ -1,13 +1,25 @@
 /**
  * File: src/pages/UsersManagement.tsx
- * Complete Users Management page with user listing and edit user modal
- * Edit modal has transparent background and permission settings with tabs
+ * Complete Users Management page with user listing and edit user modal.
+ *
+ * The Edit User modal loads its permission matrix from the backend:
+ *   GET /permission/all-permissions
+ * Response shape (unwrapped by the api client to the `data` array):
+ *   [{ addOn, label, packageName, modules: [{ module, moduleLabel,
+ *       permissions: [{ value, label, module }] }] }]
+ *   - addOn.label        -> tab name
+ *   - module.moduleLabel -> permission card title (with a "select all" checkbox)
+ *   - permission.label   -> checkbox label, permission.value -> stored value
+ *
+ * The user's currently-granted permissions are pre-checked, and saving issues:
+ *   PATCH /permission/update-user-permission  body: { userId, permissions: string[] }
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Users,
   Search,
+  Loader2,
   ChevronLeft,
   ChevronRight,
   MoreVertical,
@@ -26,497 +38,89 @@ import {
   X,
   UserCheck,
   UserPlus,
-  ChevronDown,
-  ChevronRight as ChevronRightIcon,
-  Settings,
-  Image,
-  User as UserIcon,
-  FileText,
-  Bell,
-  ShoppingCart,
-  FileSignature,
-  Package,
-  Truck,
-  RefreshCw,
-  LayoutDashboard,
-  Package as PackageIcon,
-  FolderKanban,
-  BookOpen,
-  Layout,
-  Users as UsersIcon,
-  Headphones,
-  CreditCard,
-  Target,
-  PieChart,
-  GraduationCap,
-  Award,
-  UserPlus as UserPlusIcon,
-  FileSpreadsheet,
-  FileCheck,
-  Clock,
 } from "lucide-react";
+import { api } from "../../lib/api/client";
+import { alertApiError } from "../../utils/alert";
 
-// User type definition
+// User type definition (UI-facing, mapped from the API)
 interface User {
-  id: number;
+  id: string;
   name: string;
   email: string;
   mobile: string;
   role: string;
   loginStatus: "Enabled" | "Disabled";
   avatar: string;
-  lastLogin: string;
-  createdAt: string;
+  /** Flat list of permission keys currently granted to this user. */
+  permissions: string[];
 }
 
-// Permission category interface
-interface PermissionCategory {
+/** Shape of one entry in GET /user/all-user-for-company -> data[]. */
+interface ApiUser {
+  _id: string;
   name: string;
-  icon: React.ElementType;
-  permissions: Permission[];
-  expanded: boolean;
+  email: string;
+  phone?: string;
+  role: string;
+  companyId?: string;
+  login: boolean;
+  permissions?: string[];
 }
 
-interface Permission {
-  id: string;
+/** Shape returned by GET /permission/all-permissions (one entry per add-on). */
+interface ApiPermission {
+  value: string;
   label: string;
-  checked: boolean;
+  module: string;
+}
+interface ApiModule {
+  module: string;
+  moduleLabel: string;
+  permissions: ApiPermission[];
+}
+interface ApiAddOn {
+  addOn: string;
+  label: string;
+  packageName: string;
+  modules: ApiModule[];
 }
 
-// Module tabs
-const modules = [
-  { id: "general", name: "General", icon: Settings },
-  { id: "product_service", name: "Product & Service", icon: PackageIcon },
-  { id: "project", name: "Project", icon: FolderKanban },
-  { id: "accounting", name: "Accounting", icon: BookOpen },
-  { id: "cms", name: "CMS", icon: Layout },
-  { id: "hrm", name: "HRM", icon: UsersIcon },
-  { id: "crm", name: "CRM", icon: Users },
-  { id: "pos", name: "POS", icon: ShoppingCart },
-  { id: "support_ticket", name: "Support Ticket", icon: Headphones },
-  { id: "double_entry", name: "Double Entry", icon: CreditCard },
-  { id: "financial_goal", name: "Financial Goal", icon: Target },
-  { id: "budget_planner", name: "Budget Planner", icon: PieChart },
-  { id: "training", name: "Training", icon: GraduationCap },
-  { id: "performance", name: "Performance", icon: Award },
-  { id: "recruitment", name: "Recruitment", icon: UserPlusIcon },
-  { id: "form_builder", name: "Form Builder", icon: FileSpreadsheet },
-  { id: "contract", name: "Contract", icon: FileCheck },
-  { id: "time", name: "Time", icon: Clock },
-];
+/** Filters sent as query params to /user/all-user-for-company. */
+interface UserFilters {
+  email?: string;
+  role?: string;
+  login?: boolean;
+}
 
-// Users data
-const initialUsersData: User[] = [
-  {
-    id: 1,
-    name: "vandor",
-    email: "vandor@gmail.com",
-    mobile: "+1234567890",
-    role: "Vendor",
-    loginStatus: "Enabled",
-    avatar: "VA",
-    lastLogin: "2024-02-15 10:30 AM",
-    createdAt: "2024-01-10",
-  },
-  {
-    id: 2,
-    name: "ProSmart Solutions",
-    email: "prosmartsolutions.hr@example.com",
-    mobile: "+12000000051",
-    role: "Hr",
-    loginStatus: "Enabled",
-    avatar: "PS",
-    lastLogin: "2024-02-14 03:45 PM",
-    createdAt: "2024-01-15",
-  },
-  {
-    id: 3,
-    name: "Empower HR",
-    email: "empowerhr@example.com",
-    mobile: "+12000000050",
-    role: "Hr",
-    loginStatus: "Enabled",
-    avatar: "EH",
-    lastLogin: "2024-02-14 11:20 AM",
-    createdAt: "2024-01-20",
-  },
-  {
-    id: 4,
-    name: "Quality Solutions Inc",
-    email: "sales@qualsol.com",
-    mobile: "+12000000047",
-    role: "Client",
-    loginStatus: "Enabled",
-    avatar: "QS",
-    lastLogin: "2024-02-13 02:15 PM",
-    createdAt: "2024-01-25",
-  },
-  {
-    id: 5,
-    name: "Strategic Consulting",
-    email: "hello@stratcon.com",
-    mobile: "+12000000049",
-    role: "Client",
-    loginStatus: "Enabled",
-    avatar: "SC",
-    lastLogin: "2024-02-13 09:00 AM",
-    createdAt: "2024-01-28",
-  },
-];
+/** Build initials from a name, e.g. "Staff Company" -> "SC". */
+const initialsFromName = (name: string): string =>
+  name
+    .trim()
+    .split(/\s+/)
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
 
-// Get permissions for each module
-const getPermissionsForModule = (moduleId: string): Permission[] => {
-  const commonPermissions = [
-    { id: `dashboard_${moduleId}`, label: "Dashboard", checked: false },
-    {
-      id: `manage_dashboard_${moduleId}`,
-      label: "Manage Dashboard",
-      checked: false,
-    },
-  ];
+/** Map a raw API user to the UI User model. */
+const mapApiUser = (u: ApiUser): User => ({
+  id: u._id,
+  name: u.name,
+  email: u.email,
+  mobile: u.phone || "—",
+  role: u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : "",
+  loginStatus: u.login ? "Enabled" : "Disabled",
+  avatar: initialsFromName(u.name),
+  permissions: Array.isArray(u.permissions) ? u.permissions : [],
+});
 
-  const moduleSpecificPermissions: Record<string, Permission[]> = {
-    general: [
-      { id: "manage_settings", label: "Manage Settings", checked: false },
-      {
-        id: "edit_brand_settings",
-        label: "Edit Brand Settings",
-        checked: false,
-      },
-      {
-        id: "manage_system_settings",
-        label: "Manage System Settings",
-        checked: false,
-      },
-      {
-        id: "edit_currency_settings",
-        label: "Edit Currency Settings",
-        checked: false,
-      },
-      {
-        id: "manage_cookie_settings",
-        label: "Manage Cookie Settings",
-        checked: false,
-      },
-      { id: "edit_seo_settings", label: "Edit SEO Settings", checked: false },
-      {
-        id: "manage_email_settings",
-        label: "Manage Email Settings",
-        checked: false,
-      },
-      {
-        id: "manage_email_notification_settings",
-        label: "Manage Email Notification Settings",
-        checked: false,
-      },
-      { id: "manage_media", label: "Manage Media", checked: false },
-      { id: "create_media", label: "Create Media", checked: false },
-      {
-        id: "manage_media_directories",
-        label: "Manage Media Directories",
-        checked: false,
-      },
-      {
-        id: "create_media_directories",
-        label: "Create Media Directories",
-        checked: false,
-      },
-      { id: "manage_profile", label: "Manage Profile", checked: false },
-      { id: "edit_profile", label: "Edit Profile", checked: false },
-      {
-        id: "change_password_profile",
-        label: "Change Password Profile",
-        checked: false,
-      },
-      {
-        id: "manage_email_templates",
-        label: "Manage Email Templates",
-        checked: false,
-      },
-      {
-        id: "edit_email_templates",
-        label: "Edit Email Templates",
-        checked: false,
-      },
-      {
-        id: "manage_notification_templates",
-        label: "Manage Notification Templates",
-        checked: false,
-      },
-      {
-        id: "edit_notification_templates",
-        label: "Edit Notification Templates",
-        checked: false,
-      },
-    ],
-    product_service: [
-      { id: "manage_products", label: "Manage Products", checked: false },
-      { id: "create_products", label: "Create Products", checked: false },
-      { id: "edit_products", label: "Edit Products", checked: false },
-      { id: "delete_products", label: "Delete Products", checked: false },
-      { id: "manage_categories", label: "Manage Categories", checked: false },
-      { id: "manage_brands", label: "Manage Brands", checked: false },
-      { id: "manage_units", label: "Manage Units", checked: false },
-      { id: "manage_warehouses", label: "Manage Warehouses", checked: false },
-    ],
-    project: [
-      { id: "manage_projects", label: "Manage Projects", checked: false },
-      { id: "create_projects", label: "Create Projects", checked: false },
-      { id: "edit_projects", label: "Edit Projects", checked: false },
-      { id: "delete_projects", label: "Delete Projects", checked: false },
-      { id: "view_project_tasks", label: "View Project Tasks", checked: false },
-      {
-        id: "manage_project_members",
-        label: "Manage Project Members",
-        checked: false,
-      },
-      {
-        id: "manage_project_milestones",
-        label: "Manage Project Milestones",
-        checked: false,
-      },
-    ],
-    accounting: [
-      { id: "manage_accounts", label: "Manage Accounts", checked: false },
-      { id: "create_accounts", label: "Create Accounts", checked: false },
-      { id: "edit_accounts", label: "Edit Accounts", checked: false },
-      { id: "delete_accounts", label: "Delete Accounts", checked: false },
-      {
-        id: "manage_journal_entries",
-        label: "Manage Journal Entries",
-        checked: false,
-      },
-      {
-        id: "manage_chart_of_accounts",
-        label: "Manage Chart of Accounts",
-        checked: false,
-      },
-      {
-        id: "view_financial_reports",
-        label: "View Financial Reports",
-        checked: false,
-      },
-      { id: "manage_tax_rates", label: "Manage Tax Rates", checked: false },
-    ],
-    cms: [
-      { id: "manage_pages", label: "Manage Pages", checked: false },
-      { id: "create_pages", label: "Create Pages", checked: false },
-      { id: "edit_pages", label: "Edit Pages", checked: false },
-      { id: "delete_pages", label: "Delete Pages", checked: false },
-      { id: "manage_blog_posts", label: "Manage Blog Posts", checked: false },
-      { id: "manage_comments", label: "Manage Comments", checked: false },
-      { id: "manage_menus", label: "Manage Menus", checked: false },
-    ],
-    hrm: [
-      { id: "manage_employees", label: "Manage Employees", checked: false },
-      { id: "create_employees", label: "Create Employees", checked: false },
-      { id: "edit_employees", label: "Edit Employees", checked: false },
-      { id: "delete_employees", label: "Delete Employees", checked: false },
-      { id: "manage_attendance", label: "Manage Attendance", checked: false },
-      { id: "manage_leaves", label: "Manage Leaves", checked: false },
-      { id: "manage_payroll", label: "Manage Payroll", checked: false },
-      { id: "manage_departments", label: "Manage Departments", checked: false },
-    ],
-    crm: [
-      { id: "manage_leads", label: "Manage Leads", checked: false },
-      { id: "create_leads", label: "Create Leads", checked: false },
-      { id: "edit_leads", label: "Edit Leads", checked: false },
-      { id: "delete_leads", label: "Delete Leads", checked: false },
-      { id: "manage_customers", label: "Manage Customers", checked: false },
-      {
-        id: "manage_opportunities",
-        label: "Manage Opportunities",
-        checked: false,
-      },
-      { id: "manage_crm_reports", label: "Manage CRM Reports", checked: false },
-    ],
-    pos: [
-      { id: "manage_pos", label: "Manage POS", checked: false },
-      { id: "process_sales", label: "Process Sales", checked: false },
-      {
-        id: "manage_pos_products",
-        label: "Manage POS Products",
-        checked: false,
-      },
-      {
-        id: "manage_cash_registers",
-        label: "Manage Cash Registers",
-        checked: false,
-      },
-      { id: "view_pos_reports", label: "View POS Reports", checked: false },
-      {
-        id: "manage_pos_customers",
-        label: "Manage POS Customers",
-        checked: false,
-      },
-    ],
-    support_ticket: [
-      { id: "manage_tickets", label: "Manage Tickets", checked: false },
-      { id: "create_tickets", label: "Create Tickets", checked: false },
-      { id: "edit_tickets", label: "Edit Tickets", checked: false },
-      { id: "delete_tickets", label: "Delete Tickets", checked: false },
-      { id: "assign_tickets", label: "Assign Tickets", checked: false },
-      {
-        id: "manage_ticket_categories",
-        label: "Manage Ticket Categories",
-        checked: false,
-      },
-      {
-        id: "view_ticket_reports",
-        label: "View Ticket Reports",
-        checked: false,
-      },
-    ],
-    double_entry: [
-      {
-        id: "manage_double_entry",
-        label: "Manage Double Entry",
-        checked: false,
-      },
-      {
-        id: "create_journal_entries",
-        label: "Create Journal Entries",
-        checked: false,
-      },
-      {
-        id: "edit_journal_entries",
-        label: "Edit Journal Entries",
-        checked: false,
-      },
-      {
-        id: "delete_journal_entries",
-        label: "Delete Journal Entries",
-        checked: false,
-      },
-      {
-        id: "manage_account_balances",
-        label: "Manage Account Balances",
-        checked: false,
-      },
-      { id: "view_trial_balance", label: "View Trial Balance", checked: false },
-      { id: "view_ledger", label: "View Ledger", checked: false },
-    ],
-    financial_goal: [
-      { id: "manage_goals", label: "Manage Goals", checked: false },
-      { id: "create_goals", label: "Create Goals", checked: false },
-      { id: "edit_goals", label: "Edit Goals", checked: false },
-      { id: "delete_goals", label: "Delete Goals", checked: false },
-      {
-        id: "track_goal_progress",
-        label: "Track Goal Progress",
-        checked: false,
-      },
-      { id: "view_goal_reports", label: "View Goal Reports", checked: false },
-    ],
-    budget_planner: [
-      { id: "manage_budgets", label: "Manage Budgets", checked: false },
-      { id: "create_budgets", label: "Create Budgets", checked: false },
-      { id: "edit_budgets", label: "Edit Budgets", checked: false },
-      { id: "delete_budgets", label: "Delete Budgets", checked: false },
-      {
-        id: "track_budget_vs_actual",
-        label: "Track Budget vs Actual",
-        checked: false,
-      },
-      {
-        id: "view_budget_reports",
-        label: "View Budget Reports",
-        checked: false,
-      },
-    ],
-    training: [
-      { id: "manage_trainings", label: "Manage Trainings", checked: false },
-      { id: "create_trainings", label: "Create Trainings", checked: false },
-      { id: "edit_trainings", label: "Edit Trainings", checked: false },
-      { id: "delete_trainings", label: "Delete Trainings", checked: false },
-      { id: "enroll_employees", label: "Enroll Employees", checked: false },
-      {
-        id: "view_training_reports",
-        label: "View Training Reports",
-        checked: false,
-      },
-    ],
-    performance: [
-      { id: "manage_performance", label: "Manage Performance", checked: false },
-      { id: "create_reviews", label: "Create Reviews", checked: false },
-      { id: "edit_reviews", label: "Edit Reviews", checked: false },
-      { id: "delete_reviews", label: "Delete Reviews", checked: false },
-      { id: "manage_kpis", label: "Manage KPIs", checked: false },
-      {
-        id: "view_performance_reports",
-        label: "View Performance Reports",
-        checked: false,
-      },
-    ],
-    recruitment: [
-      { id: "manage_recruitment", label: "Manage Recruitment", checked: false },
-      {
-        id: "create_job_postings",
-        label: "Create Job Postings",
-        checked: false,
-      },
-      { id: "edit_job_postings", label: "Edit Job Postings", checked: false },
-      {
-        id: "delete_job_postings",
-        label: "Delete Job Postings",
-        checked: false,
-      },
-      {
-        id: "manage_applications",
-        label: "Manage Applications",
-        checked: false,
-      },
-      {
-        id: "schedule_interviews",
-        label: "Schedule Interviews",
-        checked: false,
-      },
-      {
-        id: "view_recruitment_reports",
-        label: "View Recruitment Reports",
-        checked: false,
-      },
-    ],
-    form_builder: [
-      { id: "manage_forms", label: "Manage Forms", checked: false },
-      { id: "create_forms", label: "Create Forms", checked: false },
-      { id: "edit_forms", label: "Edit Forms", checked: false },
-      { id: "delete_forms", label: "Delete Forms", checked: false },
-      {
-        id: "manage_form_submissions",
-        label: "Manage Form Submissions",
-        checked: false,
-      },
-      { id: "view_form_reports", label: "View Form Reports", checked: false },
-    ],
-    contract: [
-      { id: "manage_contracts", label: "Manage Contracts", checked: false },
-      { id: "create_contracts", label: "Create Contracts", checked: false },
-      { id: "edit_contracts", label: "Edit Contracts", checked: false },
-      { id: "delete_contracts", label: "Delete Contracts", checked: false },
-      { id: "sign_contracts", label: "Sign Contracts", checked: false },
-      {
-        id: "view_contract_reports",
-        label: "View Contract Reports",
-        checked: false,
-      },
-    ],
-    time: [
-      { id: "manage_time", label: "Manage Time", checked: false },
-      { id: "track_time", label: "Track Time", checked: false },
-      { id: "manage_timesheets", label: "Manage Timesheets", checked: false },
-      { id: "approve_timesheets", label: "Approve Timesheets", checked: false },
-      { id: "view_time_reports", label: "View Time Reports", checked: false },
-      {
-        id: "manage_time_categories",
-        label: "Manage Time Categories",
-        checked: false,
-      },
-    ],
-  };
-
-  const modulePermissions = moduleSpecificPermissions[moduleId] || [];
-  return [...commonPermissions, ...modulePermissions];
+/** UI role label -> API role value. (UI shows "Client" for the "customer" role.) */
+const roleFilterToApi: Record<string, string | undefined> = {
+  All: undefined,
+  Staff: "staff",
+  Client: "customer",
+  Vendor: "vendor",
+  Hr: "hr",
 };
 
 // Languages
@@ -527,31 +131,115 @@ const languages = [
 ];
 
 export const UsersManagement: React.FC = () => {
-  const [users, setUsers] = useState<User[]>(initialUsersData);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [roleFilter, setRoleFilter] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [selectedLanguage, setSelectedLanguage] = useState("en");
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  // Filter inputs sent to the API as ?email=&role=&login=
+  const [emailFilter, setEmailFilter] = useState("");
+  const [loginFilter, setLoginFilter] = useState<"All" | "Enabled" | "Disabled">(
+    "All",
+  );
+
+  // ── Load users from the backend ──────────────────────────────────────────
+  // No query params -> all users. Pass { role } / { email } / { login } to filter.
+  const loadUsers = useCallback(async (filters: UserFilters = {}) => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const params: Record<string, string | boolean> = {};
+      if (filters.email) params.email = filters.email;
+      if (filters.role) params.role = filters.role;
+      if (filters.login !== undefined) params.login = filters.login;
+
+      const data = await api.get<ApiUser[]>("/user/all-user-for-company", {
+        params,
+      });
+      setUsers(Array.isArray(data) ? data.map(mapApiUser) : []);
+    } catch (err) {
+      setLoadError("Couldn't load users. Please try again.");
+      alertApiError(err, "Couldn't load users.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
+
+  // Build the active filter set and refetch from the API.
+  // `overrides` lets the role buttons apply immediately while keeping the
+  // current email/login inputs.
+  const applyFilters = (
+    overrides: { role?: string; email?: string; login?: typeof loginFilter } = {},
+  ) => {
+    const uiRole = overrides.role ?? roleFilter;
+    const email = overrides.email ?? emailFilter;
+    const login = overrides.login ?? loginFilter;
+
+    setCurrentPage(1);
+    loadUsers({
+      role: roleFilterToApi[uiRole],
+      email: email.trim() || undefined,
+      login: login === "All" ? undefined : login === "Enabled",
+    });
+  };
+
+  // Role buttons refetch immediately, preserving the other filters.
+  const handleRoleFilter = (uiRole: string) => {
+    setRoleFilter(uiRole);
+    applyFilters({ role: uiRole });
+  };
+
+  // Reset every filter and reload the full list.
+  const resetFilters = () => {
+    setRoleFilter("All");
+    setEmailFilter("");
+    setLoginFilter("All");
+    setCurrentPage(1);
+    loadUsers();
+  };
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-  const [activeModule, setActiveModule] = useState("general");
 
-  // Permission state for each module
-  const [modulePermissions, setModulePermissions] = useState<
-    Record<string, Permission[]>
-  >(() => {
-    const initialPermissions: Record<string, Permission[]> = {};
-    modules.forEach((module) => {
-      initialPermissions[module.id] = getPermissionsForModule(module.id);
-    });
-    return initialPermissions;
-  });
+  // ── Permission catalog (GET /permission/all-permissions) ─────────────────
+  const [permCatalog, setPermCatalog] = useState<ApiAddOn[]>([]);
+  const [permLoading, setPermLoading] = useState(false);
+  const [permError, setPermError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>(""); // packageName
+  const [featureSearch, setFeatureSearch] = useState("");
+  const [savingPerms, setSavingPerms] = useState(false);
+  // Selected permissions for the user being edited, keyed by permission.value.
+  const [selectedPerms, setSelectedPerms] = useState<Record<string, boolean>>(
+    {},
+  );
+
+  // ── Create user form ─────────────────────────────────────────────────────
+  // Posted to POST /user/create-user-by-company as { name, email, password, role }.
+  const emptyCreateForm = {
+    name: "",
+    email: "",
+    mobile: "",
+    password: "",
+    confirmPassword: "",
+    role: "",
+    loginStatus: "Enabled" as "Enabled" | "Disabled",
+  };
+  const [createForm, setCreateForm] = useState(emptyCreateForm);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Form data for edit
   const [formData, setFormData] = useState({
@@ -586,26 +274,74 @@ export const UsersManagement: React.FC = () => {
     setCurrentPage(1);
   };
 
-  // Toggle single permission
-  const togglePermission = (moduleId: string, permissionId: string) => {
-    setModulePermissions((prev) => ({
-      ...prev,
-      [moduleId]: prev[moduleId].map((perm) =>
-        perm.id === permissionId ? { ...perm, checked: !perm.checked } : perm,
-      ),
-    }));
-  };
+  // ── Permission catalog helpers ───────────────────────────────────────────
+  // Load the catalog once; cached in state so re-opening the modal is instant.
+  const loadPermCatalog = useCallback(async () => {
+    if (permCatalog.length > 0) return permCatalog;
+    setPermLoading(true);
+    setPermError(null);
+    try {
+      const catalog = await api.get<ApiAddOn[]>("/permission/all-permissions/");
+      const list = Array.isArray(catalog) ? catalog : [];
+      setPermCatalog(list);
+      setActiveTab((prev) => prev || list[0]?.packageName || "");
+      return list;
+    } catch (err) {
+      setPermError("Couldn't load permissions. Please try again.");
+      alertApiError(err, "Couldn't load permissions.");
+      return [];
+    } finally {
+      setPermLoading(false);
+    }
+  }, [permCatalog]);
 
-  // Toggle all permissions in a module
-  const toggleAllPermissions = (moduleId: string) => {
-    const allChecked = modulePermissions[moduleId].every((p) => p.checked);
-    setModulePermissions((prev) => ({
-      ...prev,
-      [moduleId]: prev[moduleId].map((perm) => ({
-        ...perm,
-        checked: !allChecked,
-      })),
-    }));
+  const activeAddOn = permCatalog.find((a) => a.packageName === activeTab);
+
+  // Filter the active add-on's modules/permissions by the feature search box.
+  const visibleModules = useMemo(() => {
+    const mods = activeAddOn?.modules ?? [];
+    if (!featureSearch.trim()) return mods;
+    const q = featureSearch.toLowerCase();
+    return mods
+      .map((m) => {
+        const moduleMatches = m.moduleLabel.toLowerCase().includes(q);
+        const matchingPerms = m.permissions.filter((p) =>
+          p.label.toLowerCase().includes(q),
+        );
+        if (moduleMatches) return m;
+        if (matchingPerms.length > 0)
+          return { ...m, permissions: matchingPerms };
+        return null;
+      })
+      .filter(Boolean) as ApiModule[];
+  }, [activeAddOn, featureSearch]);
+
+  const selectedCount = useMemo(
+    () => Object.values(selectedPerms).filter(Boolean).length,
+    [selectedPerms],
+  );
+
+  // Toggle a single permission by its value.
+  const togglePermission = (value: string) =>
+    setSelectedPerms((s) => ({ ...s, [value]: !s[value] }));
+
+  const isModuleAllSelected = (m: ApiModule) =>
+    m.permissions.length > 0 &&
+    m.permissions.every((p) => selectedPerms[p.value]);
+
+  const isModuleSomeSelected = (m: ApiModule) =>
+    m.permissions.some((p) => selectedPerms[p.value]);
+
+  // Toggle every permission in a module on/off.
+  const toggleModule = (m: ApiModule) => {
+    const next = !isModuleAllSelected(m);
+    setSelectedPerms((s) => {
+      const updated = { ...s };
+      m.permissions.forEach((p) => {
+        updated[p.value] = next;
+      });
+      return updated;
+    });
   };
 
   // Show toast notification
@@ -617,28 +353,88 @@ export const UsersManagement: React.FC = () => {
     }, 3000);
   };
 
-  // Edit User
-  const handleEditUser = () => {
-    if (selectedUser) {
-      const updatedUsers = users.map((user) =>
-        user.id === selectedUser.id
-          ? {
-              ...user,
-              name: formData.name,
-              email: formData.email,
-              mobile: formData.mobile,
-              role: formData.role,
-              loginStatus: formData.loginStatus,
-              avatar: formData.name
-                .split(" ")
-                .map((n) => n[0])
-                .join("")
-                .toUpperCase()
-                .slice(0, 2),
-            }
-          : user,
+  // UI role label -> API role value, for the Create User form.
+  const roleLabelToApi: Record<string, string> = {
+    Staff: "staff",
+    Client: "customer",
+    Vendor: "vendor",
+    Hr: "hr",
+  };
+
+  // Open / reset the Create User modal.
+  const openCreateModal = () => {
+    setCreateForm(emptyCreateForm);
+    setCreateError(null);
+    setShowCreateModal(true);
+  };
+
+  // Create a new user under the current company.
+  // POST /user/create-user-by-company  body: { name, email, password, role }
+  const handleCreateUser = async () => {
+    const name = createForm.name.trim();
+    const email = createForm.email.trim();
+    const { password, confirmPassword, role } = createForm;
+
+    if (!name || !email || !password || !role) {
+      setCreateError("Name, email, password and role are required.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setCreateError("Passwords do not match.");
+      return;
+    }
+
+    setCreateError(null);
+    setCreating(true);
+    try {
+      await api.post("/user/create-user-by-company", {
+        name,
+        email,
+        password,
+        role: roleLabelToApi[role] ?? role,
+      });
+      setShowCreateModal(false);
+      setCreateForm(emptyCreateForm);
+      // Refresh the list so the new user shows up.
+      await loadUsers();
+      showToast("User created successfully!");
+    } catch (err) {
+      alertApiError(err, "Couldn't create user.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // Edit User — persist the selected permissions for this user.
+  // PATCH /permission/update-user-permission  body: { userId, permissions: string[] }
+  const handleEditUser = async () => {
+    if (!selectedUser) return;
+    const permissions = Object.keys(selectedPerms).filter(
+      (k) => selectedPerms[k],
+    );
+    setSavingPerms(true);
+    try {
+      await api.patch("/permission/update-user-permission", {
+        userId: selectedUser.id,
+        permissions,
+      });
+      // Reflect the changes locally so the list stays in sync.
+      setUsers((prev) =>
+        prev.map((user) =>
+          user.id === selectedUser.id
+            ? {
+                ...user,
+                name: formData.name,
+                email: formData.email,
+                mobile: formData.mobile,
+                role: formData.role,
+                loginStatus: formData.loginStatus,
+                permissions,
+                avatar: initialsFromName(formData.name),
+              }
+            : user,
+        ),
       );
-      setUsers(updatedUsers);
       setShowEditModal(false);
       setSelectedUser(null);
       setFormData({
@@ -648,7 +444,11 @@ export const UsersManagement: React.FC = () => {
         role: "Staff",
         loginStatus: "Enabled",
       });
-      showToast("User updated successfully!");
+      showToast("User permissions updated successfully!");
+    } catch (err) {
+      alertApiError(err, "Couldn't update user permissions.");
+    } finally {
+      setSavingPerms(false);
     }
   };
 
@@ -662,7 +462,8 @@ export const UsersManagement: React.FC = () => {
     }
   };
 
-  // Open Edit Modal
+  // Open Edit Modal — pre-check the user's current permissions, then load the
+  // permission catalog (cached after the first open).
   const openEditModal = (user: User) => {
     setSelectedUser(user);
     setFormData({
@@ -672,8 +473,15 @@ export const UsersManagement: React.FC = () => {
       role: user.role,
       loginStatus: user.loginStatus,
     });
-    setActiveModule("general");
+    setSelectedPerms(
+      user.permissions.reduce<Record<string, boolean>>((acc, value) => {
+        acc[value] = true;
+        return acc;
+      }, {}),
+    );
+    setFeatureSearch("");
     setShowEditModal(true);
+    void loadPermCatalog();
   };
 
   // Open Delete Modal
@@ -695,6 +503,7 @@ export const UsersManagement: React.FC = () => {
       case "hr":
         return "bg-blue-100 text-blue-700";
       case "client":
+      case "customer":
         return "bg-green-100 text-green-700";
       case "staff":
         return "bg-orange-100 text-orange-700";
@@ -715,17 +524,6 @@ export const UsersManagement: React.FC = () => {
       ? "bg-green-100 text-green-700"
       : "bg-red-100 text-red-700";
   };
-
-  // Get total permissions count across all modules
-  const totalPermissions = Object.values(modulePermissions).reduce(
-    (sum, perms) => sum + perms.length,
-    0,
-  );
-
-  const checkedPermissions = Object.values(modulePermissions).reduce(
-    (sum, perms) => sum + perms.filter((p) => p.checked).length,
-    0,
-  );
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
@@ -798,7 +596,10 @@ export const UsersManagement: React.FC = () => {
               Manage system users, roles, and access permissions
             </p>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+          <button
+            onClick={openCreateModal}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+          >
             <Plus className="w-4 h-4" />
             Add New User
           </button>
@@ -837,20 +638,78 @@ export const UsersManagement: React.FC = () => {
 
           {/* Filter Panel */}
           {showFilters && (
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <div className="flex flex-wrap gap-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">Role:</span>
-                  <div className="flex gap-2 flex-wrap">
-                    {["All", "Staff", "Client", "Vendor", "Hr"].map((role) => (
-                      <button
-                        key={role}
-                        className="px-3 py-1 text-sm rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-                      >
-                        {role}
-                      </button>
-                    ))}
+            <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+              {/* Role */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <span className="text-sm text-gray-600 w-20 shrink-0">Role:</span>
+                <div className="flex gap-2 flex-wrap">
+                  {["All", "Staff", "Client", "Vendor", "Hr"].map((role) => (
+                    <button
+                      key={role}
+                      onClick={() => handleRoleFilter(role)}
+                      className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                        roleFilter === role
+                          ? "bg-blue-600 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      {role}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Email + Login status */}
+              <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm text-gray-600 mb-1">
+                    Email
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="email"
+                      value={emailFilter}
+                      onChange={(e) => setEmailFilter(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") applyFilters();
+                      }}
+                      placeholder="Filter by email..."
+                      className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
                   </div>
+                </div>
+                <div className="sm:w-44">
+                  <label className="block text-sm text-gray-600 mb-1">
+                    Login Status
+                  </label>
+                  <select
+                    value={loginFilter}
+                    onChange={(e) => {
+                      const value = e.target.value as typeof loginFilter;
+                      setLoginFilter(value);
+                      applyFilters({ login: value });
+                    }}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="All">All</option>
+                    <option value="Enabled">Enabled</option>
+                    <option value="Disabled">Disabled</option>
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => applyFilters()}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                  >
+                    Apply
+                  </button>
+                  <button
+                    onClick={resetFilters}
+                    className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    Reset
+                  </button>
                 </div>
               </div>
             </div>
@@ -887,7 +746,33 @@ export const UsersManagement: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {paginatedUsers.map((user) => (
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-16">
+                      <div className="flex items-center justify-center gap-2 text-gray-500">
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span className="text-sm">Loading users…</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : loadError ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12">
+                      <div className="text-sm text-red-600 text-center">
+                        {loadError}
+                      </div>
+                    </td>
+                  </tr>
+                ) : paginatedUsers.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12">
+                      <div className="text-sm text-gray-500 text-center">
+                        No users found.
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedUsers.map((user) => (
                   <tr
                     key={user.id}
                     className="hover:bg-gray-50 transition-colors"
@@ -967,7 +852,8 @@ export const UsersManagement: React.FC = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -1085,7 +971,9 @@ export const UsersManagement: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs text-purple-600 font-medium">Roles</div>
-                <div className="text-2xl font-bold text-purple-700">5</div>
+                <div className="text-2xl font-bold text-purple-700">
+                  {new Set(users.map((u) => u.role)).size}
+                </div>
                 <div className="text-xs text-purple-500 mt-1">
                   Different roles
                 </div>
@@ -1113,6 +1001,183 @@ export const UsersManagement: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Create User Modal */}
+      {showCreateModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+        >
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-900">Create User</h2>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              {createError && (
+                <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                  {createError}
+                </div>
+              )}
+
+              {/* Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={createForm.name}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, name: e.target.value })
+                  }
+                  placeholder="Enter full name"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={createForm.email}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, email: e.target.value })
+                  }
+                  placeholder="Enter email address"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Mobile */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mobile Number
+                </label>
+                <input
+                  type="text"
+                  value={createForm.mobile}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, mobile: e.target.value })
+                  }
+                  placeholder="+1234567890"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Format: +[country code][phone number]
+                </p>
+              </div>
+
+              {/* Password + Confirm Password */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Password <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={createForm.password}
+                    onChange={(e) =>
+                      setCreateForm({ ...createForm, password: e.target.value })
+                    }
+                    placeholder="Enter password"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Confirm Password <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={createForm.confirmPassword}
+                    onChange={(e) =>
+                      setCreateForm({
+                        ...createForm,
+                        confirmPassword: e.target.value,
+                      })
+                    }
+                    placeholder="Confirm password"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              {/* Role + Login Status */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Role <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={createForm.role}
+                    onChange={(e) =>
+                      setCreateForm({ ...createForm, role: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                  >
+                    <option value="" disabled>
+                      Select role
+                    </option>
+                    <option value="Staff">Staff</option>
+                    <option value="Client">Client</option>
+                    <option value="Vendor">Vendor</option>
+                    <option value="Hr">HR</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Login Status
+                  </label>
+                  <select
+                    value={createForm.loginStatus}
+                    onChange={(e) =>
+                      setCreateForm({
+                        ...createForm,
+                        loginStatus: e.target.value as "Enabled" | "Disabled",
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                  >
+                    <option value="Enabled">Enabled</option>
+                    <option value="Disabled">Disabled</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  disabled={creating}
+                  className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateUser}
+                  disabled={creating}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                >
+                  {creating && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {creating ? "Creating…" : "Create"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit User Modal with Permissions - Transparent Background */}
       {showEditModal && selectedUser && (
@@ -1229,102 +1294,126 @@ export const UsersManagement: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Right Column - Permissions with Tabs */}
+                {/* Right Column - Permissions with Tabs (loaded from the API) */}
                 <div className="lg:col-span-2">
                   <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
                       <h3 className="text-base font-semibold text-gray-900">
                         Access Permissions
                       </h3>
                       <div className="text-sm text-gray-500">
-                        {checkedPermissions} of {totalPermissions} permissions
-                        granted
+                        {selectedCount} permissions granted
                       </div>
                     </div>
 
-                    {/* Module Tabs */}
-                    <div className="flex flex-wrap gap-1 mb-4 border-b border-gray-200 pb-2">
-                      {modules.map((module) => (
-                        <button
-                          key={module.id}
-                          onClick={() => setActiveModule(module.id)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                            activeModule === module.id
-                              ? "bg-blue-600 text-white"
-                              : "text-gray-600 hover:bg-gray-100"
-                          }`}
-                        >
-                          <module.icon className="w-3.5 h-3.5" />
-                          {module.name}
-                        </button>
-                      ))}
+                    {/* Search features */}
+                    <div className="relative mb-4">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        value={featureSearch}
+                        onChange={(e) => setFeatureSearch(e.target.value)}
+                        placeholder="Search features..."
+                        className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
                     </div>
 
-                    {/* Permissions for Active Module */}
-                    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                      <div className="p-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {(() => {
-                            const activeModuleItem = modules.find(
-                              (m) => m.id === activeModule,
-                            );
-                            if (!activeModuleItem) return null;
-                            const ActiveModuleIcon = activeModuleItem.icon;
-                            return (
-                              <ActiveModuleIcon className="w-4 h-4 text-gray-500" />
-                            );
-                          })()}
-                          <span className="font-medium text-gray-900">
-                            {modules.find((m) => m.id === activeModule)?.name}{" "}
-                            Permissions
-                          </span>
-                          <span className="text-xs text-gray-400">
-                            (
-                            {modulePermissions[activeModule]?.filter(
-                              (p) => p.checked,
-                            ).length || 0}
-                            /{modulePermissions[activeModule]?.length || 0})
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => toggleAllPermissions(activeModule)}
-                          className="text-xs text-blue-600 hover:text-blue-700"
-                        >
-                          {modulePermissions[activeModule]?.every(
-                            (p) => p.checked,
-                          )
-                            ? "Deselect All"
-                            : "Select All"}
-                        </button>
+                    {permLoading ? (
+                      <div className="flex items-center justify-center gap-2 py-16 text-gray-500">
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span className="text-sm">Loading permissions…</span>
                       </div>
-                      <div className="p-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          {modulePermissions[activeModule]?.map(
-                            (permission) => (
-                              <label
-                                key={permission.id}
-                                className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer"
+                    ) : permError ? (
+                      <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-4 py-6 text-center">
+                        {permError}
+                      </div>
+                    ) : permCatalog.length === 0 ? (
+                      <div className="text-sm text-gray-500 py-12 text-center border border-dashed border-gray-200 rounded-lg">
+                        No permissions available.
+                      </div>
+                    ) : (
+                      <>
+                        {/* Add-on Tabs */}
+                        <div className="border-b border-gray-200 overflow-x-auto mb-4">
+                          <div className="flex gap-1 min-w-max">
+                            {permCatalog.map((addOn) => (
+                              <button
+                                key={addOn.packageName}
+                                onClick={() => setActiveTab(addOn.packageName)}
+                                className={`px-4 py-2 text-sm whitespace-nowrap border-b-2 transition-colors -mb-px ${
+                                  activeTab === addOn.packageName
+                                    ? "border-blue-600 text-blue-600 font-medium"
+                                    : "border-transparent text-gray-600 hover:text-gray-900"
+                                }`}
                               >
-                                <input
-                                  type="checkbox"
-                                  checked={permission.checked}
-                                  onChange={() =>
-                                    togglePermission(
-                                      activeModule,
-                                      permission.id,
-                                    )
-                                  }
-                                  className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                                />
-                                <span className="text-sm text-gray-700">
-                                  {permission.label}
-                                </span>
-                              </label>
-                            ),
-                          )}
+                                {addOn.label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    </div>
+
+                        {/* Modules + permissions for the active add-on */}
+                        {visibleModules.length === 0 ? (
+                          <div className="text-sm text-gray-500 py-6 text-center border border-dashed border-gray-200 rounded-lg">
+                            No permissions match your search.
+                          </div>
+                        ) : (
+                          <div className="space-y-4 max-h-[420px] overflow-y-auto pr-1">
+                            {visibleModules.map((module) => {
+                              const allSelected = isModuleAllSelected(module);
+                              const someSelected =
+                                isModuleSomeSelected(module);
+                              return (
+                                <div
+                                  key={module.module}
+                                  className="bg-white border border-gray-200 rounded-lg p-4"
+                                >
+                                  {/* Module header (select-all checkbox) */}
+                                  <label className="flex items-center gap-2 cursor-pointer mb-3">
+                                    <input
+                                      type="checkbox"
+                                      ref={(el) => {
+                                        if (el)
+                                          el.indeterminate =
+                                            someSelected && !allSelected;
+                                      }}
+                                      checked={allSelected}
+                                      onChange={() => toggleModule(module)}
+                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm font-medium text-gray-900">
+                                      {module.moduleLabel}
+                                    </span>
+                                  </label>
+
+                                  {/* Permission checkboxes */}
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 pl-6">
+                                    {module.permissions.map((perm) => (
+                                      <label
+                                        key={perm.value}
+                                        className="flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={!!selectedPerms[perm.value]}
+                                          onChange={() =>
+                                            togglePermission(perm.value)
+                                          }
+                                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        <span className="text-sm text-gray-700">
+                                          {perm.label}
+                                        </span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1334,16 +1423,22 @@ export const UsersManagement: React.FC = () => {
             <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
               <button
                 onClick={() => setShowEditModal(false)}
-                className="px-4 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                disabled={savingPerms}
+                className="px-4 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={handleEditUser}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                disabled={permLoading || savingPerms}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Edit className="w-4 h-4" />
-                Save Changes
+                {savingPerms ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Edit className="w-4 h-4" />
+                )}
+                {savingPerms ? "Saving…" : "Save Changes"}
               </button>
             </div>
           </div>

@@ -1,12 +1,26 @@
 /**
- * File: src/pages/sales/SalesInvoices.tsx
- * Complete Sales Invoices page with list view, create/edit form, filters, pagination
- * Based on existing SalesReceipts pattern — matching exact color codes and design style
+ * File: src/pages/sales/SalesInvoice.tsx
+ * Sales Invoices page — list, create/edit form, view modal, delete.
+ *
+ * Backed by the invoice API:
+ *   GET    /invoice/all?page=&limit=  -> list (paginated envelope)
+ *   GET    /invoice/single/:id        -> one invoice (View modal)
+ *   POST   /invoice/create            -> create
+ *   PATCH  /invoice/edit/:id          -> update (partial allowed)
+ *   DELETE /invoice/delete/:id        -> delete
+ *
+ * customer_id arrives populated in the list (string id in single), warehouse_id
+ * and product[].product_id are raw ids — names are resolved from:
+ *   /customer/all              -> customers
+ *   /purchase/warehouses/all   -> warehouses
+ *   /product/all               -> products
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { api } from "../../lib/api/client";
+import { ApiError } from "../../lib/api/ApiError";
 import {
   Search,
   Plus,
@@ -14,7 +28,6 @@ import {
   Trash2,
   Download,
   Eye,
-  Save,
   X,
   Calendar,
   ChevronLeft,
@@ -26,595 +39,166 @@ import {
   LayoutGrid,
   ArrowLeft,
   Settings,
-  Check,
+  Loader2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface InvoiceItem {
   id: string;
-  product: string;
+  productId: string;
   qty: number;
-  unitPrice: number;
+  unitPrice: number; // rate
   discountPercent: number;
-  tax: number;
-  total: number;
+  taxPercent: number;
+  amount: number; // line subtotal (excl. tax)
 }
 
 interface SalesInvoice {
   id: string;
   invoiceNumber: string;
+  customerId: string;
   customer: string;
-  invoiceDate: string;
-  dueDate: string;
+  warehouseId: string;
+  invoiceDate: string; // yyyy-mm-dd
+  dueDate: string; // yyyy-mm-dd
+  subTitle: string;
   subtotal: number;
   tax: number;
-  totalAmount: number;
+  discount: number;
+  total: number;
+  paidAmount: number;
   balance: number;
-  status: "Draft" | "Paid" | "Posted" | "Partial";
-  warehouse: string;
-  paymentTerms: string;
-  notes: string;
-  syncToCalendar: boolean;
-  invoiceType: "product" | "service";
+  deposit: number;
+  shippingCost: number;
+  inlineDiscount: number;
+  discountBeforeTax: number;
+  status: string;
   items: InvoiceItem[];
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
-
-const sampleInvoices: SalesInvoice[] = [
-  {
-    id: "1",
-    invoiceNumber: "SI-2026-02-018",
-    customer: "Jennifer Martinez",
-    invoiceDate: "2026-06-02",
-    dueDate: "2026-08-07",
-    subtotal: 1100.0,
-    tax: 330.0,
-    totalAmount: 1430.0,
-    balance: 1430.0,
-    status: "Draft",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "product",
-    items: [
-      {
-        id: "i1",
-        product: "Laptop Pro 15",
-        qty: 2,
-        unitPrice: 500,
-        discountPercent: 0,
-        tax: 150,
-        total: 1000,
-      },
-      {
-        id: "i2",
-        product: "USB-C Hub",
-        qty: 2,
-        unitPrice: 50,
-        discountPercent: 0,
-        tax: 30,
-        total: 100,
-      },
-    ],
-  },
-  {
-    id: "2",
-    invoiceNumber: "SI-2026-02-017",
-    customer: "Lisa Anderson",
-    invoiceDate: "2026-06-01",
-    dueDate: "2026-08-13",
-    subtotal: 990.0,
-    tax: 178.2,
-    totalAmount: 1168.2,
-    balance: 0.0,
-    status: "Paid",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "product",
-    items: [
-      {
-        id: "i1",
-        product: "Office Chair Ergonomic",
-        qty: 3,
-        unitPrice: 330,
-        discountPercent: 0,
-        tax: 59.4,
-        total: 990,
-      },
-    ],
-  },
-  {
-    id: "3",
-    invoiceNumber: "SI-2026-02-016",
-    customer: "Emily Davis",
-    invoiceDate: "2026-05-31",
-    dueDate: "2026-08-05",
-    subtotal: 1830.0,
-    tax: 329.4,
-    totalAmount: 2159.4,
-    balance: 2159.4,
-    status: "Posted",
-    warehouse: "Warehouse B",
-    paymentTerms: "Net 60",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "product",
-    items: [
-      {
-        id: "i1",
-        product: "Server Rack Unit",
-        qty: 1,
-        unitPrice: 1830,
-        discountPercent: 0,
-        tax: 329.4,
-        total: 1830,
-      },
-    ],
-  },
-  {
-    id: "4",
-    invoiceNumber: "SI-2026-02-015",
-    customer: "Sarah Johnson",
-    invoiceDate: "2026-05-27",
-    dueDate: "2026-07-27",
-    subtotal: 960.0,
-    tax: 391.5,
-    totalAmount: 1351.5,
-    balance: 1351.5,
-    status: "Draft",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "service",
-    items: [
-      {
-        id: "i1",
-        product: "Consulting Hours",
-        qty: 16,
-        unitPrice: 60,
-        discountPercent: 0,
-        tax: 172.8,
-        total: 960,
-      },
-    ],
-  },
-  {
-    id: "5",
-    invoiceNumber: "SI-2026-02-014",
-    customer: "Amanda White",
-    invoiceDate: "2026-05-14",
-    dueDate: "2026-07-21",
-    subtotal: 1399.95,
-    tax: 623.23,
-    totalAmount: 2023.18,
-    balance: 0.0,
-    status: "Paid",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 45",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "product",
-    items: [
-      {
-        id: "i1",
-        product: 'Monitor 27" 4K',
-        qty: 3,
-        unitPrice: 466.65,
-        discountPercent: 0,
-        tax: 207.74,
-        total: 1399.95,
-      },
-    ],
-  },
-  {
-    id: "6",
-    invoiceNumber: "SI-2026-02-013",
-    customer: "Maria Rodriguez",
-    invoiceDate: "2026-05-05",
-    dueDate: "2026-07-07",
-    subtotal: 1200.0,
-    tax: 360.0,
-    totalAmount: 1560.0,
-    balance: 1560.0,
-    status: "Draft",
-    warehouse: "Warehouse B",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "product",
-    items: [
-      {
-        id: "i1",
-        product: "Mechanical Keyboard",
-        qty: 10,
-        unitPrice: 120,
-        discountPercent: 0,
-        tax: 36,
-        total: 1200,
-      },
-    ],
-  },
-  {
-    id: "7",
-    invoiceNumber: "SI-2026-02-012",
-    customer: "Jennifer Martinez",
-    invoiceDate: "2026-04-30",
-    dueDate: "2026-06-30",
-    subtotal: 3025.96,
-    tax: 547.79,
-    totalAmount: 3573.75,
-    balance: 1573.75,
-    status: "Partial",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 60",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "product",
-    items: [
-      {
-        id: "i1",
-        product: "Network Switch 48-Port",
-        qty: 2,
-        unitPrice: 1200,
-        discountPercent: 0,
-        tax: 216,
-        total: 2400,
-      },
-      {
-        id: "i2",
-        product: "Cat6 Cable Bundle",
-        qty: 5,
-        unitPrice: 125.19,
-        discountPercent: 0,
-        tax: 66.36,
-        total: 625.96,
-      },
-    ],
-  },
-  {
-    id: "8",
-    invoiceNumber: "SI-2026-02-011",
-    customer: "Lisa Anderson",
-    invoiceDate: "2026-04-13",
-    dueDate: "2026-06-13",
-    subtotal: 840.0,
-    tax: 180.0,
-    totalAmount: 1020.0,
-    balance: 1020.0,
-    status: "Posted",
-    warehouse: "Warehouse B",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "service",
-    items: [
-      {
-        id: "i1",
-        product: "IT Support Hours",
-        qty: 14,
-        unitPrice: 60,
-        discountPercent: 0,
-        tax: 12.86,
-        total: 840,
-      },
-    ],
-  },
-  {
-    id: "9",
-    invoiceNumber: "SI-2026-02-010",
-    customer: "Emily Davis",
-    invoiceDate: "2026-04-04",
-    dueDate: "2026-06-08",
-    subtotal: 450.0,
-    tax: 81.0,
-    totalAmount: 531.0,
-    balance: 531.0,
-    status: "Draft",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "product",
-    items: [
-      {
-        id: "i1",
-        product: "Wireless Mouse",
-        qty: 15,
-        unitPrice: 30,
-        discountPercent: 0,
-        tax: 5.4,
-        total: 450,
-      },
-    ],
-  },
-  {
-    id: "10",
-    invoiceNumber: "SI-2026-02-009",
-    customer: "Sarah Johnson",
-    invoiceDate: "2026-03-28",
-    dueDate: "2026-05-28",
-    subtotal: 2200.0,
-    tax: 396.0,
-    totalAmount: 2596.0,
-    balance: 0.0,
-    status: "Paid",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 60",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "product",
-    items: [
-      {
-        id: "i1",
-        product: "Standing Desk Electric",
-        qty: 2,
-        unitPrice: 1100,
-        discountPercent: 0,
-        tax: 198,
-        total: 2200,
-      },
-    ],
-  },
-  {
-    id: "11",
-    invoiceNumber: "SI-2026-02-008",
-    customer: "Amanda White",
-    invoiceDate: "2026-03-20",
-    dueDate: "2026-05-20",
-    subtotal: 675.0,
-    tax: 121.5,
-    totalAmount: 796.5,
-    balance: 796.5,
-    status: "Draft",
-    warehouse: "Warehouse B",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "product",
-    items: [
-      {
-        id: "i1",
-        product: "Webcam HD 1080p",
-        qty: 9,
-        unitPrice: 75,
-        discountPercent: 0,
-        tax: 13.5,
-        total: 675,
-      },
-    ],
-  },
-  {
-    id: "12",
-    invoiceNumber: "SI-2026-02-007",
-    customer: "Maria Rodriguez",
-    invoiceDate: "2026-03-15",
-    dueDate: "2026-05-15",
-    subtotal: 1500.0,
-    tax: 270.0,
-    totalAmount: 1770.0,
-    balance: 1770.0,
-    status: "Posted",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 45",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "service",
-    items: [
-      {
-        id: "i1",
-        product: "Cloud Migration Service",
-        qty: 1,
-        unitPrice: 1500,
-        discountPercent: 0,
-        tax: 270,
-        total: 1500,
-      },
-    ],
-  },
-  {
-    id: "13",
-    invoiceNumber: "SI-2026-02-006",
-    customer: "Jennifer Martinez",
-    invoiceDate: "2026-03-10",
-    dueDate: "2026-05-10",
-    subtotal: 380.0,
-    tax: 68.4,
-    totalAmount: 448.4,
-    balance: 0.0,
-    status: "Paid",
-    warehouse: "Warehouse B",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "product",
-    items: [
-      {
-        id: "i1",
-        product: "USB Flash Drive 128GB",
-        qty: 20,
-        unitPrice: 19,
-        discountPercent: 0,
-        tax: 3.42,
-        total: 380,
-      },
-    ],
-  },
-  {
-    id: "14",
-    invoiceNumber: "SI-2026-02-005",
-    customer: "Lisa Anderson",
-    invoiceDate: "2026-03-02",
-    dueDate: "2026-05-02",
-    subtotal: 920.0,
-    tax: 165.6,
-    totalAmount: 1085.6,
-    balance: 542.8,
-    status: "Partial",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 60",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "product",
-    items: [
-      {
-        id: "i1",
-        product: "Docking Station",
-        qty: 4,
-        unitPrice: 230,
-        discountPercent: 0,
-        tax: 41.4,
-        total: 920,
-      },
-    ],
-  },
-  {
-    id: "15",
-    invoiceNumber: "SI-2026-02-004",
-    customer: "Emily Davis",
-    invoiceDate: "2026-02-25",
-    dueDate: "2026-04-25",
-    subtotal: 1640.0,
-    tax: 295.2,
-    totalAmount: 1935.2,
-    balance: 1935.2,
-    status: "Draft",
-    warehouse: "Warehouse B",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "product",
-    items: [
-      {
-        id: "i1",
-        product: "Printer LaserJet",
-        qty: 4,
-        unitPrice: 410,
-        discountPercent: 0,
-        tax: 73.8,
-        total: 1640,
-      },
-    ],
-  },
-  {
-    id: "16",
-    invoiceNumber: "SI-2026-02-003",
-    customer: "Sarah Johnson",
-    invoiceDate: "2026-02-18",
-    dueDate: "2026-04-18",
-    subtotal: 560.0,
-    tax: 100.8,
-    totalAmount: 660.8,
-    balance: 0.0,
-    status: "Paid",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "product",
-    items: [
-      {
-        id: "i1",
-        product: "Headset Noise Cancel",
-        qty: 7,
-        unitPrice: 80,
-        discountPercent: 0,
-        tax: 14.4,
-        total: 560,
-      },
-    ],
-  },
-  {
-    id: "17",
-    invoiceNumber: "SI-2026-02-002",
-    customer: "Amanda White",
-    invoiceDate: "2026-02-10",
-    dueDate: "2026-04-10",
-    subtotal: 2400.0,
-    tax: 432.0,
-    totalAmount: 2832.0,
-    balance: 2832.0,
-    status: "Posted",
-    warehouse: "Warehouse B",
-    paymentTerms: "Net 60",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "service",
-    items: [
-      {
-        id: "i1",
-        product: "Annual Support Contract",
-        qty: 1,
-        unitPrice: 2400,
-        discountPercent: 0,
-        tax: 432,
-        total: 2400,
-      },
-    ],
-  },
-  {
-    id: "18",
-    invoiceNumber: "SI-2026-02-001",
-    customer: "Maria Rodriguez",
-    invoiceDate: "2026-02-01",
-    dueDate: "2026-04-01",
-    subtotal: 750.0,
-    tax: 135.0,
-    totalAmount: 885.0,
-    balance: 885.0,
-    status: "Draft",
-    warehouse: "Main Warehouse",
-    paymentTerms: "Net 30",
-    notes: "",
-    syncToCalendar: false,
-    invoiceType: "product",
-    items: [
-      {
-        id: "i1",
-        product: "External SSD 1TB",
-        qty: 5,
-        unitPrice: 150,
-        discountPercent: 0,
-        tax: 27,
-        total: 750,
-      },
-    ],
-  },
-];
-
-const customers = [
-  "Jennifer Martinez",
-  "Lisa Anderson",
-  "Emily Davis",
-  "Sarah Johnson",
-  "Amanda White",
-  "Maria Rodriguez",
-];
-const warehouses = ["Main Warehouse", "Warehouse B", "Warehouse C"];
-const products = [
-  { name: "Laptop Pro 15", price: 500 },
-  { name: "USB-C Hub", price: 50 },
-  { name: "Office Chair Ergonomic", price: 330 },
-  { name: 'Monitor 27" 4K', price: 466.65 },
-  { name: "Mechanical Keyboard", price: 120 },
-  { name: "Wireless Mouse", price: 30 },
-  { name: "Webcam HD 1080p", price: 75 },
-  { name: "Headset Noise Cancel", price: 80 },
-  { name: "External SSD 1TB", price: 150 },
-  { name: "Docking Station", price: 230 },
-];
+/* ---- Raw API shapes ---- */
+interface ApiCustomerRef {
+  _id: string;
+  name?: string;
+  email?: string;
+}
+interface ApiInvoiceItem {
+  product_id: string;
+  quantity: number;
+  rate: number;
+  tax: number;
+  discount: number;
+  amount: number;
+}
+interface ApiInvoice {
+  _id: string;
+  customer_id?: ApiCustomerRef | string | null;
+  warehouse_id?: string | null;
+  invoice_number: string;
+  date: string;
+  due_date: string;
+  sub_title?: string;
+  discount_before_tax?: number;
+  product?: ApiInvoiceItem[];
+  service?: unknown[];
+  status?: string;
+  sub_total?: number;
+  deposit?: number;
+  discount?: number;
+  shipping_cost?: number;
+  inline_discount?: number;
+  tax?: number;
+  total?: number;
+  paid_amount?: number;
+  balance_amount?: number;
+}
+interface ApiCustomer {
+  _id: string;
+  name?: string;
+  customerName?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}
+interface ApiWarehouse {
+  _id: string;
+  name?: string;
+}
+interface ApiProduct {
+  _id: string;
+  productName?: string;
+  name?: string;
+  sku?: string;
+  pricing?: { sellPrice?: number; buyPrice?: number };
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const fmtCurrency = (val: number) => {
-  const formatted = val.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const formatted = (val || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `${formatted}$`;
 };
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const num = (v: string | number) => Number(v) || 0;
+const toDateInput = (iso?: string) => (iso ? iso.slice(0, 10) : "");
+const errMessage = (err: unknown, fallback: string) =>
+  err instanceof ApiError && err.message ? err.message : fallback;
+
+const customerRefId = (ref: ApiCustomerRef | string | null | undefined) =>
+  typeof ref === "object" && ref ? ref._id : (ref ?? "");
+const customerRefName = (ref: ApiCustomerRef | string | null | undefined) =>
+  typeof ref === "object" && ref ? (ref.name ?? "") : "";
+const customerLabel = (c: ApiCustomer): string =>
+  c.name ??
+  c.customerName ??
+  [c.firstName, c.lastName].filter(Boolean).join(" ") ??
+  c.email ??
+  c._id;
+const productLabel = (p: ApiProduct): string =>
+  p.productName ?? p.name ?? p._id;
+
+const mapApiInvoice = (inv: ApiInvoice): SalesInvoice => ({
+  id: inv._id,
+  invoiceNumber: inv.invoice_number ?? "",
+  customerId: customerRefId(inv.customer_id),
+  customer: customerRefName(inv.customer_id),
+  warehouseId: inv.warehouse_id ?? "",
+  invoiceDate: toDateInput(inv.date),
+  dueDate: toDateInput(inv.due_date),
+  subTitle: inv.sub_title ?? "",
+  subtotal: inv.sub_total ?? 0,
+  tax: inv.tax ?? 0,
+  discount: inv.discount ?? 0,
+  total: inv.total ?? 0,
+  paidAmount: inv.paid_amount ?? 0,
+  balance: inv.balance_amount ?? 0,
+  deposit: inv.deposit ?? 0,
+  shippingCost: inv.shipping_cost ?? 0,
+  inlineDiscount: inv.inline_discount ?? 0,
+  discountBeforeTax: inv.discount_before_tax ?? 0,
+  status: inv.status ?? "Draft",
+  items: (inv.product ?? []).map((it, idx) => ({
+    id: `item-${idx}`,
+    productId: it.product_id,
+    qty: it.quantity ?? 0,
+    unitPrice: it.rate ?? 0,
+    discountPercent: it.discount ?? 0,
+    taxPercent: it.tax ?? 0,
+    amount: it.amount ?? 0,
+  })),
+});
+
+const newItem = (): InvoiceItem => ({
+  id: `new-${Math.random().toString(36).slice(2)}`,
+  productId: "",
+  qty: 1,
+  unitPrice: 0,
+  discountPercent: 0,
+  taxPercent: 0,
+  amount: 0,
+});
 
 type SortField =
   | "invoiceNumber"
@@ -623,17 +207,22 @@ type SortField =
   | "dueDate"
   | "subtotal"
   | "tax"
-  | "totalAmount"
+  | "total"
   | "balance"
   | "status";
 type SortDir = "asc" | "desc";
+
+const STATUS_OPTIONS = ["Draft", "Open", "Partial", "Paid"];
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const SalesInvoice: React.FC = () => {
   const navigate = useNavigate();
 
-  const [invoices, setInvoices] = useState<SalesInvoice[]>(sampleInvoices);
+  const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [perPage, setPerPage] = useState(10);
@@ -645,33 +234,107 @@ export const SalesInvoice: React.FC = () => {
 
   const [showForm, setShowForm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editingInvoice, setEditingInvoice] = useState<SalesInvoice | null>(
-    null,
-  );
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const [formInvoiceDate, setFormInvoiceDate] = useState(
-    () => new Date().toISOString().split("T")[0],
-  );
-  const [formDueDate, setFormDueDate] = useState("");
-  const [formCustomer, setFormCustomer] = useState("");
-  const [formWarehouse, setFormWarehouse] = useState("");
-  const [formPaymentTerms, setFormPaymentTerms] = useState("");
-  const [formNotes, setFormNotes] = useState("");
-  const [formSyncCalendar, setFormSyncCalendar] = useState(false);
-  const [formInvoiceType, setFormInvoiceType] = useState<"product" | "service">(
-    "product",
-  );
-  const [formItems, setFormItems] = useState<InvoiceItem[]>([
-    {
-      id: "new-1",
-      product: "",
-      qty: 1,
-      unitPrice: 0,
-      discountPercent: 0,
-      tax: 0,
-      total: 0,
-    },
-  ]);
+  // View modal
+  const [showView, setShowView] = useState(false);
+  const [viewInvoice, setViewInvoice] = useState<SalesInvoice | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+
+  // Delete modal
+  const [showDelete, setShowDelete] = useState(false);
+  const [toDelete, setToDelete] = useState<SalesInvoice | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Option sources
+  const [customers, setCustomers] = useState<ApiCustomer[]>([]);
+  const [warehouses, setWarehouses] = useState<ApiWarehouse[]>([]);
+  const [products, setProducts] = useState<ApiProduct[]>([]);
+
+  // Form state
+  const [formData, setFormData] = useState({
+    customerId: "",
+    warehouseId: "",
+    invoiceNumber: "",
+    invoiceDate: new Date().toISOString().split("T")[0],
+    dueDate: "",
+    subTitle: "",
+    status: "Draft",
+    deposit: 0,
+    discount: 0,
+    shippingCost: 0,
+    inlineDiscount: 0,
+    discountBeforeTax: 0,
+  });
+  const [formItems, setFormItems] = useState<InvoiceItem[]>([newItem()]);
+
+  // ─── Lookup maps ───────────────────────────────────────────────────────────
+  const customerNameById = useMemo(() => {
+    const m: Record<string, string> = {};
+    customers.forEach((c) => (m[c._id] = customerLabel(c)));
+    return m;
+  }, [customers]);
+  const warehouseNameById = useMemo(() => {
+    const m: Record<string, string> = {};
+    warehouses.forEach((w) => (m[w._id] = (w.name ?? "").trim()));
+    return m;
+  }, [warehouses]);
+  const productNameById = useMemo(() => {
+    const m: Record<string, string> = {};
+    products.forEach((p) => (m[p._id] = productLabel(p)));
+    return m;
+  }, [products]);
+
+  const displayCustomer = (inv: SalesInvoice) =>
+    inv.customer || customerNameById[inv.customerId] || "—";
+
+  // ─── Data loading ──────────────────────────────────────────────────────────
+  const loadInvoices = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await api.get<ApiInvoice[]>("/invoice/all", {
+        params: { page: 1, limit: 1000 },
+      });
+      setInvoices(Array.isArray(data) ? data.map(mapApiInvoice) : []);
+    } catch (err) {
+      const message = errMessage(err, "Couldn't load invoices.");
+      setLoadError(message);
+      showToast(message, "error");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadOptions = useCallback(async () => {
+    try {
+      const [c, w, p] = await Promise.allSettled([
+        api.get<ApiCustomer[]>("/customer/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+        api.get<ApiWarehouse[]>("/purchase/warehouses/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+        api.get<ApiProduct[]>("/product/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+      ]);
+      if (c.status === "fulfilled" && Array.isArray(c.value))
+        setCustomers(c.value);
+      if (w.status === "fulfilled" && Array.isArray(w.value))
+        setWarehouses(w.value);
+      if (p.status === "fulfilled" && Array.isArray(p.value))
+        setProducts(p.value);
+    } catch {
+      /* dropdowns degrade gracefully */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInvoices();
+    loadOptions();
+  }, [loadInvoices, loadOptions]);
 
   // ─── Sorting ────────────────────────────────────────────────────────────────
 
@@ -691,16 +354,24 @@ export const SalesInvoice: React.FC = () => {
     let result = [...invoices];
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      result = result.filter((inv) =>
-        inv.invoiceNumber.toLowerCase().includes(q),
+      result = result.filter(
+        (inv) =>
+          inv.invoiceNumber.toLowerCase().includes(q) ||
+          displayCustomer(inv).toLowerCase().includes(q),
       );
     }
     if (statusFilter !== "All") {
       result = result.filter((inv) => inv.status === statusFilter);
     }
     result.sort((a, b) => {
-      let aVal: any = a[sortField];
-      let bVal: any = b[sortField];
+      let aVal: string | number =
+        sortField === "customer"
+          ? displayCustomer(a)
+          : (a[sortField] as string | number);
+      let bVal: string | number =
+        sortField === "customer"
+          ? displayCustomer(b)
+          : (b[sortField] as string | number);
       if (typeof aVal === "string") aVal = aVal.toLowerCase();
       if (typeof bVal === "string") bVal = bVal.toLowerCase();
       if (aVal < bVal) return sortDir === "asc" ? -1 : 1;
@@ -708,7 +379,15 @@ export const SalesInvoice: React.FC = () => {
       return 0;
     });
     return result;
-  }, [invoices, searchQuery, statusFilter, sortField, sortDir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    invoices,
+    searchQuery,
+    statusFilter,
+    sortField,
+    sortDir,
+    customerNameById,
+  ]);
 
   const totalPages = Math.ceil(filteredInvoices.length / perPage);
   const paginatedInvoices = filteredInvoices.slice(
@@ -716,7 +395,7 @@ export const SalesInvoice: React.FC = () => {
     currentPage * perPage,
   );
 
-  // ─── Status Badge — matches existing pattern ───────────────────────────────
+  // ─── Status Badge ───────────────────────────────────────────────────────────
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -724,7 +403,7 @@ export const SalesInvoice: React.FC = () => {
         return "bg-gray-100 text-gray-700 border border-gray-200";
       case "Paid":
         return "bg-green-100 text-green-700 border border-green-200";
-      case "Posted":
+      case "Open":
         return "bg-blue-100 text-blue-700 border border-blue-200";
       case "Partial":
         return "bg-orange-100 text-orange-700 border border-orange-200";
@@ -733,32 +412,87 @@ export const SalesInvoice: React.FC = () => {
     }
   };
 
-  const canEdit = (status: string) => status === "Draft";
-  const canDelete = (status: string) => status === "Draft";
-
   // ─── Form Helpers ───────────────────────────────────────────────────────────
 
+  const recalcAmount = (item: InvoiceItem): number => {
+    const base = item.qty * item.unitPrice;
+    return round2(base - base * (item.discountPercent / 100));
+  };
+
+  const updateItem = (
+    id: string,
+    field: keyof InvoiceItem,
+    value: string | number,
+  ) => {
+    setFormItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const updated = { ...item, [field]: value } as InvoiceItem;
+        if (field === "productId") {
+          const found = products.find((p) => p._id === value);
+          const price = found?.pricing?.sellPrice ?? found?.pricing?.buyPrice;
+          if (typeof price === "number") updated.unitPrice = price;
+        }
+        updated.amount = recalcAmount(updated);
+        return updated;
+      }),
+    );
+  };
+
+  const addItem = () => setFormItems((prev) => [...prev, newItem()]);
+  const removeItem = (id: string) =>
+    setFormItems((prev) =>
+      prev.length <= 1 ? prev : prev.filter((i) => i.id !== id),
+    );
+
+  // Summary
+  const formSubtotal = round2(
+    formItems.reduce(
+      (sum, i) =>
+        sum +
+        (i.qty * i.unitPrice - i.qty * i.unitPrice * (i.discountPercent / 100)),
+      0,
+    ),
+  );
+  const formDiscount = round2(
+    formItems.reduce(
+      (sum, i) => sum + i.qty * i.unitPrice * (i.discountPercent / 100),
+      0,
+    ),
+  );
+  const formTax = round2(
+    formItems.reduce((sum, i) => {
+      const base = i.qty * i.unitPrice;
+      const taxable = base - base * (i.discountPercent / 100);
+      return sum + taxable * (i.taxPercent / 100);
+    }, 0),
+  );
+  const formTotal = round2(
+    formSubtotal +
+      formTax +
+      num(formData.shippingCost) -
+      num(formData.discount) -
+      num(formData.inlineDiscount) -
+      num(formData.discountBeforeTax),
+  );
+
   const resetForm = () => {
-    setFormInvoiceDate(new Date().toISOString().split("T")[0]);
-    setFormDueDate("");
-    setFormCustomer("");
-    setFormWarehouse("");
-    setFormPaymentTerms("");
-    setFormNotes("");
-    setFormSyncCalendar(false);
-    setFormInvoiceType("product");
-    setFormItems([
-      {
-        id: "new-1",
-        product: "",
-        qty: 1,
-        unitPrice: 0,
-        discountPercent: 0,
-        tax: 0,
-        total: 0,
-      },
-    ]);
-    setEditingInvoice(null);
+    setFormData({
+      customerId: "",
+      warehouseId: "",
+      invoiceNumber: `INV-${String(Math.floor(Math.random() * 900) + 100)}`,
+      invoiceDate: new Date().toISOString().split("T")[0],
+      dueDate: "",
+      subTitle: "",
+      status: "Draft",
+      deposit: 0,
+      discount: 0,
+      shippingCost: 0,
+      inlineDiscount: 0,
+      discountBeforeTax: 0,
+    });
+    setFormItems([newItem()]);
+    setEditingId(null);
   };
 
   const handleCreate = () => {
@@ -767,159 +501,117 @@ export const SalesInvoice: React.FC = () => {
     setShowForm(true);
   };
 
-  const handleEditInvoice = (invoice: SalesInvoice) => {
-    setEditingInvoice(invoice);
-    setFormInvoiceDate(invoice.invoiceDate);
-    setFormDueDate(invoice.dueDate);
-    setFormCustomer(invoice.customer);
-    setFormWarehouse(invoice.warehouse);
-    setFormPaymentTerms(invoice.paymentTerms);
-    setFormNotes(invoice.notes);
-    setFormSyncCalendar(invoice.syncToCalendar);
-    setFormInvoiceType(invoice.invoiceType);
+  const handleEditInvoice = (inv: SalesInvoice) => {
+    setEditingId(inv.id);
+    setFormData({
+      customerId: inv.customerId,
+      warehouseId: inv.warehouseId,
+      invoiceNumber: inv.invoiceNumber,
+      invoiceDate: inv.invoiceDate,
+      dueDate: inv.dueDate,
+      subTitle: inv.subTitle,
+      status: inv.status,
+      deposit: inv.deposit,
+      discount: inv.discount,
+      shippingCost: inv.shippingCost,
+      inlineDiscount: inv.inlineDiscount,
+      discountBeforeTax: inv.discountBeforeTax,
+    });
     setFormItems(
-      invoice.items.length > 0
-        ? invoice.items
-        : [
-            {
-              id: "new-1",
-              product: "",
-              qty: 1,
-              unitPrice: 0,
-              discountPercent: 0,
-              tax: 0,
-              total: 0,
-            },
-          ],
+      inv.items.length > 0 ? inv.items.map((i) => ({ ...i })) : [newItem()],
     );
     setIsEditing(true);
     setShowForm(true);
   };
 
-  const handleDeleteInvoice = (id: string) => {
-    if (confirm("Are you sure you want to delete this invoice?")) {
-      setInvoices((prev) => prev.filter((inv) => inv.id !== id));
-      showToast("Invoice deleted!", "success");
+  // ─── View (single) ─────────────────────────────────────────────────────────
+  const openView = async (inv: SalesInvoice) => {
+    setViewInvoice(inv);
+    setShowView(true);
+    setViewLoading(true);
+    try {
+      const data = await api.get<ApiInvoice>(`/invoice/single/${inv.id}`);
+      if (data) setViewInvoice(mapApiInvoice(data));
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't load invoice details."), "error");
+    } finally {
+      setViewLoading(false);
     }
   };
 
-  const recalcItem = (item: InvoiceItem): InvoiceItem => {
-    const subtotal = item.qty * item.unitPrice;
-    const discountAmt = subtotal * (item.discountPercent / 100);
-    const afterDiscount = subtotal - discountAmt;
-    const taxAmt = afterDiscount * 0.18;
-    return {
-      ...item,
-      tax: Math.round(taxAmt * 100) / 100,
-      total: Math.round(afterDiscount * 100) / 100,
+  // ─── Create / Update ───────────────────────────────────────────────────────
+  const handleSaveInvoice = async () => {
+    if (!formData.customerId)
+      return showToast("Please select a customer", "info");
+    if (!formData.warehouseId)
+      return showToast("Please select a warehouse", "info");
+    if (!formData.invoiceNumber.trim())
+      return showToast("Please enter an invoice number", "info");
+    const items = formItems.filter((i) => i.productId);
+    if (items.length === 0)
+      return showToast("Please add at least one product", "info");
+
+    const payload = {
+      customer_id: formData.customerId,
+      warehouse_id: formData.warehouseId,
+      invoice_number: formData.invoiceNumber.trim(),
+      date: formData.invoiceDate,
+      due_date: formData.dueDate,
+      sub_title: formData.subTitle,
+      discount_before_tax: num(formData.discountBeforeTax),
+      status: formData.status,
+      deposit: num(formData.deposit),
+      discount: num(formData.discount),
+      shipping_cost: num(formData.shippingCost),
+      inline_discount: num(formData.inlineDiscount),
+      tax: formTax,
+      sub_total: formSubtotal,
+      total: formTotal,
+      product: items.map((i) => ({
+        product_id: i.productId,
+        quantity: i.qty,
+        rate: i.unitPrice,
+        tax: i.taxPercent,
+        discount: i.discountPercent,
+        amount: recalcAmount(i),
+      })),
+      service: [],
     };
+
+    setSaving(true);
+    try {
+      if (isEditing && editingId) {
+        await api.post(`/invoice/edit/${editingId}`, payload);
+        showToast("Invoice updated!", "success");
+      } else {
+        await api.post("/invoice/create", payload);
+        showToast("Invoice created!", "success");
+      }
+      setShowForm(false);
+      resetForm();
+      await loadInvoices();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't save invoice."), "error");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
-    setFormItems((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
-        const updated = { ...item, [field]: value };
-        if (field === "product") {
-          const found = products.find((p) => p.name === value);
-          if (found) updated.unitPrice = found.price;
-        }
-        return recalcItem(updated);
-      }),
-    );
-  };
-
-  const addItem = () => {
-    setFormItems((prev) => [
-      ...prev,
-      {
-        id: `new-${Date.now()}`,
-        product: "",
-        qty: 1,
-        unitPrice: 0,
-        discountPercent: 0,
-        tax: 0,
-        total: 0,
-      },
-    ]);
-  };
-
-  const removeItem = (id: string) => {
-    setFormItems((prev) =>
-      prev.length <= 1 ? prev : prev.filter((i) => i.id !== id),
-    );
-  };
-
-  const formSubtotal = formItems.reduce((sum, i) => sum + i.total, 0);
-  const formDiscount = formItems.reduce((sum, i) => {
-    const sub = i.qty * i.unitPrice;
-    return sum + sub * (i.discountPercent / 100);
-  }, 0);
-  const formTax = formItems.reduce((sum, i) => sum + i.tax, 0);
-  const formTotal = formSubtotal + formTax;
-
-  const handleSaveInvoice = () => {
-    if (!formCustomer) {
-      showToast("Please select a customer", "info");
-      return;
+  // ─── Delete ────────────────────────────────────────────────────────────────
+  const handleDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/invoice/delete/${toDelete.id}`);
+      showToast("Invoice deleted!", "success");
+      setShowDelete(false);
+      setToDelete(null);
+      await loadInvoices();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't delete invoice."), "error");
+    } finally {
+      setDeleting(false);
     }
-    if (!formDueDate) {
-      showToast("Please select a due date", "info");
-      return;
-    }
-    if (!formWarehouse) {
-      showToast("Please select a warehouse", "info");
-      return;
-    }
-
-    if (isEditing && editingInvoice) {
-      setInvoices((prev) =>
-        prev.map((inv) =>
-          inv.id === editingInvoice.id
-            ? {
-                ...inv,
-                invoiceDate: formInvoiceDate,
-                dueDate: formDueDate,
-                customer: formCustomer,
-                warehouse: formWarehouse,
-                paymentTerms: formPaymentTerms,
-                notes: formNotes,
-                syncToCalendar: formSyncCalendar,
-                invoiceType: formInvoiceType,
-                items: formItems,
-                subtotal: formSubtotal,
-                tax: formTax,
-                totalAmount: formTotal,
-                balance: formTotal,
-              }
-            : inv,
-        ),
-      );
-      showToast("Invoice updated!", "success");
-    } else {
-      const newInvoice: SalesInvoice = {
-        id: Date.now().toString(),
-        invoiceNumber: `SI-2026-02-${String(invoices.length + 1).padStart(3, "0")}`,
-        customer: formCustomer,
-        invoiceDate: formInvoiceDate,
-        dueDate: formDueDate,
-        subtotal: formSubtotal,
-        tax: formTax,
-        totalAmount: formTotal,
-        balance: formTotal,
-        status: "Draft",
-        warehouse: formWarehouse,
-        paymentTerms: formPaymentTerms,
-        notes: formNotes,
-        syncToCalendar: formSyncCalendar,
-        invoiceType: formInvoiceType,
-        items: formItems,
-      };
-      setInvoices((prev) => [newInvoice, ...prev]);
-      showToast("Invoice created!", "success");
-    }
-    setShowForm(false);
-    resetForm();
   };
 
   // ─── Sort Header ────────────────────────────────────────────────────────────
@@ -995,37 +687,13 @@ export const SalesInvoice: React.FC = () => {
 
         {/* Form Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {/* Sales Invoice Details Card */}
+          {/* Details Card */}
           <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 mb-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 gap-3">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-gray-500" />
-                <h3 className="text-base font-semibold text-gray-900">
-                  Sales Invoice Details
-                </h3>
-              </div>
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="invoiceType"
-                    checked={formInvoiceType === "product"}
-                    onChange={() => setFormInvoiceType("product")}
-                    className="w-4 h-4 text-green-600"
-                  />
-                  <span className="text-sm text-gray-700">Product Wise</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="invoiceType"
-                    checked={formInvoiceType === "service"}
-                    onChange={() => setFormInvoiceType("service")}
-                    className="w-4 h-4 text-green-600"
-                  />
-                  <span className="text-sm text-gray-700">Service Wise</span>
-                </label>
-              </div>
+            <div className="flex items-center gap-2 mb-5">
+              <Calendar className="w-5 h-5 text-gray-500" />
+              <h3 className="text-base font-semibold text-gray-900">
+                Sales Invoice Details
+              </h3>
             </div>
 
             {/* Row 1 */}
@@ -1038,8 +706,10 @@ export const SalesInvoice: React.FC = () => {
                   <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="date"
-                    value={formInvoiceDate}
-                    onChange={(e) => setFormInvoiceDate(e.target.value)}
+                    value={formData.invoiceDate}
+                    onChange={(e) =>
+                      setFormData({ ...formData, invoiceDate: e.target.value })
+                    }
                     className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm"
                   />
                 </div>
@@ -1052,8 +722,10 @@ export const SalesInvoice: React.FC = () => {
                   <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="date"
-                    value={formDueDate}
-                    onChange={(e) => setFormDueDate(e.target.value)}
+                    value={formData.dueDate}
+                    onChange={(e) =>
+                      setFormData({ ...formData, dueDate: e.target.value })
+                    }
                     className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm"
                   />
                 </div>
@@ -1063,14 +735,16 @@ export const SalesInvoice: React.FC = () => {
                   Customer <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={formCustomer}
-                  onChange={(e) => setFormCustomer(e.target.value)}
+                  value={formData.customerId}
+                  onChange={(e) =>
+                    setFormData({ ...formData, customerId: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm bg-white"
                 >
                   <option value="">Select Customer</option>
                   {customers.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
+                    <option key={c._id} value={c._id}>
+                      {customerLabel(c)}
                     </option>
                   ))}
                 </select>
@@ -1080,14 +754,16 @@ export const SalesInvoice: React.FC = () => {
                   Warehouse <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={formWarehouse}
-                  onChange={(e) => setFormWarehouse(e.target.value)}
+                  value={formData.warehouseId}
+                  onChange={(e) =>
+                    setFormData({ ...formData, warehouseId: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm bg-white"
                 >
                   <option value="">Select Warehouse</option>
                   {warehouses.map((w) => (
-                    <option key={w} value={w}>
-                      {w}
+                    <option key={w._id} value={w._id}>
+                      {(w.name ?? "").trim()}
                     </option>
                   ))}
                 </select>
@@ -1095,50 +771,57 @@ export const SalesInvoice: React.FC = () => {
             </div>
 
             {/* Row 2 */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Payment Terms
+                  Invoice Number <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  value={formPaymentTerms}
-                  onChange={(e) => setFormPaymentTerms(e.target.value)}
-                  placeholder="e.g., Net 30"
+                  value={formData.invoiceNumber}
+                  onChange={(e) =>
+                    setFormData({ ...formData, invoiceNumber: e.target.value })
+                  }
+                  placeholder="INV-001"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Notes
+                  Subtitle
                 </label>
-                <textarea
-                  value={formNotes}
-                  onChange={(e) => setFormNotes(e.target.value)}
-                  placeholder="Additional notes..."
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm resize-y"
+                <input
+                  type="text"
+                  value={formData.subTitle}
+                  onChange={(e) =>
+                    setFormData({ ...formData, subTitle: e.target.value })
+                  }
+                  placeholder="e.g., Test"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm"
                 />
               </div>
-            </div>
-
-            {/* Sync Toggle */}
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setFormSyncCalendar(!formSyncCalendar)}
-                className={`relative w-11 h-6 rounded-full transition-colors ${formSyncCalendar ? "bg-gray-900" : "bg-gray-300"}`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${formSyncCalendar ? "translate-x-5" : "translate-x-0"}`}
-                />
-              </button>
-              <span className="text-sm text-gray-700">
-                Sync to Google Calendar
-              </span>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <select
+                  value={formData.status}
+                  onChange={(e) =>
+                    setFormData({ ...formData, status: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm bg-white"
+                >
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
-          {/* Sales Invoice Items Card */}
+          {/* Items Card */}
           <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 mb-6">
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
@@ -1156,9 +839,8 @@ export const SalesInvoice: React.FC = () => {
               </button>
             </div>
 
-            {/* Items Table */}
             <div className="overflow-x-auto -mx-4 sm:mx-0">
-              <table className="w-full text-sm border-collapse min-w-[700px]">
+              <table className="w-full text-sm border-collapse min-w-[760px]">
                 <thead>
                   <tr className="border-b border-gray-200">
                     <th className="px-2 py-2 text-left text-xs font-medium text-gray-600">
@@ -1173,11 +855,11 @@ export const SalesInvoice: React.FC = () => {
                     <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-24">
                       Discount %
                     </th>
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-24">
-                      Tax
+                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-20">
+                      Tax %
                     </th>
                     <th className="px-2 py-2 text-left text-xs font-medium text-gray-600 w-28">
-                      Total
+                      Amount
                     </th>
                     <th className="px-2 py-2 text-center text-xs font-medium text-gray-600 w-16">
                       Action
@@ -1189,16 +871,17 @@ export const SalesInvoice: React.FC = () => {
                     <tr key={item.id} className="border-b border-gray-100">
                       <td className="px-2 py-3">
                         <select
-                          value={item.product}
+                          value={item.productId}
                           onChange={(e) =>
-                            updateItem(item.id, "product", e.target.value)
+                            updateItem(item.id, "productId", e.target.value)
                           }
-                          className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 bg-white"
+                          className="w-full min-w-[150px] px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 bg-white"
                         >
-                          <option value=""></option>
+                          <option value="">Select Product</option>
                           {products.map((p) => (
-                            <option key={p.name} value={p.name}>
-                              {p.name}
+                            <option key={p._id} value={p._id}>
+                              {productLabel(p)}
+                              {p.sku ? ` (${p.sku})` : ""}
                             </option>
                           ))}
                         </select>
@@ -1250,11 +933,24 @@ export const SalesInvoice: React.FC = () => {
                           className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                         />
                       </td>
-                      <td className="px-2 py-3 text-sm text-gray-600">
-                        {item.tax > 0 ? fmtCurrency(item.tax) : "No tax"}
+                      <td className="px-2 py-3">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={item.taxPercent}
+                          onChange={(e) =>
+                            updateItem(
+                              item.id,
+                              "taxPercent",
+                              parseFloat(e.target.value) || 0,
+                            )
+                          }
+                          className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        />
                       </td>
                       <td className="px-2 py-3 text-sm text-gray-900">
-                        {fmtCurrency(item.total)}
+                        {fmtCurrency(item.amount)}
                       </td>
                       <td className="px-2 py-3 text-center">
                         <button
@@ -1271,6 +967,38 @@ export const SalesInvoice: React.FC = () => {
               </table>
             </div>
 
+            {/* Additional charges */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
+              {(
+                [
+                  ["shippingCost", "Shipping Cost"],
+                  ["discount", "Discount"],
+                  ["inlineDiscount", "Inline Discount"],
+                  ["discountBeforeTax", "Discount Before Tax"],
+                  ["deposit", "Deposit"],
+                ] as const
+              ).map(([key, label]) => (
+                <div key={key}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {label}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={formData[key]}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        [key]: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+              ))}
+            </div>
+
             {/* Invoice Summary */}
             <div className="flex justify-end mt-6">
               <div className="w-full sm:w-72">
@@ -1285,7 +1013,7 @@ export const SalesInvoice: React.FC = () => {
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Discount</span>
+                    <span className="text-gray-600">Item Discount</span>
                     <span className="text-red-500">
                       -{fmtCurrency(formDiscount)}
                     </span>
@@ -1309,32 +1037,29 @@ export const SalesInvoice: React.FC = () => {
             </div>
           </div>
 
-          {/* Bottom Actions — matches existing SalesReceipts pattern */}
+          {/* Bottom Actions */}
           <div className="flex flex-col sm:flex-row justify-end gap-2 pb-6">
             <button
               onClick={() => {
                 setShowForm(false);
                 resetForm();
               }}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm"
+              disabled={saving}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
-              onClick={() => {
-                showToast("Saved as draft", "success");
-                setShowForm(false);
-                resetForm();
-              }}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm"
-            >
-              Save as Draft
-            </button>
-            <button
               onClick={handleSaveInvoice}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+              disabled={saving}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Save & Send
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              {saving
+                ? "Saving…"
+                : isEditing
+                  ? "Update Invoice"
+                  : "Create Invoice"}
             </button>
           </div>
         </div>
@@ -1351,10 +1076,7 @@ export const SalesInvoice: React.FC = () => {
       {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-2">
         <div className="flex items-center gap-2 text-sm text-gray-500">
-          <button
-            onClick={() => navigate("/")}
-            className="hover:text-gray-700"
-          >
+          <button onClick={() => navigate("/")} className="hover:text-gray-700">
             Dashboard
           </button>
           <span>›</span>
@@ -1387,7 +1109,7 @@ export const SalesInvoice: React.FC = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by invoice number..."
+                placeholder="Search by invoice number or customer..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -1397,10 +1119,10 @@ export const SalesInvoice: React.FC = () => {
               />
             </div>
             <button
-              onClick={() => showToast("Search applied", "info")}
+              onClick={() => loadInvoices()}
               className="px-4 py-1.5 bg-green-500 text-white text-sm rounded-md hover:bg-green-600"
             >
-              Search
+              Refresh
             </button>
           </div>
 
@@ -1457,7 +1179,7 @@ export const SalesInvoice: React.FC = () => {
                       Status
                     </span>
                   </div>
-                  {["All", "Draft", "Paid", "Posted", "Partial"].map((st) => (
+                  {["All", ...STATUS_OPTIONS].map((st) => (
                     <button
                       key={st}
                       onClick={() => {
@@ -1479,7 +1201,16 @@ export const SalesInvoice: React.FC = () => {
 
       {/* Table / Grid */}
       <div className="flex-1 overflow-auto">
-        {viewMode === "list" ? (
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-20 text-gray-500">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm">Loading invoices…</span>
+          </div>
+        ) : loadError ? (
+          <div className="py-16 text-center text-sm text-red-600">
+            {loadError}
+          </div>
+        ) : viewMode === "list" ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[900px]">
               <thead className="bg-white sticky top-0 z-10 border-b border-gray-200">
@@ -1490,7 +1221,7 @@ export const SalesInvoice: React.FC = () => {
                   <SortHeader field="dueDate" label="Due Date" />
                   <SortHeader field="subtotal" label="Subtotal" />
                   <SortHeader field="tax" label="Tax" />
-                  <SortHeader field="totalAmount" label="Total Amount" />
+                  <SortHeader field="total" label="Total Amount" />
                   <SortHeader field="balance" label="Balance" />
                   <SortHeader field="status" label="Status" />
                   <th className="px-3 py-3 text-left text-xs font-medium text-gray-600">
@@ -1503,13 +1234,15 @@ export const SalesInvoice: React.FC = () => {
                   <tr key={inv.id} className="hover:bg-gray-50">
                     <td className="px-3 py-4">
                       <button
-                        onClick={() => handleEditInvoice(inv)}
+                        onClick={() => openView(inv)}
                         className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
                       >
                         {inv.invoiceNumber}
                       </button>
                     </td>
-                    <td className="px-3 py-4 text-gray-900">{inv.customer}</td>
+                    <td className="px-3 py-4 text-gray-900">
+                      {displayCustomer(inv)}
+                    </td>
                     <td className="px-3 py-4 text-gray-600">
                       {inv.invoiceDate}
                     </td>
@@ -1521,7 +1254,7 @@ export const SalesInvoice: React.FC = () => {
                       {fmtCurrency(inv.tax)}
                     </td>
                     <td className="px-3 py-4 text-gray-900">
-                      {fmtCurrency(inv.totalAmount)}
+                      {fmtCurrency(inv.total)}
                     </td>
                     <td className="px-3 py-4 text-gray-900">
                       {fmtCurrency(inv.balance)}
@@ -1536,6 +1269,13 @@ export const SalesInvoice: React.FC = () => {
                     <td className="px-3 py-4">
                       <div className="flex items-center gap-1">
                         <button
+                          onClick={() => openView(inv)}
+                          className="p-1.5 text-yellow-500 hover:text-yellow-600 hover:bg-yellow-50 rounded"
+                          title="View"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() =>
                             showToast("Downloading PDF...", "info")
                           }
@@ -1545,41 +1285,22 @@ export const SalesInvoice: React.FC = () => {
                           <Download className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() =>
-                            showToast("Opening preview...", "info")
-                          }
-                          className="p-1.5 text-yellow-500 hover:text-yellow-600 hover:bg-yellow-50 rounded"
-                          title="View"
+                          onClick={() => handleEditInvoice(inv)}
+                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                          title="Edit"
                         >
-                          <Eye className="w-4 h-4" />
+                          <Edit className="w-4 h-4" />
                         </button>
-                        {canEdit(inv.status) && (
-                          <>
-                            <button
-                              onClick={() => showToast("Saving...", "info")}
-                              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                              title="Save"
-                            >
-                              <Save className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleEditInvoice(inv)}
-                              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                              title="Edit"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                        {canDelete(inv.status) && (
-                          <button
-                            onClick={() => handleDeleteInvoice(inv.id)}
-                            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
+                        <button
+                          onClick={() => {
+                            setToDelete(inv);
+                            setShowDelete(true);
+                          }}
+                          className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1603,11 +1324,11 @@ export const SalesInvoice: React.FC = () => {
             {paginatedInvoices.map((inv) => (
               <div
                 key={inv.id}
-                className="bg-white rounded-lg border border-gray-200 p-4 hover:bg-gray-50 cursor-pointer"
+                className="bg-white rounded-lg border border-gray-200 p-4 hover:bg-gray-50"
               >
                 <div className="flex items-start justify-between mb-3">
                   <button
-                    onClick={() => handleEditInvoice(inv)}
+                    onClick={() => openView(inv)}
                     className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
                   >
                     {inv.invoiceNumber}
@@ -1618,7 +1339,9 @@ export const SalesInvoice: React.FC = () => {
                     {inv.status}
                   </span>
                 </div>
-                <div className="text-sm text-gray-900 mb-1">{inv.customer}</div>
+                <div className="text-sm text-gray-900 mb-1">
+                  {displayCustomer(inv)}
+                </div>
                 <div className="text-xs text-gray-500 mb-3">
                   {inv.invoiceDate} → {inv.dueDate}
                 </div>
@@ -1626,7 +1349,7 @@ export const SalesInvoice: React.FC = () => {
                   <div>
                     <div className="text-xs text-gray-500">Total</div>
                     <div className="text-sm font-semibold text-gray-900">
-                      {fmtCurrency(inv.totalAmount)}
+                      {fmtCurrency(inv.total)}
                     </div>
                   </div>
                   <div className="text-right">
@@ -1638,6 +1361,13 @@ export const SalesInvoice: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-1 pt-2 border-t border-gray-100">
                   <button
+                    onClick={() => openView(inv)}
+                    className="p-1.5 text-yellow-500 hover:text-yellow-600 rounded"
+                    title="View"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </button>
+                  <button
                     onClick={() => showToast("Downloading PDF...", "info")}
                     className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
                     title="Download"
@@ -1645,30 +1375,22 @@ export const SalesInvoice: React.FC = () => {
                     <Download className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => showToast("Opening preview...", "info")}
-                    className="p-1.5 text-yellow-500 hover:text-yellow-600 rounded"
-                    title="View"
+                    onClick={() => handleEditInvoice(inv)}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
+                    title="Edit"
                   >
-                    <Eye className="w-4 h-4" />
+                    <Edit className="w-4 h-4" />
                   </button>
-                  {canEdit(inv.status) && (
-                    <button
-                      onClick={() => handleEditInvoice(inv)}
-                      className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
-                      title="Edit"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                  )}
-                  {canDelete(inv.status) && (
-                    <button
-                      onClick={() => handleDeleteInvoice(inv.id)}
-                      className="p-1.5 text-red-400 hover:text-red-600 rounded"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => {
+                      setToDelete(inv);
+                      setShowDelete(true);
+                    }}
+                    className="p-1.5 text-red-400 hover:text-red-600 rounded"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -1681,7 +1403,7 @@ export const SalesInvoice: React.FC = () => {
         )}
       </div>
 
-      {/* Pagination — matches screenshot exactly */}
+      {/* Pagination */}
       <div className="bg-white border-t border-gray-200 px-4 sm:px-6 py-3">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="text-sm text-gray-500">
@@ -1725,6 +1447,233 @@ export const SalesInvoice: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* View Invoice Modal */}
+      {showView && viewInvoice && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+        >
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {viewInvoice.invoiceNumber || "Sales Invoice"}
+                </h2>
+                <span
+                  className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${getStatusColor(viewInvoice.status)}`}
+                >
+                  {viewInvoice.status}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowView(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {viewLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Loading details…</span>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                    <div>
+                      <p className="text-xs text-gray-500">Customer</p>
+                      <p className="text-sm text-gray-900">
+                        {displayCustomer(viewInvoice)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Warehouse</p>
+                      <p className="text-sm text-gray-900">
+                        {warehouseNameById[viewInvoice.warehouseId] ||
+                          viewInvoice.warehouseId ||
+                          "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Invoice Date</p>
+                      <p className="text-sm text-gray-900">
+                        {viewInvoice.invoiceDate || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Due Date</p>
+                      <p className="text-sm text-gray-900">
+                        {viewInvoice.dueDate || "—"}
+                      </p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-xs text-gray-500">Subtitle</p>
+                      <p className="text-sm text-gray-900">
+                        {viewInvoice.subTitle || "—"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Items */}
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg mb-6">
+                    <table className="w-full text-sm min-w-[560px]">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">
+                            Product
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Qty
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Rate
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Disc %
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Tax %
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Amount
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {viewInvoice.items.map((it) => (
+                          <tr key={it.id}>
+                            <td className="px-3 py-2 text-gray-900">
+                              {productNameById[it.productId] || it.productId}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {it.qty}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {fmtCurrency(it.unitPrice)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {it.discountPercent}%
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {it.taxPercent}%
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-900">
+                              {fmtCurrency(it.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Totals */}
+                  <div className="flex justify-end">
+                    <div className="w-full sm:w-72 space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Subtotal</span>
+                        <span className="text-gray-900">
+                          {fmtCurrency(viewInvoice.subtotal)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Tax</span>
+                        <span className="text-gray-900">
+                          {fmtCurrency(viewInvoice.tax)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between pt-2 border-t border-gray-200">
+                        <span className="font-semibold text-gray-900">
+                          Total
+                        </span>
+                        <span className="font-semibold text-gray-900">
+                          {fmtCurrency(viewInvoice.total)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Paid</span>
+                        <span className="text-gray-900">
+                          {fmtCurrency(viewInvoice.paidAmount)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Balance</span>
+                        <span className="text-gray-900">
+                          {fmtCurrency(viewInvoice.balance)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
+              {!viewLoading && (
+                <button
+                  onClick={() => {
+                    setShowView(false);
+                    handleEditInvoice(viewInvoice);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm inline-flex items-center gap-2"
+                >
+                  <Edit className="w-4 h-4" />
+                  Edit
+                </button>
+              )}
+              <button
+                onClick={() => setShowView(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDelete && toDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+        >
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Delete Invoice
+              </h3>
+              <p className="text-gray-500 mb-6">
+                Are you sure you want to delete{" "}
+                <span className="font-semibold">{toDelete.invoiceNumber}</span>?
+                This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+                <button
+                  onClick={() => setShowDelete(false)}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

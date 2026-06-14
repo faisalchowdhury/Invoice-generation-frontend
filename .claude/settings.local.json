@@ -19,7 +19,10 @@
       "Bash(grep -v ': /performance$')",
       "Bash(grep -v ': /recruitment$')",
       "Bash(grep -v ': /training$')",
-      "Bash(grep -v ': /crm/reports$')"
+      "Bash(grep -v ': /crm/reports$')",
+      "Bash(ls src/services)",
+      "Bash(cat src/lib/env.ts)",
+      "PowerShell(npx tsc --noEmit -p tsconfig.json 2>&1)"
     ]
   }
 }

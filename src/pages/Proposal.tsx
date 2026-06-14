@@ -1,403 +1,538 @@
 /**
- * File: src/pages/SalesProposals.tsx
- * Complete Sales Proposal Management system with list view and create proposal modal
- * Based on provided screenshots design
+ * File: src/pages/Proposal.tsx
+ * Sales Proposal management — list, create/edit modal, view modal, delete.
+ *
+ * Backed by the proposal API:
+ *   GET    /proposal/all?page=&limit=  -> list (paginated envelope)
+ *   GET    /proposal/single/:id        -> one proposal (View modal)
+ *   POST   /proposal/create            -> create
+ *   PATCH  /proposal/edit/:id          -> update
+ *   DELETE /proposal/delete/:id        -> delete (soft)
+ *
+ * The API stores customer_id / warehouse_id / product[].product_id as raw ids
+ * (names are not populated), so they are resolved from:
+ *   /customer/all              -> customers
+ *   /purchase/warehouses/all   -> warehouses
+ *   /product/all               -> products
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   FileText,
   Search,
   ChevronLeft,
   ChevronRight,
-  MoreVertical,
   Eye,
   Edit,
   Trash2,
   Filter,
   Download,
   Plus,
-  Mail,
-  Phone,
-  Calendar,
-  DollarSign,
   X,
   CheckCircle,
   Clock,
   AlertCircle,
   Send,
-  Printer,
-  Copy,
   Globe,
-  User,
-  Building2,
-  Hash,
-  Percent,
-  Tag,
-  FileSignature,
   Save,
-  RefreshCw,
+  Loader2,
 } from "lucide-react";
+import { api } from "../lib/api/client";
+import { ApiError } from "../lib/api/ApiError";
+import { showToast } from "../utils/toast";
 
-// Proposal type definition
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface ProposalItem {
+  id: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number; // rate
+  discount: number; // %
+  tax: number; // %
+  amount: number; // line subtotal (excl. tax)
+}
+
 interface Proposal {
-  id: number;
+  id: string;
   proposalNumber: string;
-  customer: string;
-  proposalDate: string;
-  dueDate: string;
+  customerId: string;
+  warehouseId: string;
+  proposalDate: string; // yyyy-mm-dd
+  dueDate: string; // yyyy-mm-dd
   subtotal: number;
   tax: number;
-  totalAmount: number;
-  balance: number;
-  status: "Draft" | "Sent" | "Accepted" | "Rejected" | "Overdue";
-}
-
-// Proposals data
-const initialProposalsData: Proposal[] = [
-  {
-    id: 1,
-    proposalNumber: "SP-2026-02-016",
-    customer: "Maria Rodriguez",
-    proposalDate: "2026-05-28",
-    dueDate: "2026-06-15",
-    subtotal: 1199.8,
-    tax: 539.91,
-    totalAmount: 1739.71,
-    balance: 1739.71,
-    status: "Draft",
-  },
-  {
-    id: 2,
-    proposalNumber: "SP-2026-02-015",
-    customer: "Maria Rodriguez",
-    proposalDate: "2026-05-20",
-    dueDate: "2026-06-05",
-    subtotal: 503.86,
-    tax: 151.16,
-    totalAmount: 655.02,
-    balance: 655.02,
-    status: "Accepted",
-  },
-  {
-    id: 3,
-    proposalNumber: "SP-2026-02-014",
-    customer: "Jennifer Martinez",
-    proposalDate: "2026-05-10",
-    dueDate: "2026-05-25",
-    subtotal: 549.88,
-    tax: 247.45,
-    totalAmount: 797.33,
-    balance: 797.33,
-    status: "Sent",
-  },
-  {
-    id: 4,
-    proposalNumber: "SP-2026-02-013",
-    customer: "Lisa Anderson",
-    proposalDate: "2026-05-01",
-    dueDate: "2026-05-15",
-    subtotal: 540.0,
-    tax: 243.0,
-    totalAmount: 783.0,
-    balance: 783.0,
-    status: "Draft",
-  },
-  {
-    id: 5,
-    proposalNumber: "SP-2026-02-012",
-    customer: "Lisa Anderson",
-    proposalDate: "2026-04-15",
-    dueDate: "2026-05-01",
-    subtotal: 1799.98,
-    tax: 324.0,
-    totalAmount: 2123.98,
-    balance: 2123.98,
-    status: "Sent",
-  },
-  {
-    id: 6,
-    proposalNumber: "SP-2026-02-011",
-    customer: "Emily Davis",
-    proposalDate: "2026-04-05",
-    dueDate: "2026-04-20",
-    subtotal: 2740.0,
-    tax: 1233.0,
-    totalAmount: 3973.0,
-    balance: 3973.0,
-    status: "Accepted",
-  },
-  {
-    id: 7,
-    proposalNumber: "SP-2026-02-010",
-    customer: "Sarah Johnson",
-    proposalDate: "2026-03-25",
-    dueDate: "2026-04-10",
-    subtotal: 499.8,
-    tax: 224.91,
-    totalAmount: 724.71,
-    balance: 724.71,
-    status: "Draft",
-  },
-  {
-    id: 8,
-    proposalNumber: "SP-2026-02-009",
-    customer: "Jessica Harris",
-    proposalDate: "2026-03-12",
-    dueDate: "2026-04-01",
-    subtotal: 135.0,
-    tax: 60.75,
-    totalAmount: 195.75,
-    balance: 195.75,
-    status: "Sent",
-  },
-  {
-    id: 9,
-    proposalNumber: "SP-2026-02-008",
-    customer: "Amanda White",
-    proposalDate: "2026-03-05",
-    dueDate: "2026-03-20",
-    subtotal: 1799.95,
-    tax: 404.98,
-    totalAmount: 2204.93,
-    balance: 2204.93,
-    status: "Rejected",
-  },
-];
-
-// Product item interface
-interface ProposalItem {
-  id: number;
-  product: string;
-  quantity: number;
-  unitPrice: number;
-  discount: number;
-  tax: number;
   total: number;
+  status: string;
+  notes: string;
+  deposit: number;
+  discount: number;
+  shippingCost: number;
+  inlineDiscount: number;
+  discountBeforeTax: number;
+  items: ProposalItem[];
 }
 
-// Customer list
-const customers = [
-  "Maria Rodriguez",
-  "Jennifer Martinez",
-  "Lisa Anderson",
-  "Emily Davis",
-  "Sarah Johnson",
-  "Jessica Harris",
-  "Amanda White",
-  "Michael Brown",
-  "David Wilson",
-];
+interface ApiProposalItem {
+  product_id: string;
+  quantity: number;
+  rate: number;
+  tax: number;
+  discount: number;
+  amount: number;
+}
+interface ApiProposal {
+  _id: string;
+  customer_id?: string | null;
+  warehouse_id?: string | null;
+  proposal_number: string;
+  proposal_date: string;
+  due_date: string;
+  discount_before_tax?: number;
+  product?: ApiProposalItem[];
+  service?: unknown[];
+  status?: string;
+  notes?: string;
+  deposit?: number;
+  discount?: number;
+  shipping_cost?: number;
+  inline_discount?: number;
+  tax?: number;
+  sub_total?: number;
+  total?: number;
+}
+interface ApiCustomer {
+  _id: string;
+  name?: string;
+  customerName?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}
+interface ApiWarehouse {
+  _id: string;
+  name?: string;
+}
+interface ApiProduct {
+  _id: string;
+  productName?: string;
+  name?: string;
+  sku?: string;
+  pricing?: { sellPrice?: number; buyPrice?: number };
+}
 
-// Languages
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const toDateInput = (iso?: string) => (iso ? iso.slice(0, 10) : "");
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const num = (v: string | number) => Number(v) || 0;
+const errMessage = (err: unknown, fallback: string) =>
+  err instanceof ApiError && err.message ? err.message : fallback;
+
+const customerLabel = (c: ApiCustomer): string =>
+  c.name ??
+  c.customerName ??
+  [c.firstName, c.lastName].filter(Boolean).join(" ") ??
+  c.email ??
+  c._id;
+const productLabel = (p: ApiProduct): string =>
+  p.productName ?? p.name ?? p._id;
+
+const mapApiProposal = (p: ApiProposal): Proposal => ({
+  id: p._id,
+  proposalNumber: p.proposal_number ?? "",
+  customerId: p.customer_id ?? "",
+  warehouseId: p.warehouse_id ?? "",
+  proposalDate: toDateInput(p.proposal_date),
+  dueDate: toDateInput(p.due_date),
+  subtotal: p.sub_total ?? 0,
+  tax: p.tax ?? 0,
+  total: p.total ?? 0,
+  status: p.status ?? "Draft",
+  notes: p.notes ?? "",
+  deposit: p.deposit ?? 0,
+  discount: p.discount ?? 0,
+  shippingCost: p.shipping_cost ?? 0,
+  inlineDiscount: p.inline_discount ?? 0,
+  discountBeforeTax: p.discount_before_tax ?? 0,
+  items: (p.product ?? []).map((it, idx) => ({
+    id: `item-${idx}`,
+    productId: it.product_id,
+    quantity: it.quantity ?? 0,
+    unitPrice: it.rate ?? 0,
+    discount: it.discount ?? 0,
+    tax: it.tax ?? 0,
+    amount: it.amount ?? 0,
+  })),
+});
+
+const newItem = (): ProposalItem => ({
+  id: `new-${Math.random().toString(36).slice(2)}`,
+  productId: "",
+  quantity: 1,
+  unitPrice: 0,
+  discount: 0,
+  tax: 0,
+  amount: 0,
+});
+
 const languages = [
   { code: "en", name: "English", flag: "🇬🇧" },
   { code: "es", name: "Spanish", flag: "🇪🇸" },
   { code: "fr", name: "French", flag: "🇫🇷" },
 ];
 
+const STATUS_OPTIONS = ["Draft", "Sent", "Accepted", "Partial", "Rejected"];
+
 export const SalesProposals: React.FC = () => {
-  const [proposals, setProposals] = useState<Proposal[]>(initialProposalsData);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [selectedLanguage, setSelectedLanguage] = useState("en");
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showSuccessToast, setShowSuccessToast] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
 
-  // Form state for creating proposal
+  // Create/Edit modal
+  const [showModal, setShowModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // View modal
+  const [showView, setShowView] = useState(false);
+  const [viewProposal, setViewProposal] = useState<Proposal | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+
+  // Delete modal
+  const [showDelete, setShowDelete] = useState(false);
+  const [toDelete, setToDelete] = useState<Proposal | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Option sources
+  const [customers, setCustomers] = useState<ApiCustomer[]>([]);
+  const [warehouses, setWarehouses] = useState<ApiWarehouse[]>([]);
+  const [products, setProducts] = useState<ApiProduct[]>([]);
+
+  // Form state
   const [formData, setFormData] = useState({
-    customer: "",
+    customerId: "",
+    warehouseId: "",
+    proposalNumber: "",
     proposalDate: new Date().toISOString().split("T")[0],
     dueDate: "",
-    paymentTerms: "Net 30",
+    status: "Draft",
     notes: "",
-    footer: "",
+    deposit: 0,
+    discount: 0,
+    shippingCost: 0,
+    inlineDiscount: 0,
+    discountBeforeTax: 0,
   });
-
-  // Proposal items state
   const [proposalItems, setProposalItems] = useState<ProposalItem[]>([
-    {
-      id: 1,
-      product: "",
-      quantity: 1,
-      unitPrice: 0,
-      discount: 0,
-      tax: 0,
-      total: 0,
-    },
+    newItem(),
   ]);
 
-  // Calculate totals
+  // ─── Lookup maps ───────────────────────────────────────────────────────────
+  const customerNameById = useMemo(() => {
+    const m: Record<string, string> = {};
+    customers.forEach((c) => (m[c._id] = customerLabel(c)));
+    return m;
+  }, [customers]);
+  const warehouseNameById = useMemo(() => {
+    const m: Record<string, string> = {};
+    warehouses.forEach((w) => (m[w._id] = (w.name ?? "").trim()));
+    return m;
+  }, [warehouses]);
+  const productNameById = useMemo(() => {
+    const m: Record<string, string> = {};
+    products.forEach((p) => (m[p._id] = productLabel(p)));
+    return m;
+  }, [products]);
+
+  // ─── Data loading ──────────────────────────────────────────────────────────
+  const loadProposals = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await api.get<ApiProposal[]>("/proposal/all", {
+        params: { page: 1, limit: 1000 },
+      });
+      setProposals(Array.isArray(data) ? data.map(mapApiProposal) : []);
+    } catch (err) {
+      const message = errMessage(err, "Couldn't load proposals.");
+      setLoadError(message);
+      showToast(message, "error");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadOptions = useCallback(async () => {
+    try {
+      const [c, w, p] = await Promise.allSettled([
+        api.get<ApiCustomer[]>("/customer/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+        api.get<ApiWarehouse[]>("/purchase/warehouses/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+        api.get<ApiProduct[]>("/product/all", {
+          params: { page: 1, limit: 1000 },
+        }),
+      ]);
+      if (c.status === "fulfilled" && Array.isArray(c.value))
+        setCustomers(c.value);
+      if (w.status === "fulfilled" && Array.isArray(w.value))
+        setWarehouses(w.value);
+      if (p.status === "fulfilled" && Array.isArray(p.value))
+        setProducts(p.value);
+    } catch {
+      /* dropdowns degrade gracefully */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadProposals();
+    loadOptions();
+  }, [loadProposals, loadOptions]);
+
+  // ─── Totals ────────────────────────────────────────────────────────────────
   const calculateTotals = () => {
     let subtotal = 0;
     let totalDiscount = 0;
     let totalTax = 0;
-
     proposalItems.forEach((item) => {
-      const itemTotal = item.quantity * item.unitPrice;
-      const discountAmount = itemTotal * (item.discount / 100);
-      const taxableAmount = itemTotal - discountAmount;
-      const taxAmount = taxableAmount * (item.tax / 100);
-
-      subtotal += itemTotal;
+      const base = item.quantity * item.unitPrice;
+      const discountAmount = base * (item.discount / 100);
+      const taxable = base - discountAmount;
+      subtotal += taxable;
       totalDiscount += discountAmount;
-      totalTax += taxAmount;
+      totalTax += taxable * (item.tax / 100);
     });
-
-    const total = subtotal - totalDiscount + totalTax;
-    return { subtotal, totalDiscount, totalTax, total };
+    const total =
+      subtotal +
+      totalTax +
+      num(formData.shippingCost) -
+      num(formData.discount) -
+      num(formData.inlineDiscount) -
+      num(formData.discountBeforeTax);
+    return {
+      subtotal: round2(subtotal),
+      totalDiscount: round2(totalDiscount),
+      totalTax: round2(totalTax),
+      total: round2(total),
+    };
   };
-
   const { subtotal, totalDiscount, totalTax, total } = calculateTotals();
 
-  // Add new item row
-  const addItemRow = () => {
-    const newId = Math.max(...proposalItems.map((i) => i.id), 0) + 1;
-    setProposalItems([
-      ...proposalItems,
-      {
-        id: newId,
-        product: "",
-        quantity: 1,
-        unitPrice: 0,
-        discount: 0,
-        tax: 0,
-        total: 0,
-      },
-    ]);
+  // ─── Item helpers ──────────────────────────────────────────────────────────
+  const recalcAmount = (item: ProposalItem): number => {
+    const base = item.quantity * item.unitPrice;
+    return round2(base - base * (item.discount / 100));
   };
 
-  // Remove item row
-  const removeItemRow = (id: number) => {
-    if (proposalItems.length > 1) {
-      setProposalItems(proposalItems.filter((item) => item.id !== id));
-    }
-  };
+  const addItemRow = () => setProposalItems((prev) => [...prev, newItem()]);
+  const removeItemRow = (id: string) =>
+    setProposalItems((prev) =>
+      prev.length > 1 ? prev.filter((i) => i.id !== id) : prev,
+    );
 
-  // Update item
   const updateItem = (
-    id: number,
+    id: string,
     field: keyof ProposalItem,
     value: string | number,
   ) => {
-    setProposalItems(
-      proposalItems.map((item) => {
-        if (item.id === id) {
-          const updatedItem = { ...item, [field]: value };
-          // Recalculate total
-          const itemTotal = updatedItem.quantity * updatedItem.unitPrice;
-          const discountAmount = itemTotal * (updatedItem.discount / 100);
-          const taxableAmount = itemTotal - discountAmount;
-          const taxAmount = taxableAmount * (updatedItem.tax / 100);
-          updatedItem.total = itemTotal - discountAmount + taxAmount;
-          return updatedItem;
+    setProposalItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const updated = { ...item, [field]: value } as ProposalItem;
+        if (field === "productId") {
+          const found = products.find((p) => p._id === value);
+          const price = found?.pricing?.sellPrice ?? found?.pricing?.buyPrice;
+          if (typeof price === "number") updated.unitPrice = price;
         }
-        return item;
+        updated.amount = recalcAmount(updated);
+        return updated;
       }),
     );
   };
 
-  // Create proposal
-  const handleCreateProposal = () => {
-    if (!formData.customer) {
-      alert("Please select a customer");
-      return;
-    }
-    if (proposalItems.some((item) => !item.product)) {
-      alert("Please fill in all product names");
-      return;
-    }
-
-    const newProposalNumber = `SP-${new Date().toISOString().split("T")[0]}-${String(proposals.length + 1).padStart(3, "0")}`;
-
-    const newProposal: Proposal = {
-      id: Math.max(...proposals.map((p) => p.id), 0) + 1,
-      proposalNumber: newProposalNumber,
-      customer: formData.customer,
-      proposalDate: formData.proposalDate,
-      dueDate: formData.dueDate,
-      subtotal: subtotal,
-      tax: totalTax,
-      totalAmount: total,
-      balance: total,
-      status: "Draft",
-    };
-
-    setProposals([newProposal, ...proposals]);
-    setShowCreateModal(false);
-    resetForm();
-    showToast("Proposal created successfully!");
-  };
-
-  // Reset form
+  // ─── Form open / reset ─────────────────────────────────────────────────────
   const resetForm = () => {
     setFormData({
-      customer: "",
+      customerId: "",
+      warehouseId: "",
+      proposalNumber: `PROP-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${String(Math.floor(Math.random() * 900) + 100)}`,
       proposalDate: new Date().toISOString().split("T")[0],
       dueDate: "",
-      paymentTerms: "Net 30",
+      status: "Draft",
       notes: "",
-      footer: "",
+      deposit: 0,
+      discount: 0,
+      shippingCost: 0,
+      inlineDiscount: 0,
+      discountBeforeTax: 0,
     });
-    setProposalItems([
-      {
-        id: 1,
-        product: "",
-        quantity: 1,
-        unitPrice: 0,
-        discount: 0,
-        tax: 0,
-        total: 0,
-      },
-    ]);
+    setProposalItems([newItem()]);
+    setEditingId(null);
   };
 
-  // Show toast notification
-  const showToast = (message: string) => {
-    setSuccessMessage(message);
-    setShowSuccessToast(true);
-    setTimeout(() => {
-      setShowSuccessToast(false);
-    }, 3000);
+  const openCreate = () => {
+    resetForm();
+    setIsEditing(false);
+    setShowModal(true);
   };
 
-  // Filter proposals based on search term
-  const filteredProposals = proposals.filter(
-    (proposal) =>
-      proposal.proposalNumber
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase()) ||
-      proposal.customer.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
+  const openEdit = (p: Proposal) => {
+    setEditingId(p.id);
+    setFormData({
+      customerId: p.customerId,
+      warehouseId: p.warehouseId,
+      proposalNumber: p.proposalNumber,
+      proposalDate: p.proposalDate,
+      dueDate: p.dueDate,
+      status: p.status,
+      notes: p.notes,
+      deposit: p.deposit,
+      discount: p.discount,
+      shippingCost: p.shippingCost,
+      inlineDiscount: p.inlineDiscount,
+      discountBeforeTax: p.discountBeforeTax,
+    });
+    setProposalItems(
+      p.items.length > 0
+        ? p.items.map((i) => ({ ...i }))
+        : [newItem()],
+    );
+    setIsEditing(true);
+    setShowModal(true);
+  };
 
-  // Pagination
+  // ─── View (single) ─────────────────────────────────────────────────────────
+  const openView = async (p: Proposal) => {
+    setViewProposal(p);
+    setShowView(true);
+    setViewLoading(true);
+    try {
+      const data = await api.get<ApiProposal>(`/proposal/single/${p.id}`);
+      if (data) setViewProposal(mapApiProposal(data));
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't load proposal details."), "error");
+    } finally {
+      setViewLoading(false);
+    }
+  };
+
+  // ─── Create / Update ───────────────────────────────────────────────────────
+  const handleSaveProposal = async () => {
+    if (!formData.customerId) return showToast("Please select a customer", "info");
+    if (!formData.warehouseId)
+      return showToast("Please select a warehouse", "info");
+    if (!formData.proposalNumber.trim())
+      return showToast("Please enter a proposal number", "info");
+    const items = proposalItems.filter((i) => i.productId);
+    if (items.length === 0)
+      return showToast("Please add at least one product", "info");
+
+    const payload = {
+      customer_id: formData.customerId,
+      warehouse_id: formData.warehouseId,
+      proposal_number: formData.proposalNumber.trim(),
+      proposal_date: formData.proposalDate,
+      due_date: formData.dueDate,
+      discount_before_tax: num(formData.discountBeforeTax),
+      status: formData.status,
+      notes: formData.notes,
+      deposit: num(formData.deposit),
+      discount: num(formData.discount),
+      shipping_cost: num(formData.shippingCost),
+      inline_discount: num(formData.inlineDiscount),
+      tax: totalTax,
+      sub_total: subtotal,
+      total,
+      isDeleted: false,
+      archive: false,
+      product: items.map((i) => ({
+        product_id: i.productId,
+        quantity: i.quantity,
+        rate: i.unitPrice,
+        tax: i.tax,
+        discount: i.discount,
+        amount: recalcAmount(i),
+      })),
+      service: [],
+    };
+
+    setSaving(true);
+    try {
+      if (isEditing && editingId) {
+        await api.patch(`/proposal/edit/${editingId}`, payload);
+        showToast("Proposal updated successfully!", "success");
+      } else {
+        await api.post("/proposal/create", payload);
+        showToast("Proposal created successfully!", "success");
+      }
+      setShowModal(false);
+      resetForm();
+      await loadProposals();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't save proposal."), "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ─── Delete ────────────────────────────────────────────────────────────────
+  const handleDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/proposal/delete/${toDelete.id}`);
+      showToast("Proposal deleted successfully!", "success");
+      setShowDelete(false);
+      setToDelete(null);
+      await loadProposals();
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't delete proposal."), "error");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // ─── Filter / paginate ─────────────────────────────────────────────────────
+  const filteredProposals = proposals.filter((p) => {
+    const q = searchTerm.toLowerCase();
+    const matchesSearch =
+      p.proposalNumber.toLowerCase().includes(q) ||
+      (customerNameById[p.customerId] ?? "").toLowerCase().includes(q);
+    const matchesStatus = statusFilter === "All" || p.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
   const totalPages = Math.ceil(filteredProposals.length / itemsPerPage);
   const paginatedProposals = filteredProposals.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage,
   );
 
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
-  };
-
+  const handlePageChange = (page: number) => setCurrentPage(page);
   const handleItemsPerPageChange = (value: number) => {
     setItemsPerPage(value);
     setCurrentPage(1);
   };
 
-  const formatCurrency = (value: number): string => {
-    return new Intl.NumberFormat("en-US", {
+  const formatCurrency = (value: number): string =>
+    new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(value);
-  };
+    }).format(value || 0);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -407,6 +542,8 @@ export const SalesProposals: React.FC = () => {
         return "bg-blue-100 text-blue-700";
       case "Accepted":
         return "bg-green-100 text-green-700";
+      case "Partial":
+        return "bg-yellow-100 text-yellow-700";
       case "Rejected":
         return "bg-red-100 text-red-700";
       case "Overdue":
@@ -424,6 +561,8 @@ export const SalesProposals: React.FC = () => {
         return <Send className="w-3 h-3" />;
       case "Accepted":
         return <CheckCircle className="w-3 h-3" />;
+      case "Partial":
+        return <Clock className="w-3 h-3" />;
       case "Rejected":
         return <X className="w-3 h-3" />;
       case "Overdue":
@@ -436,22 +575,12 @@ export const SalesProposals: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       <div className="max-w-[1600px] mx-auto">
-        {/* Success Toast */}
-        {showSuccessToast && (
-          <div className="fixed top-4 right-4 z-50 animate-slide-in">
-            <div className="bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2">
-              <CheckCircle className="w-5 h-5" />
-              {successMessage}
-            </div>
-          </div>
-        )}
-
         {/* Breadcrumb */}
         <div className="mb-4 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <span>Dashboard</span>
             <span>/</span>
-            <span className="text-gray-900 font-medium">SalesProposals</span>
+            <span className="text-gray-900 font-medium">Sales Proposals</span>
           </div>
 
           {/* Language Selector */}
@@ -505,7 +634,7 @@ export const SalesProposals: React.FC = () => {
             </p>
           </div>
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={openCreate}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
           >
             <Plus className="w-4 h-4" />
@@ -537,9 +666,12 @@ export const SalesProposals: React.FC = () => {
                 <Filter className="w-4 h-4" />
                 Filters
               </button>
-              <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+              <button
+                onClick={() => loadProposals()}
+                className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              >
                 <Download className="w-4 h-4" />
-                Export
+                Refresh
               </button>
             </div>
           </div>
@@ -551,17 +683,18 @@ export const SalesProposals: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-gray-600">Status:</span>
                   <div className="flex gap-2 flex-wrap">
-                    {[
-                      "All",
-                      "Draft",
-                      "Sent",
-                      "Accepted",
-                      "Rejected",
-                      "Overdue",
-                    ].map((status) => (
+                    {["All", ...STATUS_OPTIONS].map((status) => (
                       <button
                         key={status}
-                        className="px-3 py-1 text-sm rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                        onClick={() => {
+                          setStatusFilter(status);
+                          setCurrentPage(1);
+                        }}
+                        className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                          statusFilter === status
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        }`}
                       >
                         {status}
                       </button>
@@ -579,99 +712,127 @@ export const SalesProposals: React.FC = () => {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Proposal Number
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Customer
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Proposal Date
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Due Date
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Subtotal
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Tax
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Total Amount
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Balance
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Actions
-                  </th>
+                  {[
+                    "Proposal Number",
+                    "Customer",
+                    "Proposal Date",
+                    "Due Date",
+                    "Subtotal",
+                    "Tax",
+                    "Total Amount",
+                    "Status",
+                    "Actions",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider"
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {paginatedProposals.map((proposal) => (
-                  <tr
-                    key={proposal.id}
-                    className="hover:bg-gray-50 transition-colors"
-                  >
-                    <td className="px-4 py-3">
-                      <span className="font-medium text-gray-900 text-sm">
-                        {proposal.proposalNumber}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {proposal.customer}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {proposal.proposalDate}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {proposal.dueDate}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {formatCurrency(proposal.subtotal)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {formatCurrency(proposal.tax)}
-                    </td>
-                    <td className="px-4 py-3 text-sm font-semibold text-gray-900">
-                      {formatCurrency(proposal.totalAmount)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {formatCurrency(proposal.balance)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                          proposal.status,
-                        )}`}
-                      >
-                        {getStatusIcon(proposal.status)}
-                        {proposal.status}
-                        {proposal.status === "Overdue" && "!"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button className="p-1.5 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors">
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button className="p-1.5 text-gray-400 hover:text-green-600 rounded-lg hover:bg-green-50 transition-colors">
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                        <button className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors">
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
+                {loading ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-16">
+                      <div className="flex items-center justify-center gap-2 text-gray-500">
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span className="text-sm">Loading proposals…</span>
                       </div>
                     </td>
                   </tr>
-                ))}
+                ) : loadError ? (
+                  <tr>
+                    <td
+                      colSpan={9}
+                      className="px-4 py-12 text-center text-sm text-red-600"
+                    >
+                      {loadError}
+                    </td>
+                  </tr>
+                ) : paginatedProposals.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={9}
+                      className="px-4 py-12 text-center text-sm text-gray-500"
+                    >
+                      No proposals found.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedProposals.map((proposal) => (
+                    <tr
+                      key={proposal.id}
+                      className="hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => openView(proposal)}
+                          className="font-medium text-blue-600 hover:text-blue-800 hover:underline text-sm"
+                        >
+                          {proposal.proposalNumber}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {customerNameById[proposal.customerId] || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {proposal.proposalDate}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {proposal.dueDate}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {formatCurrency(proposal.subtotal)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {formatCurrency(proposal.tax)}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                        {formatCurrency(proposal.total)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                            proposal.status,
+                          )}`}
+                        >
+                          {getStatusIcon(proposal.status)}
+                          {proposal.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => openView(proposal)}
+                            className="p-1.5 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                            title="View"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => openEdit(proposal)}
+                            className="p-1.5 text-gray-400 hover:text-green-600 rounded-lg hover:bg-green-50 transition-colors"
+                            title="Edit"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setToDelete(proposal);
+                              setShowDelete(true);
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -696,7 +857,11 @@ export const SalesProposals: React.FC = () => {
             </div>
 
             <div className="text-sm text-gray-500">
-              Showing {(currentPage - 1) * itemsPerPage + 1} to{" "}
+              Showing{" "}
+              {filteredProposals.length === 0
+                ? 0
+                : (currentPage - 1) * itemsPerPage + 1}{" "}
+              to{" "}
               {Math.min(currentPage * itemsPerPage, filteredProposals.length)}{" "}
               of {filteredProposals.length} results
             </div>
@@ -712,15 +877,11 @@ export const SalesProposals: React.FC = () => {
               </button>
               {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
                 let pageNumber;
-                if (totalPages <= 5) {
-                  pageNumber = i + 1;
-                } else if (currentPage <= 3) {
-                  pageNumber = i + 1;
-                } else if (currentPage >= totalPages - 2) {
+                if (totalPages <= 5) pageNumber = i + 1;
+                else if (currentPage <= 3) pageNumber = i + 1;
+                else if (currentPage >= totalPages - 2)
                   pageNumber = totalPages - 4 + i;
-                } else {
-                  pageNumber = currentPage - 2 + i;
-                }
+                else pageNumber = currentPage - 2 + i;
                 return (
                   <button
                     key={pageNumber}
@@ -737,7 +898,7 @@ export const SalesProposals: React.FC = () => {
               })}
               <button
                 onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
+                disabled={currentPage === totalPages || totalPages === 0}
                 className="px-3 py-1 text-sm border border-gray-200 rounded-lg hover:bg-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
               >
                 Next
@@ -748,22 +909,23 @@ export const SalesProposals: React.FC = () => {
         </div>
       </div>
 
-      {/* Create Proposal Modal - Full Screen (90% of screen) */}
-      {showCreateModal && (
+      {/* Create / Edit Proposal Modal */}
+      {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-[90vw] max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between z-10">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">
-                  Create Sales Proposal
+                  {isEditing ? "Edit Sales Proposal" : "Create Sales Proposal"}
                 </h2>
                 <p className="text-sm text-gray-500 mt-0.5">
-                  Fill in the details to create a new sales proposal
+                  Fill in the details to {isEditing ? "update" : "create"} a
+                  sales proposal
                 </p>
               </div>
               <button
-                onClick={() => setShowCreateModal(false)}
+                onClick={() => setShowModal(false)}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5 text-gray-500" />
@@ -773,9 +935,9 @@ export const SalesProposals: React.FC = () => {
             {/* Modal Body */}
             <div className="p-6">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left Column - Proposal Details */}
+                {/* Left Column */}
                 <div className="lg:col-span-2 space-y-6">
-                  {/* Sales Proposal Details */}
+                  {/* Details */}
                   <div className="bg-gray-50 rounded-lg p-5">
                     <h3 className="text-base font-semibold text-gray-900 mb-4">
                       Sales Proposal Details
@@ -786,19 +948,76 @@ export const SalesProposals: React.FC = () => {
                           Customer *
                         </label>
                         <select
-                          value={formData.customer}
+                          value={formData.customerId}
                           onChange={(e) =>
                             setFormData({
                               ...formData,
-                              customer: e.target.value,
+                              customerId: e.target.value,
                             })
                           }
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                         >
                           <option value="">Select Customer</option>
-                          {customers.map((customer) => (
-                            <option key={customer} value={customer}>
-                              {customer}
+                          {customers.map((c) => (
+                            <option key={c._id} value={c._id}>
+                              {customerLabel(c)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Warehouse *
+                        </label>
+                        <select
+                          value={formData.warehouseId}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              warehouseId: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        >
+                          <option value="">Select Warehouse</option>
+                          {warehouses.map((w) => (
+                            <option key={w._id} value={w._id}>
+                              {(w.name ?? "").trim()}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Proposal Number *
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.proposalNumber}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              proposalNumber: e.target.value,
+                            })
+                          }
+                          placeholder="PROP-001"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Status
+                        </label>
+                        <select
+                          value={formData.status}
+                          onChange={(e) =>
+                            setFormData({ ...formData, status: e.target.value })
+                          }
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        >
+                          {STATUS_OPTIONS.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
                             </option>
                           ))}
                         </select>
@@ -827,28 +1046,8 @@ export const SalesProposals: React.FC = () => {
                           type="date"
                           value={formData.dueDate}
                           onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              dueDate: e.target.value,
-                            })
+                            setFormData({ ...formData, dueDate: e.target.value })
                           }
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Payment Terms
-                        </label>
-                        <input
-                          type="text"
-                          value={formData.paymentTerms}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              paymentTerms: e.target.value,
-                            })
-                          }
-                          placeholder="e.g., Net 30"
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
@@ -871,7 +1070,7 @@ export const SalesProposals: React.FC = () => {
                     />
                   </div>
 
-                  {/* Sales Proposal Items */}
+                  {/* Items */}
                   <div className="bg-gray-50 rounded-lg p-5">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-base font-semibold text-gray-900">
@@ -886,10 +1085,9 @@ export const SalesProposals: React.FC = () => {
                       </button>
                     </div>
 
-                    {/* Items Table */}
                     <div className="overflow-x-auto">
                       <table className="w-full">
-                        <thead className="bg-white rounded-lg">
+                        <thead className="bg-white">
                           <tr>
                             <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">
                               Product
@@ -907,7 +1105,7 @@ export const SalesProposals: React.FC = () => {
                               Tax %
                             </th>
                             <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">
-                              Total
+                              Amount
                             </th>
                             <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600">
                               Action
@@ -921,23 +1119,30 @@ export const SalesProposals: React.FC = () => {
                               className="border-t border-gray-200"
                             >
                               <td className="px-3 py-2">
-                                <input
-                                  type="text"
-                                  value={item.product}
+                                <select
+                                  value={item.productId}
                                   onChange={(e) =>
                                     updateItem(
                                       item.id,
-                                      "product",
+                                      "productId",
                                       e.target.value,
                                     )
                                   }
-                                  placeholder="Product name"
-                                  className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
+                                  className="w-full min-w-[160px] px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                >
+                                  <option value="">Select Product</option>
+                                  {products.map((p) => (
+                                    <option key={p._id} value={p._id}>
+                                      {productLabel(p)}
+                                      {p.sku ? ` (${p.sku})` : ""}
+                                    </option>
+                                  ))}
+                                </select>
                               </td>
                               <td className="px-3 py-2">
                                 <input
                                   type="number"
+                                  min={1}
                                   value={item.quantity}
                                   onChange={(e) =>
                                     updateItem(
@@ -952,6 +1157,8 @@ export const SalesProposals: React.FC = () => {
                               <td className="px-3 py-2">
                                 <input
                                   type="number"
+                                  min={0}
+                                  step={0.01}
                                   value={item.unitPrice}
                                   onChange={(e) =>
                                     updateItem(
@@ -966,6 +1173,8 @@ export const SalesProposals: React.FC = () => {
                               <td className="px-3 py-2">
                                 <input
                                   type="number"
+                                  min={0}
+                                  max={100}
                                   value={item.discount}
                                   onChange={(e) =>
                                     updateItem(
@@ -980,6 +1189,8 @@ export const SalesProposals: React.FC = () => {
                               <td className="px-3 py-2">
                                 <input
                                   type="number"
+                                  min={0}
+                                  max={100}
                                   value={item.tax}
                                   onChange={(e) =>
                                     updateItem(
@@ -992,7 +1203,7 @@ export const SalesProposals: React.FC = () => {
                                 />
                               </td>
                               <td className="px-3 py-2 text-right text-sm font-medium text-gray-900">
-                                {formatCurrency(item.total)}
+                                {formatCurrency(item.amount)}
                               </td>
                               <td className="px-3 py-2 text-center">
                                 <button
@@ -1009,24 +1220,45 @@ export const SalesProposals: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Footer */}
+                  {/* Additional charges */}
                   <div className="bg-gray-50 rounded-lg p-5">
                     <h3 className="text-base font-semibold text-gray-900 mb-4">
-                      Footer{" "}
+                      Additional Charges
                     </h3>
-                    <textarea
-                      value={formData.footer}
-                      onChange={(e) =>
-                        setFormData({ ...formData, footer: e.target.value })
-                      }
-                      rows={2}
-                      placeholder="Additional footer text..."
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                    />
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {(
+                        [
+                          ["shippingCost", "Shipping Cost"],
+                          ["discount", "Discount"],
+                          ["inlineDiscount", "Inline Discount"],
+                          ["discountBeforeTax", "Discount Before Tax"],
+                          ["deposit", "Deposit"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <div key={key}>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {label}
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={formData[key]}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                [key]: parseFloat(e.target.value) || 0,
+                              })
+                            }
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                {/* Right Column - Proposal Summary */}
+                {/* Right Column - Summary */}
                 <div className="lg:col-span-1">
                   <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-5 sticky top-6">
                     <h3 className="text-base font-semibold text-gray-900 mb-4">
@@ -1040,7 +1272,7 @@ export const SalesProposals: React.FC = () => {
                         </span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Discount:</span>
+                        <span className="text-gray-600">Item Discount:</span>
                         <span className="font-medium text-red-600">
                           -{formatCurrency(totalDiscount)}
                         </span>
@@ -1049,6 +1281,23 @@ export const SalesProposals: React.FC = () => {
                         <span className="text-gray-600">Tax:</span>
                         <span className="font-medium text-gray-900">
                           {formatCurrency(totalTax)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Shipping:</span>
+                        <span className="font-medium text-gray-900">
+                          {formatCurrency(num(formData.shippingCost))}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Other Discounts:</span>
+                        <span className="font-medium text-red-600">
+                          -
+                          {formatCurrency(
+                            num(formData.discount) +
+                              num(formData.inlineDiscount) +
+                              num(formData.discountBeforeTax),
+                          )}
                         </span>
                       </div>
                       <div className="border-t border-gray-200 pt-3 mt-3">
@@ -1068,18 +1317,252 @@ export const SalesProposals: React.FC = () => {
             {/* Modal Footer */}
             <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
               <button
-                onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                onClick={() => setShowModal(false)}
+                disabled={saving}
+                className="px-4 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
-                onClick={handleCreateProposal}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                onClick={handleSaveProposal}
+                disabled={saving}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Save className="w-4 h-4" />
-                Create Proposal
+                {saving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                {saving
+                  ? "Saving…"
+                  : isEditing
+                    ? "Update Proposal"
+                    : "Create Proposal"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Proposal Modal */}
+      {showView && viewProposal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between z-10">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">
+                  {viewProposal.proposalNumber}
+                </h2>
+                <span
+                  className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(viewProposal.status)}`}
+                >
+                  {getStatusIcon(viewProposal.status)}
+                  {viewProposal.status}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowView(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {viewLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Loading details…</span>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                    <div>
+                      <p className="text-xs text-gray-500">Customer</p>
+                      <p className="text-sm text-gray-900">
+                        {customerNameById[viewProposal.customerId] ||
+                          viewProposal.customerId ||
+                          "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Warehouse</p>
+                      <p className="text-sm text-gray-900">
+                        {warehouseNameById[viewProposal.warehouseId] ||
+                          viewProposal.warehouseId ||
+                          "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Proposal Date</p>
+                      <p className="text-sm text-gray-900">
+                        {viewProposal.proposalDate || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Due Date</p>
+                      <p className="text-sm text-gray-900">
+                        {viewProposal.dueDate || "—"}
+                      </p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-xs text-gray-500">Notes</p>
+                      <p className="text-sm text-gray-900">
+                        {viewProposal.notes || "—"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Items */}
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg mb-6">
+                    <table className="w-full text-sm min-w-[560px]">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">
+                            Product
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Qty
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Rate
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Disc %
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Tax %
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-600">
+                            Amount
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {viewProposal.items.map((it) => (
+                          <tr key={it.id}>
+                            <td className="px-3 py-2 text-gray-900">
+                              {productNameById[it.productId] || it.productId}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {it.quantity}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {formatCurrency(it.unitPrice)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {it.discount}%
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {it.tax}%
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-900">
+                              {formatCurrency(it.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Totals */}
+                  <div className="flex justify-end">
+                    <div className="w-full sm:w-72 space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Subtotal</span>
+                        <span className="text-gray-900">
+                          {formatCurrency(viewProposal.subtotal)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Tax</span>
+                        <span className="text-gray-900">
+                          {formatCurrency(viewProposal.tax)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Shipping</span>
+                        <span className="text-gray-900">
+                          {formatCurrency(viewProposal.shippingCost)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Deposit</span>
+                        <span className="text-gray-900">
+                          {formatCurrency(viewProposal.deposit)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between pt-2 border-t border-gray-200">
+                        <span className="font-semibold text-gray-900">
+                          Total
+                        </span>
+                        <span className="font-semibold text-gray-900">
+                          {formatCurrency(viewProposal.total)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
+              {!viewLoading && (
+                <button
+                  onClick={() => {
+                    setShowView(false);
+                    openEdit(viewProposal);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                >
+                  <Edit className="w-4 h-4" />
+                  Edit
+                </button>
+              )}
+              <button
+                onClick={() => setShowView(false)}
+                className="px-4 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDelete && toDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Delete Proposal
+              </h3>
+              <p className="text-gray-500 mb-6">
+                Are you sure you want to delete{" "}
+                <span className="font-semibold">{toDelete.proposalNumber}</span>?
+                This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+                <button
+                  onClick={() => setShowDelete(false)}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>

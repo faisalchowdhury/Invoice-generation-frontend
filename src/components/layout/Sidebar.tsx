@@ -102,11 +102,9 @@ const navigationItems: NavItem[] = [
     path: "/proposal",
   },
   {
-    label: "Sales",
+    label: "Sales Invoice",
     icon: DollarSign,
     children: [
-      { label: "Customers", icon: Users, path: "/sales/customers" },
-      { label: "Invoices", icon: FileText, path: "/sales/invoices" },
       {
         label: "Sales Invoice",
         icon: DollarSign,
@@ -117,24 +115,26 @@ const navigationItems: NavItem[] = [
         icon: CornerDownLeft,
         path: "/sales/sales-invoice-returns",
       },
-      { label: "Sales Receipts", icon: Receipt, path: "/sales/sales-receipts" },
-      { label: "Estimates", icon: FileSpreadsheet, path: "/sales/estimates" },
-      {
-        label: "Proforma Invoices",
-        icon: ClipboardList,
-        path: "/sales/proforma-invoices",
-      },
-      {
-        label: "Delivery Challan",
-        icon: Truck,
-        path: "/sales/delivery-challan",
-      },
-      { label: "Credit Notes", icon: CreditCard, path: "/sales/credit-notes" },
-      {
-        label: "Payment Received",
-        icon: DollarSign,
-        path: "/sales/payment-received",
-      },
+      // { label: "Customers", icon: Users, path: "/sales/customers" },
+      // { label: "Invoices", icon: FileText, path: "/sales/invoices" },
+      // { label: "Sales Receipts", icon: Receipt, path: "/sales/sales-receipts" },
+      // { label: "Estimates", icon: FileSpreadsheet, path: "/sales/estimates" },
+      // {
+      //   label: "Proforma Invoices",
+      //   icon: ClipboardList,
+      //   path: "/sales/proforma-invoices",
+      // },
+      // {
+      //   label: "Delivery Challan",
+      //   icon: Truck,
+      //   path: "/sales/delivery-challan",
+      // },
+      // { label: "Credit Notes", icon: CreditCard, path: "/sales/credit-notes" },
+      // {
+      //   label: "Payment Received",
+      //   icon: DollarSign,
+      //   path: "/sales/payment-received",
+      // },
     ],
   },
 
@@ -162,20 +162,20 @@ const navigationItems: NavItem[] = [
         icon: FileStack,
         path: "/purchase/transfers",
       },
-      { label: "Vendors", icon: Building2, path: "/purchase/vendors" },
-      {
-        label: "Purchase Order",
-        icon: ClipboardList,
-        path: "/purchase/purchase-orders",
-      },
-      { label: "Bills", icon: FileText, path: "/purchase/bills" },
-      { label: "Expense", icon: Receipt, path: "/purchase/expense" },
-      {
-        label: "Payment Made",
-        icon: DollarSign,
-        path: "/purchase/payment-made",
-      },
-      { label: "Debit Notes", icon: CreditCard, path: "/purchase/debit-notes" },
+      // { label: "Vendors", icon: Building2, path: "/purchase/vendors" },
+      // {
+      //   label: "Purchase Order",
+      //   icon: ClipboardList,
+      //   path: "/purchase/purchase-orders",
+      // },
+      // { label: "Bills", icon: FileText, path: "/purchase/bills" },
+      // { label: "Expense", icon: Receipt, path: "/purchase/expense" },
+      // {
+      //   label: "Payment Made",
+      //   icon: DollarSign,
+      //   path: "/purchase/payment-made",
+      // },
+      // { label: "Debit Notes", icon: CreditCard, path: "/purchase/debit-notes" },
     ],
   },
   {
@@ -192,11 +192,11 @@ const navigationItems: NavItem[] = [
     icon: Clock,
     path: "/quotation",
   },
-  {
-    label: "Time Logs",
-    icon: Clock,
-    path: "/time-logs",
-  },
+  // {
+  //   label: "Time Logs",
+  //   icon: Clock,
+  //   path: "/time-logs",
+  // },
   {
     label: "Project",
     icon: FolderOpen,
@@ -714,6 +714,11 @@ const navigationItems: NavItem[] = [
     icon: Building2,
     path: "/companies",
   },
+  {
+    label: "Plan",
+    icon: Building2,
+    path: "/plan",
+  },
 ];
 
 interface SidebarProps {
@@ -739,6 +744,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ]);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH);
+  const [isDesktop, setIsDesktop] = useState(
+    () =>
+      typeof window === "undefined" ||
+      window.matchMedia("(min-width: 1024px)").matches,
+  );
   const isDragging = useRef(false);
   const dragStartX = useRef(0);
   const dragStartWidth = useRef(DEFAULT_WIDTH);
@@ -786,6 +796,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
   }, [handleMouseMove, handleMouseUp]);
 
+  // Track desktop vs. mobile so the collapse/drag behaviour (a desktop-only
+  // feature) never leaks into the mobile slide-in drawer.
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  // On mobile the drawer is always full-width/expanded, regardless of the width
+  // the user dragged to or collapsed on desktop.
+  const collapsed = isDesktop && isCollapsed;
+
   const toggleCollapse = () => {
     if (isCollapsed) {
       setIsCollapsed(false);
@@ -828,11 +851,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div
         className={`
           fixed lg:relative inset-y-0 left-0 z-50
-          h-screen bg-[#FAFBFC] border-r border-gray-200 flex flex-col
+          h-screen w-72 max-w-[85vw] lg:max-w-none bg-[#FAFBFC] border-r border-gray-200 flex flex-col
           ${isDragging.current ? "" : "transition-all duration-300 ease-in-out"}
           ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
         `}
-        style={{ width: sidebarWidth }}
+        style={isDesktop ? { width: sidebarWidth } : undefined}
       >
         {/* Drag handle */}
         <div
@@ -843,7 +866,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
         {/* Logo Header */}
         <div className="h-14 flex items-center justify-between px-4 border-b border-gray-200 bg-white">
-          {!isCollapsed && (
+          {!collapsed && (
             <div className="flex items-center gap-2.5">
               {/* Logo Icon */}
               <div className="w-6 h-6 bg-blue-600 rounded-md flex items-center justify-center shadow-sm">
@@ -856,7 +879,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
 
-          {isCollapsed && (
+          {collapsed && (
             <div className="flex items-center justify-center w-full">
               <button
                 className="hidden lg:flex p-1.5 hover:bg-gray-100 rounded-md transition-colors"
@@ -869,7 +892,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
 
           {/* Mobile Close / Desktop Menu Toggle */}
-          {!isCollapsed && (
+          {!collapsed && (
             <>
               <button
                 className="lg:hidden p-1.5 hover:bg-gray-100 rounded-md transition-colors"
@@ -896,9 +919,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {item.children && item.children.length > 0 ? (
                   <>
                     <button
-                      onClick={() => !isCollapsed && toggleExpand(item.label)}
+                      onClick={() => !collapsed && toggleExpand(item.label)}
                       className={`
-                        w-full flex items-center ${isCollapsed ? "justify-center" : "justify-between"} px-2.5 py-2 
+                        w-full flex items-center ${collapsed ? "justify-center" : "justify-between"} px-2.5 py-2 
                          font-normal transition-all duration-150 border-y border-gray-200
                         ${
                           isParentActive(item.children)
@@ -906,20 +929,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             : "text-gray-700 hover:bg-gray-300"
                         }
                       `}
-                      title={isCollapsed ? item.label : ""}
+                      title={collapsed ? item.label : ""}
                     >
                       <div
-                        className={`flex items-center ${isCollapsed ? "" : "gap-2.5"}`}
+                        className={`flex items-center ${collapsed ? "" : "gap-2.5"}`}
                       >
                         <item.icon
                           className="w-[16px] h-[16px]"
                           strokeWidth={1.8}
                         />
-                        {!isCollapsed && (
+                        {!collapsed && (
                           <span className="tracking-tight">{item.label}</span>
                         )}
                       </div>
-                      {!isCollapsed &&
+                      {!collapsed &&
                         (expandedItems.includes(item.label) ? (
                           <ChevronDown
                             className="w-3.5 h-3.5 text-gray-500"
@@ -934,7 +957,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </button>
 
                     {/* Children - Flat design with icons */}
-                    {!isCollapsed && expandedItems.includes(item.label) && (
+                    {!collapsed && expandedItems.includes(item.label) && (
                       <ul className="mt-0.5 space-y-0.5 ml-5 border-l border-gray-200">
                         {item.children.map((child) => (
                           <li key={child.label}>
@@ -971,7 +994,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     to={item.path || "#"}
                     onClick={() => setMobileMenuOpen(false)}
                     className={`
-                      flex items-center ${isCollapsed ? "justify-center" : "gap-2.5"} px-2.5 py-2 
+                      flex items-center ${collapsed ? "justify-center" : "gap-2.5"} px-2.5 py-2 
                        font-normal transition-all duration-150
                       ${
                         isActive(item.path)
@@ -979,13 +1002,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           : "text-gray-700 hover:bg-gray-300"
                       }
                     `}
-                    title={isCollapsed ? item.label : ""}
+                    title={collapsed ? item.label : ""}
                   >
                     <item.icon
                       className="w-[16px] h-[16px]"
                       strokeWidth={1.8}
                     />
-                    {!isCollapsed && (
+                    {!collapsed && (
                       <span className="tracking-tight">{item.label}</span>
                     )}
                   </Link>
@@ -999,11 +1022,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="border-t border-gray-200 p-2">
           <Link
             to="/get-help"
-            className={`w-full flex items-center ${isCollapsed ? "justify-center" : "gap-2.5"} px-2.5 py-2 rounded-md  text-gray-700 hover:bg-gray-300 transition-all duration-150`}
-            title={isCollapsed ? "Get Help" : ""}
+            className={`w-full flex items-center ${collapsed ? "justify-center" : "gap-2.5"} px-2.5 py-2 rounded-md  text-gray-700 hover:bg-gray-300 transition-all duration-150`}
+            title={collapsed ? "Get Help" : ""}
           >
             <HelpCircle className="w-[16px] h-[16px]" strokeWidth={1.8} />
-            {!isCollapsed && <span className="tracking-tight">Get Help</span>}
+            {!collapsed && <span className="tracking-tight">Get Help</span>}
           </Link>
         </div>
       </div>
