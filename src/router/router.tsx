@@ -60,11 +60,7 @@ import { Warehouses } from "@/pages/purchase/Warehouses";
 import { SystemSetup } from "@/pages/items/SystemSetup";
 import { Quotations } from "@/pages/Quotation";
 import { ProjectsNew } from "@/pages/project/ProjectsNew";
-import {
-  AccountsCustomers,
-  CustomerDetails,
-  EditCustomer,
-} from "@/pages/accounting/customer/Customer";
+import { AccountsCustomers } from "@/pages/accounting/customer/Customer";
 import { AccountsVendors } from "@/pages/accounting/vendor/Vendor";
 import { BankAccounts } from "@/pages/accounting/bank/BankAccounts";
 import { BankTransactions } from "@/pages/accounting/bank/BankTransaction";
@@ -360,14 +356,6 @@ export const route = createBrowserRouter([
           {
             path: "customer",
             element: <AccountsCustomers />,
-          },
-          {
-            path: "customers/:id",
-            element: <CustomerDetails />,
-          },
-          {
-            path: "customers/edit/:id",
-            element: <EditCustomer />,
           },
 
           {
