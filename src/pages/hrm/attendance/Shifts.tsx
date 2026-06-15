@@ -7,6 +7,8 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "@/utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import { shiftHooks, type HrmMaster } from "@/services/hrm";
 import {
   Search,
   Plus,
@@ -18,14 +20,8 @@ import {
   ChevronDown,
   ArrowUpDown,
   X,
-  Eye,
-  Clock,
   Moon,
   Sun,
-  Calendar,
-  User,
-  CheckCircle,
-  AlertCircle,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -42,76 +38,32 @@ interface Shift {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (API shape seed) ─────────────────────────────────────────────
 
-const sampleShifts: Shift[] = [
-  {
-    id: "1",
-    shiftName: "Morning Shift",
-    startTime: "09:00",
-    endTime: "17:00",
-    breakStartTime: "13:00",
-    breakEndTime: "14:00",
-    isNightShift: false,
-    createdBy: "Company",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "2",
-    shiftName: "Evening Shift",
-    startTime: "14:00",
-    endTime: "22:00",
-    breakStartTime: "18:00",
-    breakEndTime: "19:00",
-    isNightShift: false,
-    createdBy: "Company",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "3",
-    shiftName: "Night Shift",
-    startTime: "22:00",
-    endTime: "06:00",
-    breakStartTime: "02:00",
-    breakEndTime: "03:00",
-    isNightShift: true,
-    createdBy: "Company",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "4",
-    shiftName: "Early Morning Shift",
-    startTime: "06:00",
-    endTime: "14:00",
-    breakStartTime: "10:00",
-    breakEndTime: "11:00",
-    isNightShift: false,
-    createdBy: "Company",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "5",
-    shiftName: "Flexible Shift",
-    startTime: "10:00",
-    endTime: "18:00",
-    breakStartTime: "14:00",
-    breakEndTime: "15:00",
-    isNightShift: false,
-    createdBy: "Company",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "6",
-    shiftName: "Weekend Shift",
-    startTime: "08:00",
-    endTime: "16:00",
-    breakStartTime: "12:00",
-    breakEndTime: "13:00",
-    isNightShift: false,
-    createdBy: "Company",
-    createdAt: "2024-01-01",
-  },
+const sampleShifts: HrmMaster[] = [
+  { id: "1", shift_name: "Morning Shift", start_time: "09:00", end_time: "17:00", break_start_time: "13:00", break_end_time: "14:00", is_night_shift: false, createdAt: "2024-01-01" },
+  { id: "2", shift_name: "Evening Shift", start_time: "14:00", end_time: "22:00", break_start_time: "18:00", break_end_time: "19:00", is_night_shift: false, createdAt: "2024-01-01" },
+  { id: "3", shift_name: "Night Shift", start_time: "22:00", end_time: "06:00", break_start_time: "02:00", break_end_time: "03:00", is_night_shift: true, createdAt: "2024-01-01" },
+  { id: "4", shift_name: "Early Morning Shift", start_time: "06:00", end_time: "14:00", break_start_time: "10:00", break_end_time: "11:00", is_night_shift: false, createdAt: "2024-01-01" },
+  { id: "5", shift_name: "Flexible Shift", start_time: "10:00", end_time: "18:00", break_start_time: "14:00", break_end_time: "15:00", is_night_shift: false, createdAt: "2024-01-01" },
+  { id: "6", shift_name: "Weekend Shift", start_time: "08:00", end_time: "16:00", break_start_time: "12:00", break_end_time: "13:00", is_night_shift: false, createdAt: "2024-01-01" },
 ];
+
+// ─── API ↔ display mapping ─────────────────────────────────────────────────────
+
+function mapFromApi(p: any): Shift {
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    shiftName: p.shift_name ?? p.shiftName ?? "",
+    startTime: p.start_time ?? p.startTime ?? "",
+    endTime: p.end_time ?? p.endTime ?? "",
+    breakStartTime: p.break_start_time ?? p.breakStartTime ?? "",
+    breakEndTime: p.break_end_time ?? p.breakEndTime ?? "",
+    isNightShift: p.is_night_shift ?? p.isNightShift ?? false,
+    createdBy: p.created_by ?? p.createdBy ?? "Company",
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -127,7 +79,8 @@ type SortDir = "asc" | "desc";
 
 export const Shifts: React.FC = () => {
   const navigate = useNavigate();
-  const [shifts, setShifts] = useState<Shift[]>(sampleShifts);
+  const { items: rawShifts, create, update, remove } = useResourceData(shiftHooks, { seed: sampleShifts, params: { page: 1, limit: 100 } });
+  const shifts = useMemo(() => rawShifts.map(mapFromApi), [rawShifts]);
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -236,7 +189,7 @@ export const Shifts: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSaveShift = () => {
+  const handleSaveShift = async () => {
     if (!shiftFormData.shiftName) {
       showToast("Please enter shift name", "info");
       return;
@@ -250,47 +203,36 @@ export const Shifts: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedShift) {
-      setShifts((prev) =>
-        prev.map((s) =>
-          s.id === selectedShift.id
-            ? {
-                ...s,
-                shiftName: shiftFormData.shiftName,
-                startTime: shiftFormData.startTime,
-                endTime: shiftFormData.endTime,
-                breakStartTime: shiftFormData.breakStartTime,
-                breakEndTime: shiftFormData.breakEndTime,
-                isNightShift: shiftFormData.isNightShift,
-              }
-            : s,
-        ),
-      );
-      showToast("Shift updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newShift: Shift = {
-        id: Date.now().toString(),
-        shiftName: shiftFormData.shiftName,
-        startTime: shiftFormData.startTime,
-        endTime: shiftFormData.endTime,
-        breakStartTime: shiftFormData.breakStartTime,
-        breakEndTime: shiftFormData.breakEndTime,
-        isNightShift: shiftFormData.isNightShift,
-        createdBy: "Company",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setShifts((prev) => [newShift, ...prev]);
-      showToast("Shift created successfully!", "success");
-      setShowCreateModal(false);
+    const toApi = {
+      shift_name: shiftFormData.shiftName,
+      start_time: shiftFormData.startTime,
+      end_time: shiftFormData.endTime,
+    };
+
+    try {
+      if (isEditing && selectedShift) {
+        await update(selectedShift.id, toApi);
+        showToast("Shift updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(toApi);
+        showToast("Shift created successfully!", "success");
+        setShowCreateModal(false);
+      }
+    } catch {
+      showToast("Operation failed. Please try again.", "error");
     }
     resetShiftForm();
   };
 
-  const handleDeleteShift = () => {
+  const handleDeleteShift = async () => {
     if (selectedShift) {
-      setShifts((prev) => prev.filter((s) => s.id !== selectedShift.id));
-      showToast("Shift deleted successfully!", "success");
+      try {
+        await remove(selectedShift.id);
+        showToast("Shift deleted successfully!", "success");
+      } catch {
+        showToast("Delete failed. Please try again.", "error");
+      }
       setShowDeleteModal(false);
       setSelectedShift(null);
     }

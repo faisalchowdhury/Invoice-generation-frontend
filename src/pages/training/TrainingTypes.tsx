@@ -7,6 +7,12 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  trainingTypeHooks,
+  type TrainingType as ApiTrainingType,
+} from "@/services/training";
+import { branchHooks, departmentHooks } from "@/services/hrm";
 import {
   Search,
   Plus,
@@ -19,32 +25,11 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Target,
-  CheckCircle,
-  AlertCircle,
-  Clock,
-  TrendingUp,
-  User,
-  Calendar,
-  Flag,
-  Globe,
   Building2,
   Users,
-  FileText,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Branch {
-  id: string;
-  name: string;
-}
-
-interface Department {
-  id: string;
-  name: string;
-  branchId: string;
-}
 
 interface TrainingType {
   id: string;
@@ -57,165 +42,32 @@ interface TrainingType {
   createdAt: string;
 }
 
-// ─── Sample Data (based on screenshots + extended to 30 items) ─────────────────
+// ─── Sample Data (API snake_case seed) ────────────────────────────────────────
 
-const branches: Branch[] = [
-  { id: "1", name: "Main Office" },
-  { id: "2", name: "Downtown Branch" },
-  { id: "3", name: "North Branch" },
-  { id: "4", name: "South Branch" },
-  { id: "5", name: "East Branch" },
-  { id: "6", name: "West Branch" },
+const sampleTrainingTypes: ApiTrainingType[] = [
+  { id: "1", name: "Artificial Intelligence & Machine Learning", description: "AI fundamentals, machine learning algorithms, and practical implementation strategies.", branch_id: "5", department_id: "1" },
+  { id: "2", name: "Risk Management & Assessment", description: "Risk identification, assessment methodologies, and mitigation strategies.", branch_id: "4", department_id: "2" },
+  { id: "3", name: "International Business & Trade", description: "Global business operations, international trade regulations.", branch_id: "3", department_id: "3" },
+  { id: "4", name: "Environmental Sustainability", description: "Sustainable business practices, environmental compliance.", branch_id: "2", department_id: "4" },
+  { id: "5", name: "Negotiation & Conflict Resolution", description: "Professional negotiation techniques, conflict resolution frameworks.", branch_id: "1", department_id: "5" },
 ];
 
-const departments: Department[] = [
-  { id: "1", name: "Operations", branchId: "5" },
-  { id: "2", name: "Finance & Accounting", branchId: "4" },
-  { id: "3", name: "Administration", branchId: "3" },
-  { id: "4", name: "Legal & Compliance", branchId: "2" },
-  { id: "5", name: "Sales & Marketing", branchId: "1" },
-  { id: "6", name: "Customer Service", branchId: "5" },
-  { id: "7", name: "IT", branchId: "3" },
-  { id: "8", name: "HR", branchId: "1" },
-  { id: "9", name: "Procurement", branchId: "6" },
-  { id: "10", name: "R&D", branchId: "6" },
-];
+// ─── API ↔ display mapping ─────────────────────────────────────────────────────
 
-const generateSampleTrainingTypes = (): TrainingType[] => {
-  const baseTypes = [
-    {
-      name: "Artificial Intelligence & Machine Learning",
-      branchId: "5",
-      branchName: "East Branch",
-      departmentId: "1",
-      departmentName: "Operations",
-      description:
-        "AI fundamentals, machine learning algorithms, and practical implementation strategies. Prepares teams for AI integration and intelligent automation solutions.",
-    },
-    {
-      name: "Risk Management & Assessment",
-      branchId: "4",
-      branchName: "South Branch",
-      departmentId: "2",
-      departmentName: "Finance & Accounting",
-      description:
-        "Risk identification, assessment methodologies, and mitigation strategies for financial and operational risks.",
-    },
-    {
-      name: "International Business & Trade",
-      branchId: "3",
-      branchName: "North Branch",
-      departmentId: "3",
-      departmentName: "Administration",
-      description:
-        "Global business operations, international trade regulations, and cross-cultural management.",
-    },
-    {
-      name: "Environmental Sustainability",
-      branchId: "2",
-      branchName: "Downtown Branch",
-      departmentId: "4",
-      departmentName: "Legal & Compliance",
-      description:
-        "Sustainable business practices, environmental compliance, and corporate social responsibility.",
-    },
-    {
-      name: "Negotiation & Conflict Resolution",
-      branchId: "1",
-      branchName: "Main Office",
-      departmentId: "5",
-      departmentName: "Sales & Marketing",
-      description:
-        "Professional negotiation techniques, conflict resolution frameworks, and mediation skills.",
-    },
-    {
-      name: "Time Management & Productivity",
-      branchId: "5",
-      branchName: "East Branch",
-      departmentId: "6",
-      departmentName: "Customer Service",
-      description:
-        "Personal productivity techniques, time management tools, and workflow optimization.",
-    },
-    {
-      name: "E-commerce & Online Business",
-      branchId: "4",
-      branchName: "South Branch",
-      departmentId: "2",
-      departmentName: "Finance & Accounting",
-      description:
-        "E-commerce platform management, online marketing strategies, and digital payment systems.",
-    },
-    {
-      name: "Mobile App Development",
-      branchId: "3",
-      branchName: "North Branch",
-      departmentId: "7",
-      departmentName: "IT",
-      description:
-        "Mobile application development for iOS and Android platforms, including UI/UX principles.",
-    },
-    {
-      name: "Business Intelligence & Reporting",
-      branchId: "2",
-      branchName: "Downtown Branch",
-      departmentId: "4",
-      departmentName: "Legal & Compliance",
-      description:
-        "Business intelligence tools, data visualization, and reporting best practices.",
-    },
-  ];
-
-  // Generate additional items to reach 30 results (pagination demo)
-  const extended: TrainingType[] = [...baseTypes];
-  const extraNames = [
-    "Digital Marketing Strategy",
-    "Leadership Development Program",
-    "Data Privacy & GDPR",
-    "Agile Project Management",
-    "Cloud Computing Fundamentals",
-    "Cybersecurity Awareness",
-    "Financial Modeling",
-    "Supply Chain Optimization",
-    "Customer Experience Design",
-    "Emotional Intelligence at Work",
-    "Lean Six Sigma",
-    "Public Speaking & Presentation",
-    "Blockchain for Business",
-    "Advanced Excel Techniques",
-    "Team Building & Collaboration",
-    "Strategic Thinking",
-    "Change Management",
-    "Mentoring Skills",
-    "Business Writing",
-    "Crisis Management",
-    "Innovation & Design Thinking",
-  ];
-
-  for (let i = 0; i < extraNames.length && extended.length < 30; i++) {
-    const branch = branches[i % branches.length];
-    const dept =
-      departments.find((d) => d.branchId === branch.id) || departments[0];
-    extended.push({
-      id: (extended.length + 1).toString(),
-      name: extraNames[i],
-      branchId: branch.id,
-      branchName: branch.name,
-      departmentId: dept.id,
-      departmentName: dept.name,
-      description: `Comprehensive training on ${extraNames[i].toLowerCase()} for modern professionals.`,
-      createdAt: new Date().toISOString().split("T")[0],
-    });
-  }
-
-  return extended.map((item, idx) => ({
-    ...item,
-    id: (idx + 1).toString(),
-    createdAt: new Date().toISOString().split("T")[0],
-  }));
-};
-
-const sampleTrainingTypes = generateSampleTrainingTypes();
+function mapFromApi(p: any): TrainingType {
+  const branch = p.branch_id ?? p.branchId;
+  const dept = p.department_id ?? p.departmentId;
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    name: p.name ?? "",
+    description: p.description ?? "",
+    branchId: typeof branch === "object" ? String(branch?._id ?? branch?.id ?? "") : String(branch ?? ""),
+    branchName: typeof branch === "object" ? (branch?.branch_name ?? branch?.name ?? "") : "",
+    departmentId: typeof dept === "object" ? String(dept?._id ?? dept?.id ?? "") : String(dept ?? ""),
+    departmentName: typeof dept === "object" ? (dept?.department_name ?? dept?.name ?? "") : "",
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
 
 type SortField = "name" | "branchName" | "departmentName" | "description";
 type SortDir = "asc" | "desc";
@@ -231,8 +83,43 @@ const truncate = (str: string, length = 60) => {
 
 export const TrainingTypesSetup: React.FC = () => {
   const navigate = useNavigate();
-  const [trainingTypes, setTrainingTypes] =
-    useState<TrainingType[]>(sampleTrainingTypes);
+
+  const {
+    items: raw,
+    create,
+    update,
+    remove,
+  } = useResourceData(trainingTypeHooks, {
+    seed: sampleTrainingTypes,
+    params: { page: 1, limit: 100 },
+  });
+  const trainingTypes = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Load branch + department options
+  const branchQuery = branchHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const branchOptions = useMemo(
+    () =>
+      (branchQuery.data ?? []).map((b: any) => ({
+        id: String(b.id ?? b._id ?? ""),
+        name: b.branch_name ?? b.name ?? "",
+      })),
+    [branchQuery.data],
+  );
+  const departmentQuery = departmentHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const departmentOptions = useMemo(
+    () =>
+      (departmentQuery.data ?? []).map((d: any) => ({
+        id: String(d.id ?? d._id ?? ""),
+        name: d.department_name ?? d.name ?? "",
+        branchId: String(
+          typeof d.branch_id === "object"
+            ? (d.branch_id?._id ?? d.branch_id?.id ?? "")
+            : (d.branch_id ?? ""),
+        ),
+      })),
+    [departmentQuery.data],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -342,7 +229,7 @@ export const TrainingTypesSetup: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name.trim()) {
       showToast("Please enter training type name", "info");
       return;
@@ -356,62 +243,46 @@ export const TrainingTypesSetup: React.FC = () => {
       return;
     }
 
-    const selectedBranch = branches.find((b) => b.id === formData.branchId);
-    const selectedDept = departments.find(
-      (d) => d.id === formData.departmentId,
-    );
+    const payload: Partial<ApiTrainingType> = {
+      name: formData.name.trim(),
+      description: formData.description.trim(),
+      branch_id: formData.branchId,
+      department_id: formData.departmentId,
+    };
 
-    if (isEditing && selectedTrainingType) {
-      setTrainingTypes((prev) =>
-        prev.map((tt) =>
-          tt.id === selectedTrainingType.id
-            ? {
-                ...tt,
-                name: formData.name.trim(),
-                description: formData.description.trim(),
-                branchId: formData.branchId,
-                branchName: selectedBranch?.name || "",
-                departmentId: formData.departmentId,
-                departmentName: selectedDept?.name || "",
-              }
-            : tt,
-        ),
-      );
-      showToast("Training type updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newType: TrainingType = {
-        id: Date.now().toString(),
-        name: formData.name.trim(),
-        description: formData.description.trim(),
-        branchId: formData.branchId,
-        branchName: selectedBranch?.name || "",
-        departmentId: formData.departmentId,
-        departmentName: selectedDept?.name || "",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setTrainingTypes((prev) => [newType, ...prev]);
-      showToast("Training type created successfully!", "success");
-      setShowCreateModal(false);
+    try {
+      if (isEditing && selectedTrainingType) {
+        await update(selectedTrainingType.id, payload);
+        showToast("Training type updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Training type created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetForm();
+    } catch {
+      showToast("Could not save training type. Please try again.", "error");
     }
-    resetForm();
   };
 
-  const handleDelete = () => {
-    if (selectedTrainingType) {
-      setTrainingTypes((prev) =>
-        prev.filter((tt) => tt.id !== selectedTrainingType.id),
-      );
+  const handleDelete = async () => {
+    if (!selectedTrainingType) return;
+    try {
+      await remove(selectedTrainingType.id);
       showToast("Training type deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedTrainingType(null);
+    } catch {
+      showToast("Could not delete training type.", "error");
     }
+    setShowDeleteModal(false);
+    setSelectedTrainingType(null);
   };
 
   // Get available departments based on selected branch
-  const availableDepartments = departments.filter(
-    (d) => d.branchId === formData.branchId,
-  );
+  const availableDepartments =
+    departmentOptions.length > 0
+      ? departmentOptions.filter((d) => d.branchId === formData.branchId)
+      : [];
 
   // ─── Sort Header Component ──────────────────────────────────────────────────
 
@@ -510,7 +381,7 @@ export const TrainingTypesSetup: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select branch</option>
-              {branches.map((b) => (
+              {branchOptions.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
                 </option>
@@ -781,17 +652,15 @@ export const TrainingTypesSetup: React.FC = () => {
                   <button
                     onClick={() => {
                       setShowFilters(false);
-                      // optional branch filter – can be extended
                     }}
                     className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50"
                   >
                     All Branches
                   </button>
-                  {branches.map((b) => (
+                  {branchOptions.map((b) => (
                     <button
                       key={b.id}
                       onClick={() => {
-                        // Simple branch filter could be added, but keep as placeholder
                         setShowFilters(false);
                       }}
                       className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50"

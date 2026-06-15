@@ -5,9 +5,19 @@
  * Design matches EmployeeGoals and TrainingTypesSetup components
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  trainingHooks,
+  trainingTypeHooks,
+  trainerHooks,
+  trainingTasks as trainingTasksApi,
+  type Training as ApiTraining,
+  type TrainingTask as ApiTrainingTask,
+} from "@/services/training";
+import { branchHooks, departmentHooks } from "@/services/hrm";
 import {
   Search,
   Plus,
@@ -19,13 +29,7 @@ import {
   ChevronDown,
   ArrowUpDown,
   X,
-  Eye,
   Calendar,
-  Clock,
-  MapPin,
-  Users,
-  DollarSign,
-  FileText,
   CheckCircle,
   XCircle,
   AlertCircle,
@@ -34,28 +38,6 @@ import {
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Branch {
-  id: string;
-  name: string;
-}
-
-interface Department {
-  id: string;
-  name: string;
-  branchId: string;
-}
-
-interface TrainingType {
-  id: string;
-  name: string;
-}
-
-interface Trainer {
-  id: string;
-  name: string;
-  specialization: string;
-}
 
 interface Training {
   id: string;
@@ -91,355 +73,119 @@ interface Task {
   createdAt: string;
 }
 
-// ─── Sample Data (matches screenshots) ───────────────────────────────────────
+// ─── Sample Data (API snake_case seed) ────────────────────────────────────────
 
-const branches: Branch[] = [
-  { id: "1", name: "Main Office" },
-  { id: "2", name: "Downtown Branch" },
-  { id: "3", name: "North Branch" },
-  { id: "4", name: "South Branch" },
-  { id: "5", name: "East Branch" },
-  { id: "6", name: "West Branch" },
-];
-
-const departments: Department[] = [
-  { id: "1", name: "Operations", branchId: "5" },
-  { id: "2", name: "Finance & Accounting", branchId: "4" },
-  { id: "3", name: "Administration", branchId: "3" },
-  { id: "4", name: "Legal & Compliance", branchId: "2" },
-  { id: "5", name: "Sales & Marketing", branchId: "1" },
-  { id: "6", name: "Customer Service", branchId: "5" },
-  { id: "7", name: "IT", branchId: "3" },
-  { id: "8", name: "HR", branchId: "1" },
-];
-
-const trainingTypes: TrainingType[] = [
-  { id: "1", name: "Artificial Intelligence & Machine Learning" },
-  { id: "2", name: "Risk Management & Assessment" },
-  { id: "3", name: "International Business & Trade" },
-  { id: "4", name: "Environmental Sustainability" },
-  { id: "5", name: "Negotiation & Conflict Resolution" },
-  { id: "6", name: "Time Management & Productivity" },
-  { id: "7", name: "E-commerce & Online Business" },
-  { id: "8", name: "Mobile App Development" },
-  { id: "9", name: "Business Intelligence & Reporting" },
-];
-
-const trainers: Trainer[] = [
-  {
-    id: "1",
-    name: "Dr. Andrew Carter",
-    specialization: "AI & Machine Learning",
-  },
-  { id: "2", name: "Michelle Nelson", specialization: "Risk Management" },
-  { id: "3", name: "Steven Green", specialization: "International Trade" },
-  { id: "4", name: "Kimberly Baker", specialization: "Sustainability" },
-  { id: "5", name: "Jonathan Adams", specialization: "Negotiation" },
-  { id: "6", name: "Megan Scott", specialization: "Productivity" },
-  { id: "7", name: "Gregory King", specialization: "E-commerce" },
-  { id: "8", name: "Samantha Young", specialization: "Mobile Development" },
-  { id: "9", name: "Brian Allen", specialization: "Business Intelligence" },
-];
-
-const sampleTrainings: Training[] = [
+const sampleTrainings: ApiTraining[] = [
   {
     id: "1",
     title: "Artificial Intelligence and Machine Learning Applications",
-    trainingTypeId: "1",
-    trainingTypeName: "Artificial Intelligence & Machine Learning",
-    trainerId: "1",
-    trainerName: "Dr. Andrew Carter",
-    branchId: "5",
-    branchName: "East Branch",
-    departmentId: "1",
-    departmentName: "Operations",
-    startDate: "2026-02-05",
-    endDate: "2026-02-08",
-    startTime: "10:00",
-    endTime: "18:00",
+    training_type_id: "1",
+    trainer_id: "1",
+    branch_id: "5",
+    department_id: "1",
+    start_date: "2026-02-05",
+    end_date: "2026-02-08",
+    start_time: "10:00",
+    end_time: "18:00",
     location: "AI and ML Research Center",
-    maxParticipants: 15,
-    description:
-      "AI fundamentals and machine learning training covering practical implementation strategies, intelligent automation solutions, and AI integration for modern business applications and competitive advantage.",
+    max_participants: 15,
+    description: "AI fundamentals and machine learning training.",
     cost: 200,
-    status: "Scheduled",
-    createdAt: "2025-12-01",
+    status: "scheduled",
   },
   {
     id: "2",
     title: "Risk Management and Business Continuity",
-    trainingTypeId: "2",
-    trainingTypeName: "Risk Management & Assessment",
-    trainerId: "2",
-    trainerName: "Michelle Nelson",
-    branchId: "4",
-    branchName: "South Branch",
-    departmentId: "2",
-    departmentName: "Finance & Accounting",
-    startDate: "2026-01-30",
-    endDate: "2026-02-01",
-    startTime: "09:00",
-    endTime: "17:00",
+    training_type_id: "2",
+    trainer_id: "2",
+    branch_id: "4",
+    department_id: "2",
+    start_date: "2026-01-30",
+    end_date: "2026-02-01",
+    start_time: "09:00",
+    end_time: "17:00",
     location: "Risk Management Institute",
-    maxParticipants: 20,
-    description:
-      "Comprehensive risk assessment and business continuity planning.",
+    max_participants: 20,
+    description: "Comprehensive risk assessment and business continuity planning.",
     cost: 250,
-    status: "Completed",
-    createdAt: "2025-11-15",
+    status: "completed",
   },
   {
     id: "3",
     title: "International Business and Global Trade",
-    trainingTypeId: "3",
-    trainingTypeName: "International Business & Trade",
-    trainerId: "3",
-    trainerName: "Steven Green",
-    branchId: "3",
-    branchName: "North Branch",
-    departmentId: "3",
-    departmentName: "Administration",
-    startDate: "2026-01-24",
-    endDate: "2026-01-26",
-    startTime: "10:00",
-    endTime: "16:00",
+    training_type_id: "3",
+    trainer_id: "3",
+    branch_id: "3",
+    department_id: "3",
+    start_date: "2026-01-24",
+    end_date: "2026-01-26",
+    start_time: "10:00",
+    end_time: "16:00",
     location: "International Business Center",
-    maxParticipants: 12,
-    description:
-      "Global trade regulations, cross‑cultural management, and export strategies.",
+    max_participants: 12,
+    description: "Global trade regulations, cross-cultural management.",
     cost: 300,
-    status: "Scheduled",
-    createdAt: "2025-12-10",
-  },
-  {
-    id: "4",
-    title: "Environmental Sustainability and Green Practices",
-    trainingTypeId: "4",
-    trainingTypeName: "Environmental Sustainability",
-    trainerId: "4",
-    trainerName: "Kimberly Baker",
-    branchId: "2",
-    branchName: "Downtown Branch",
-    departmentId: "4",
-    departmentName: "Legal & Compliance",
-    startDate: "2026-01-18",
-    endDate: "2026-01-23",
-    startTime: "09:30",
-    endTime: "17:30",
-    location: "Sustainability Training Center",
-    maxParticipants: 18,
-    description:
-      "Sustainable business practices, environmental compliance, and CSR.",
-    cost: 220,
-    status: "Cancelled",
-    createdAt: "2025-11-20",
-  },
-  {
-    id: "5",
-    title: "Advanced Negotiation and Conflict Resolution",
-    trainingTypeId: "5",
-    trainingTypeName: "Negotiation & Conflict Resolution",
-    trainerId: "5",
-    trainerName: "Jonathan Adams",
-    branchId: "1",
-    branchName: "Main Office",
-    departmentId: "5",
-    departmentName: "Sales & Marketing",
-    startDate: "2026-01-12",
-    endDate: "2026-01-13",
-    startTime: "10:00",
-    endTime: "18:00",
-    location: "Negotiation Skills Center",
-    maxParticipants: 10,
-    description:
-      "Professional negotiation techniques, conflict resolution frameworks, and mediation skills.",
-    cost: 180,
-    status: "Completed",
-    createdAt: "2025-11-05",
-  },
-  {
-    id: "6",
-    title: "Time Management and Personal Productivity",
-    trainingTypeId: "6",
-    trainingTypeName: "Time Management & Productivity",
-    trainerId: "6",
-    trainerName: "Megan Scott",
-    branchId: "5",
-    branchName: "East Branch",
-    departmentId: "6",
-    departmentName: "Customer Service",
-    startDate: "2026-01-06",
-    endDate: "2026-01-09",
-    startTime: "09:00",
-    endTime: "13:00",
-    location: "Productivity Training Room",
-    maxParticipants: 25,
-    description:
-      "Personal productivity techniques, time management tools, and workflow optimization.",
-    cost: 150,
-    status: "Scheduled",
-    createdAt: "2025-12-05",
-  },
-  {
-    id: "7",
-    title: "E-commerce and Digital Business Strategy",
-    trainingTypeId: "7",
-    trainingTypeName: "E-commerce & Online Business",
-    trainerId: "7",
-    trainerName: "Gregory King",
-    branchId: "4",
-    branchName: "South Branch",
-    departmentId: "2",
-    departmentName: "Finance & Accounting",
-    startDate: "2025-12-31",
-    endDate: "2026-01-01",
-    startTime: "10:00",
-    endTime: "18:00",
-    location: "E-commerce Training Center",
-    maxParticipants: 15,
-    description:
-      "E‑commerce platform management, online marketing strategies, and digital payment systems.",
-    cost: 280,
-    status: "Ongoing",
-    createdAt: "2025-11-25",
-  },
-  {
-    id: "8",
-    title: "Mobile Application Development Bootcamp",
-    trainingTypeId: "8",
-    trainingTypeName: "Mobile App Development",
-    trainerId: "8",
-    trainerName: "Samantha Young",
-    branchId: "3",
-    branchName: "North Branch",
-    departmentId: "7",
-    departmentName: "IT",
-    startDate: "2025-12-25",
-    endDate: "2025-12-27",
-    startTime: "09:00",
-    endTime: "17:00",
-    location: "Mobile Development Studio",
-    maxParticipants: 12,
-    description:
-      "iOS and Android development, UI/UX principles, and app deployment.",
-    cost: 350,
-    status: "Scheduled",
-    createdAt: "2025-11-18",
-  },
-  {
-    id: "9",
-    title: "Business Intelligence and Reporting Systems",
-    trainingTypeId: "9",
-    trainingTypeName: "Business Intelligence & Reporting",
-    trainerId: "9",
-    trainerName: "Brian Allen",
-    branchId: "2",
-    branchName: "Downtown Branch",
-    departmentId: "4",
-    departmentName: "Legal & Compliance",
-    startDate: "2025-12-19",
-    endDate: "2025-12-24",
-    startTime: "10:00",
-    endTime: "16:00",
-    location: "Business Intelligence Lab",
-    maxParticipants: 20,
-    description: "BI tools, data visualization, and reporting best practices.",
-    cost: 240,
-    status: "Scheduled",
-    createdAt: "2025-11-10",
+    status: "scheduled",
   },
 ];
 
-// Generate extra trainings to reach 30 (pagination demo)
-for (let i = 10; i <= 30; i++) {
-  const type = trainingTypes[i % trainingTypes.length];
-  const trainer = trainers[i % trainers.length];
-  const branch = branches[i % branches.length];
-  const dept =
-    departments.find((d) => d.branchId === branch.id) || departments[0];
-  sampleTrainings.push({
-    id: i.toString(),
-    title: `${type.name} Training ${i}`,
-    trainingTypeId: type.id,
-    trainingTypeName: type.name,
-    trainerId: trainer.id,
-    trainerName: trainer.name,
-    branchId: branch.id,
-    branchName: branch.name,
-    departmentId: dept.id,
-    departmentName: dept.name,
-    startDate: `2026-${String((i % 12) + 1).padStart(2, "0")}-${String((i % 28) + 1).padStart(2, "0")}`,
-    endDate: `2026-${String((i % 12) + 1).padStart(2, "0")}-${String((i % 28) + 3).padStart(2, "0")}`,
-    startTime: "09:00",
-    endTime: "17:00",
-    location: `${branch.name} Training Center`,
-    maxParticipants: 15 + (i % 10),
-    description: `Comprehensive training on ${type.name.toLowerCase()}.`,
-    cost: 150 + i * 5,
-    status:
-      i % 4 === 0
-        ? "Completed"
-        : i % 5 === 0
-          ? "Cancelled"
-          : i % 3 === 0
-            ? "Ongoing"
-            : "Scheduled",
-    createdAt: "2025-10-01",
-  });
+// ─── API ↔ display mapping ─────────────────────────────────────────────────────
+
+function mapFromApi(p: any): Training {
+  const trainingType = p.training_type_id ?? p.trainingTypeId;
+  const trainer = p.trainer_id ?? p.trainerId;
+  const branch = p.branch_id ?? p.branchId;
+  const dept = p.department_id ?? p.departmentId;
+  const rawStatus = (p.status ?? "scheduled").toLowerCase();
+  const statusMap: Record<string, Training["status"]> = {
+    scheduled: "Scheduled",
+    ongoing: "Ongoing",
+    completed: "Completed",
+    cancelled: "Cancelled",
+  };
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    title: p.title ?? "",
+    trainingTypeId: typeof trainingType === "object" ? String(trainingType?._id ?? trainingType?.id ?? "") : String(trainingType ?? ""),
+    trainingTypeName: typeof trainingType === "object" ? (trainingType?.name ?? trainingType?.title ?? "") : "",
+    trainerId: typeof trainer === "object" ? String(trainer?._id ?? trainer?.id ?? "") : String(trainer ?? ""),
+    trainerName: typeof trainer === "object" ? (trainer?.name ?? "") : "",
+    branchId: typeof branch === "object" ? String(branch?._id ?? branch?.id ?? "") : String(branch ?? ""),
+    branchName: typeof branch === "object" ? (branch?.branch_name ?? branch?.name ?? "") : "",
+    departmentId: typeof dept === "object" ? String(dept?._id ?? dept?.id ?? "") : String(dept ?? ""),
+    departmentName: typeof dept === "object" ? (dept?.department_name ?? dept?.name ?? "") : "",
+    startDate: (p.start_date ?? p.startDate ?? "").slice(0, 10),
+    endDate: (p.end_date ?? p.endDate ?? "").slice(0, 10),
+    startTime: p.start_time ?? p.startTime ?? "",
+    endTime: p.end_time ?? p.endTime ?? "",
+    location: p.location ?? "",
+    maxParticipants: Number(p.max_participants ?? p.maxParticipants ?? 0),
+    description: p.description ?? "",
+    cost: Number(p.cost ?? 0),
+    status: statusMap[rawStatus] ?? "Scheduled",
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
 }
 
-const sampleTasks: Task[] = [
-  {
-    id: "1",
-    trainingId: "1",
-    title: "Group Discussion Participation",
-    assignedTo: "John Smith",
-    dueDate: "2026-02-08",
-    status: "Pending",
-    description: "Participate in group discussion on AI ethics.",
-    createdAt: "2026-01-01",
-  },
-  {
-    id: "2",
-    trainingId: "1",
-    title: "Complete Module 1 Exercises",
-    assignedTo: "John Smith",
-    dueDate: "2026-02-07",
-    status: "Pending",
-    description: "Complete all exercises in Module 1.",
-    createdAt: "2026-01-01",
-  },
-  {
-    id: "3",
-    trainingId: "1",
-    title: "Attend Opening Session",
-    assignedTo: "John Smith",
-    dueDate: "2026-02-05",
-    status: "Completed",
-    description: "Attend the opening session of the training.",
-    createdAt: "2026-01-01",
-  },
-  {
-    id: "4",
-    trainingId: "1",
-    title: "Review Training Materials",
-    assignedTo: "John Smith",
-    dueDate: "2026-01-31",
-    status: "Completed",
-    description: "Review all pre‑training materials.",
-    createdAt: "2026-01-01",
-  },
-  {
-    id: "5",
-    trainingId: "1",
-    title: "Pre-Training Assessment",
-    assignedTo: "John Smith",
-    dueDate: "2026-01-29",
-    status: "Completed",
-    description: "Complete the pre‑training assessment.",
-    createdAt: "2026-01-01",
-  },
-];
+function mapTaskFromApi(t: any): Task {
+  const assignedTo = t.assigned_to ?? t.assignedTo;
+  const rawStatus = (t.status ?? "pending").toLowerCase();
+  const statusMap: Record<string, Task["status"]> = {
+    pending: "Pending",
+    "in progress": "In Progress",
+    completed: "Completed",
+  };
+  return {
+    id: String(t.id ?? t._id ?? ""),
+    trainingId: String(t.training_id ?? t.trainingId ?? ""),
+    title: t.title ?? "",
+    assignedTo: typeof assignedTo === "object" ? (assignedTo?.name ?? "") : (assignedTo ?? ""),
+    dueDate: (t.due_date ?? t.dueDate ?? "").slice(0, 10),
+    status: statusMap[rawStatus] ?? "Pending",
+    description: t.description ?? "",
+    createdAt: (t.createdAt ?? t.created_at ?? "").slice(0, 10),
+  };
+}
 
 type SortField =
   | "title"
@@ -456,8 +202,43 @@ type SortDir = "asc" | "desc";
 
 export const TrainingList: React.FC = () => {
   const navigate = useNavigate();
-  const [trainings, setTrainings] = useState<Training[]>(sampleTrainings);
-  const [tasks, setTasks] = useState<Task[]>(sampleTasks);
+
+  const {
+    items: raw,
+    update,
+  } = useResourceData(trainingHooks, {
+    seed: sampleTrainings,
+    params: { page: 1, limit: 100 },
+  });
+  const trainings = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Load dropdown options
+  const trainingTypeQuery = trainingTypeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const trainingTypeOptions = useMemo(
+    () => (trainingTypeQuery.data ?? []).map((t: any) => ({ id: String(t.id ?? t._id ?? ""), name: t.name ?? "" })),
+    [trainingTypeQuery.data],
+  );
+  const trainerQuery = trainerHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const trainerOptions = useMemo(
+    () => (trainerQuery.data ?? []).map((t: any) => ({ id: String(t.id ?? t._id ?? ""), name: t.name ?? "" })),
+    [trainerQuery.data],
+  );
+  const branchQuery = branchHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const branchOptions = useMemo(
+    () => (branchQuery.data ?? []).map((b: any) => ({ id: String(b.id ?? b._id ?? ""), name: b.branch_name ?? b.name ?? "" })),
+    [branchQuery.data],
+  );
+  const departmentQuery = departmentHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const departmentOptions = useMemo(
+    () =>
+      (departmentQuery.data ?? []).map((d: any) => ({
+        id: String(d.id ?? d._id ?? ""),
+        name: d.department_name ?? d.name ?? "",
+        branchId: String(typeof d.branch_id === "object" ? (d.branch_id?._id ?? d.branch_id?.id ?? "") : (d.branch_id ?? "")),
+      })),
+    [departmentQuery.data],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -467,15 +248,17 @@ export const TrainingList: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
 
   // View states
-  const [selectedTraining, setSelectedTraining] = useState<Training | null>(
-    null,
-  );
+  const [selectedTraining, setSelectedTraining] = useState<Training | null>(null);
   const [showTasksView, setShowTasksView] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [showEditTaskModal, setShowEditTaskModal] = useState(false);
   const [showDeleteTaskModal, setShowDeleteTaskModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+
+  // Tasks state (loaded per-training from API)
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
 
   // Form states
   const [editFormData, setEditFormData] = useState({
@@ -502,6 +285,27 @@ export const TrainingList: React.FC = () => {
     status: "Pending" as Task["status"],
     description: "",
   });
+
+  // ─── Load tasks when entering tasks view ──────────────────────────────────
+
+  const loadTasks = useCallback(async (trainingId: string) => {
+    setTasksLoading(true);
+    try {
+      const data = await trainingTasksApi.listByTraining(trainingId, { page: 1, limit: 100 });
+      setTasks((data as any[]).map(mapTaskFromApi));
+    } catch {
+      // keep empty on error; user can still create
+      setTasks([]);
+    } finally {
+      setTasksLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showTasksView && selectedTraining) {
+      loadTasks(selectedTraining.id);
+    }
+  }, [showTasksView, selectedTraining, loadTasks]);
 
   // ─── Sorting & Filtering ───────────────────────────────────────────────────
 
@@ -549,10 +353,8 @@ export const TrainingList: React.FC = () => {
     currentPage * perPage,
   );
 
-  // Training tasks
-  const trainingTasks = tasks.filter(
-    (t) => t.trainingId === selectedTraining?.id,
-  );
+  // Tasks for current training
+  const trainingTasksList = tasks;
 
   // ─── Training CRUD ─────────────────────────────────────────────────────────
 
@@ -577,48 +379,31 @@ export const TrainingList: React.FC = () => {
     setShowEditModal(true);
   };
 
-  const handleUpdateTraining = () => {
+  const handleUpdateTraining = async () => {
     if (!selectedTraining) return;
-    const selectedType = trainingTypes.find(
-      (t) => t.id === editFormData.trainingTypeId,
-    );
-    const selectedTrainer = trainers.find(
-      (t) => t.id === editFormData.trainerId,
-    );
-    const selectedBranch = branches.find((b) => b.id === editFormData.branchId);
-    const selectedDept = departments.find(
-      (d) => d.id === editFormData.departmentId,
-    );
-
-    setTrainings((prev) =>
-      prev.map((t) =>
-        t.id === selectedTraining.id
-          ? {
-              ...t,
-              title: editFormData.title,
-              trainingTypeId: editFormData.trainingTypeId,
-              trainingTypeName: selectedType?.name || "",
-              trainerId: editFormData.trainerId,
-              trainerName: selectedTrainer?.name || "",
-              branchId: editFormData.branchId,
-              branchName: selectedBranch?.name || "",
-              departmentId: editFormData.departmentId,
-              departmentName: selectedDept?.name || "",
-              startDate: editFormData.startDate,
-              endDate: editFormData.endDate,
-              startTime: editFormData.startTime,
-              endTime: editFormData.endTime,
-              location: editFormData.location,
-              maxParticipants: editFormData.maxParticipants,
-              description: editFormData.description,
-              cost: editFormData.cost,
-              status: editFormData.status,
-            }
-          : t,
-      ),
-    );
-    showToast("Training updated successfully!", "success");
-    setShowEditModal(false);
+    const payload: Partial<ApiTraining> = {
+      title: editFormData.title,
+      training_type_id: editFormData.trainingTypeId,
+      trainer_id: editFormData.trainerId,
+      branch_id: editFormData.branchId,
+      department_id: editFormData.departmentId,
+      start_date: editFormData.startDate,
+      end_date: editFormData.endDate,
+      start_time: editFormData.startTime,
+      end_time: editFormData.endTime,
+      location: editFormData.location,
+      max_participants: editFormData.maxParticipants,
+      description: editFormData.description,
+      cost: editFormData.cost,
+      status: editFormData.status.toLowerCase() as ApiTraining["status"],
+    };
+    try {
+      await update(selectedTraining.id, payload);
+      showToast("Training updated successfully!", "success");
+      setShowEditModal(false);
+    } catch {
+      showToast("Could not update training. Please try again.", "error");
+    }
   };
 
   // ─── Task CRUD ─────────────────────────────────────────────────────────────
@@ -646,7 +431,7 @@ export const TrainingList: React.FC = () => {
     setShowEditTaskModal(true);
   };
 
-  const handleSaveTask = () => {
+  const handleSaveTask = async () => {
     if (!taskFormData.title.trim()) {
       showToast("Please enter task title", "info");
       return;
@@ -660,41 +445,30 @@ export const TrainingList: React.FC = () => {
       return;
     }
 
-    if (selectedTask) {
-      // Edit existing task
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === selectedTask.id
-            ? {
-                ...t,
-                title: taskFormData.title,
-                assignedTo: taskFormData.assignedTo,
-                dueDate: taskFormData.dueDate,
-                status: taskFormData.status,
-                description: taskFormData.description,
-              }
-            : t,
-        ),
-      );
-      showToast("Task updated successfully!", "success");
-      setShowEditTaskModal(false);
-      setSelectedTask(null);
-    } else {
-      // Create new task
-      const newTask: Task = {
-        id: Date.now().toString(),
-        trainingId: selectedTraining!.id,
-        title: taskFormData.title,
-        assignedTo: taskFormData.assignedTo,
-        dueDate: taskFormData.dueDate,
-        status: taskFormData.status,
-        description: taskFormData.description,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setTasks((prev) => [...prev, newTask]);
-      showToast("Task created successfully!", "success");
-      setShowCreateTaskModal(false);
+    const body: Partial<ApiTrainingTask> = {
+      title: taskFormData.title,
+      description: taskFormData.description,
+      due_date: taskFormData.dueDate,
+      assigned_to: taskFormData.assignedTo,
+    };
+
+    try {
+      if (selectedTask) {
+        await trainingTasksApi.edit(selectedTask.id, body);
+        showToast("Task updated successfully!", "success");
+        setShowEditTaskModal(false);
+        setSelectedTask(null);
+      } else {
+        await trainingTasksApi.create(selectedTraining!.id, body);
+        showToast("Task created successfully!", "success");
+        setShowCreateTaskModal(false);
+      }
+      // Reload tasks
+      if (selectedTraining) await loadTasks(selectedTraining.id);
+    } catch {
+      showToast("Could not save task. Please try again.", "error");
     }
+
     setTaskFormData({
       title: "",
       assignedTo: "",
@@ -704,13 +478,17 @@ export const TrainingList: React.FC = () => {
     });
   };
 
-  const handleDeleteTask = () => {
-    if (selectedTask) {
-      setTasks((prev) => prev.filter((t) => t.id !== selectedTask.id));
+  const handleDeleteTask = async () => {
+    if (!selectedTask) return;
+    try {
+      await trainingTasksApi.remove(selectedTask.id);
       showToast("Task deleted successfully!", "success");
-      setShowDeleteTaskModal(false);
-      setSelectedTask(null);
+      if (selectedTraining) await loadTasks(selectedTraining.id);
+    } catch {
+      showToast("Could not delete task.", "error");
     }
+    setShowDeleteTaskModal(false);
+    setSelectedTask(null);
   };
 
   const getStatusColor = (status: string) => {
@@ -746,6 +524,11 @@ export const TrainingList: React.FC = () => {
         return null;
     }
   };
+
+  // Departments filtered by selected branch
+  const availableDepts = departmentOptions.filter(
+    (d) => d.branchId === editFormData.branchId,
+  );
 
   // Sort header component
   const SortHeader: React.FC<{ field: SortField; label: string }> = ({
@@ -818,7 +601,8 @@ export const TrainingList: React.FC = () => {
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
               >
-                {trainingTypes.map((t) => (
+                <option value="">Select type</option>
+                {trainingTypeOptions.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
                   </option>
@@ -839,7 +623,8 @@ export const TrainingList: React.FC = () => {
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
               >
-                {trainers.map((t) => (
+                <option value="">Select trainer</option>
+                {trainerOptions.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
                   </option>
@@ -861,7 +646,8 @@ export const TrainingList: React.FC = () => {
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
               >
-                {branches.map((b) => (
+                <option value="">Select branch</option>
+                {branchOptions.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
                   </option>
@@ -888,13 +674,11 @@ export const TrainingList: React.FC = () => {
                     ? "Select department"
                     : "Select branch first"}
                 </option>
-                {departments
-                  .filter((d) => d.branchId === editFormData.branchId)
-                  .map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
+                {availableDepts.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -1026,7 +810,7 @@ export const TrainingList: React.FC = () => {
                 onChange={(e) =>
                   setEditFormData({
                     ...editFormData,
-                    status: e.target.value as any,
+                    status: e.target.value as Training["status"],
                   })
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
@@ -1123,7 +907,7 @@ export const TrainingList: React.FC = () => {
               onChange={(e) =>
                 setTaskFormData({
                   ...taskFormData,
-                  status: e.target.value as any,
+                  status: e.target.value as Task["status"],
                 })
               }
               className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
@@ -1233,7 +1017,7 @@ export const TrainingList: React.FC = () => {
               onChange={(e) =>
                 setTaskFormData({
                   ...taskFormData,
-                  status: e.target.value as any,
+                  status: e.target.value as Task["status"],
                 })
               }
               className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
@@ -1406,7 +1190,13 @@ export const TrainingList: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {trainingTasks.map((task) => (
+                    {tasksLoading ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                          Loading tasks…
+                        </td>
+                      </tr>
+                    ) : trainingTasksList.map((task) => (
                       <tr key={task.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 font-medium text-gray-900">
                           {task.title}
@@ -1446,7 +1236,7 @@ export const TrainingList: React.FC = () => {
                         </td>
                       </tr>
                     ))}
-                    {trainingTasks.length === 0 && (
+                    {!tasksLoading && trainingTasksList.length === 0 && (
                       <tr>
                         <td
                           colSpan={5}

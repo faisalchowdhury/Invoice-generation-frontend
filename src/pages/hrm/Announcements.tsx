@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useMemo } from "react";
+import { refLabel } from "@/services/_http";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
 import {
@@ -19,15 +20,18 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Calendar,
-  Building2,
   AlertCircle,
   CheckCircle,
   Clock,
   Flag,
-  Users,
-  FileText,
 } from "lucide-react";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  announcementHooks,
+  announcementCategoryHooks,
+  departmentHooks,
+  hrmStatusActions,
+} from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,162 +49,140 @@ interface Announcement {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (API-shaped seed) ───────────────────────────────────────────
 
-const sampleAnnouncements: Announcement[] = [
+const sampleAnnouncementsSeed = [
   {
     id: "1",
     title: "Year-End Performance Bonus Distribution",
-    category: "General Company Information",
-    department: ["Quality Assurance", "Customer Service"],
-    startDate: "2026-01-13",
-    endDate: "2026-03-28",
+    announcement_category_id: "General Company Information",
+    departments: ["Quality Assurance", "Customer Service"],
+    start_date: "2026-01-13",
+    end_date: "2026-03-28",
     priority: "High",
     status: "Active",
     description:
       "Annual performance bonus calculation and distribution based on individual achievements, department goals, and company performance metrics for eligible employees.",
-    approvedBy: "Mark Allen",
-    createdAt: "2026-01-10",
   },
   {
     id: "2",
     title: "Digital Communication Platform Launch",
-    category: "Vendor & Supplier Communications",
-    department: ["IT", "Marketing"],
-    startDate: "2026-01-07",
-    endDate: "2026-04-12",
+    announcement_category_id: "Vendor & Supplier Communications",
+    departments: ["IT", "Marketing"],
+    start_date: "2026-01-07",
+    end_date: "2026-04-12",
     priority: "Medium",
     status: "Draft",
     description:
       "Launch of new digital communication platform for improved collaboration.",
-    approvedBy: "",
-    createdAt: "2026-01-05",
   },
   {
     id: "3",
     title: "Company Social Responsibility Initiative",
-    category: "Social & Community Engagement",
-    department: ["HR", "Administration"],
-    startDate: "2026-01-02",
-    endDate: "2026-08-30",
+    announcement_category_id: "Social & Community Engagement",
+    departments: ["HR", "Administration"],
+    start_date: "2026-01-02",
+    end_date: "2026-08-30",
     priority: "Low",
     status: "Active",
     description: "CSR initiative focusing on community development.",
-    approvedBy: "Matthew Clark",
-    createdAt: "2025-12-30",
   },
   {
     id: "4",
     title: "Leadership Development Program",
-    category: "Career Development Opportunities",
-    department: ["Human Resources", "Executive"],
-    startDate: "2025-12-29",
-    endDate: "2026-01-27",
+    announcement_category_id: "Career Development Opportunities",
+    departments: ["Human Resources", "Executive"],
+    start_date: "2025-12-29",
+    end_date: "2026-01-27",
     priority: "Medium",
     status: "Inactive",
     description: "Leadership training program for emerging leaders.",
-    approvedBy: "",
-    createdAt: "2025-12-26",
   },
   {
     id: "5",
     title: "Workplace Safety Inspection Schedule",
-    category: "Performance Review & Feedback",
-    department: ["Operations", "Facilities"],
-    startDate: "2025-12-24",
-    endDate: "2027-02-11",
+    announcement_category_id: "Performance Review & Feedback",
+    departments: ["Operations", "Facilities"],
+    start_date: "2025-12-24",
+    end_date: "2027-02-11",
     priority: "High",
     status: "Active",
     description: "Regular workplace safety inspections.",
-    approvedBy: "Christopher Lee",
-    createdAt: "2025-12-21",
   },
   {
     id: "6",
     title: "Cross-Department Collaboration Project",
-    category: "Remote Work & Flexibility Updates",
-    department: ["Sales", "Marketing"],
-    startDate: "2025-12-18",
-    endDate: "2026-05-07",
+    announcement_category_id: "Remote Work & Flexibility Updates",
+    departments: ["Sales", "Marketing"],
+    start_date: "2025-12-18",
+    end_date: "2026-05-07",
     priority: "Medium",
     status: "Active",
     description: "Cross-departmental collaboration initiative.",
-    approvedBy: "James Garcia",
-    createdAt: "2025-12-15",
   },
   {
     id: "7",
     title: "Technology Upgrade Implementation",
-    category: "Diversity & Inclusion Initiatives",
-    department: ["IT", "Finance"],
-    startDate: "2025-12-14",
-    endDate: "2026-07-11",
+    announcement_category_id: "Diversity & Inclusion Initiatives",
+    departments: ["IT", "Finance"],
+    start_date: "2025-12-14",
+    end_date: "2026-07-11",
     priority: "High",
     status: "Draft",
     description: "Major technology infrastructure upgrade.",
-    approvedBy: "",
-    createdAt: "2025-12-11",
   },
   {
     id: "8",
     title: "Employee Feedback Survey Campaign",
-    category: "Emergency & Crisis Communications",
-    department: ["HR", "Administration"],
-    startDate: "2025-12-09",
-    endDate: "2026-03-13",
+    announcement_category_id: "Emergency & Crisis Communications",
+    departments: ["HR", "Administration"],
+    start_date: "2025-12-09",
+    end_date: "2026-03-13",
     priority: "Medium",
     status: "Active",
     description: "Annual employee feedback survey.",
-    approvedBy: "David Wilson",
-    createdAt: "2025-12-06",
   },
   {
     id: "9",
     title: "Quality Management System Certification",
-    category: "Market & Industry Insights",
-    department: ["Quality Assurance", "Operations"],
-    startDate: "2025-12-03",
-    endDate: "2026-06-11",
+    announcement_category_id: "Market & Industry Insights",
+    departments: ["Quality Assurance", "Operations"],
+    start_date: "2025-12-03",
+    end_date: "2026-06-11",
     priority: "High",
     status: "Active",
     description: "ISO certification process and training.",
-    approvedBy: "Michael Brown",
-    createdAt: "2025-11-30",
   },
 ];
 
-const categories = [
-  "General Company Information",
-  "Vendor & Supplier Communications",
-  "Social & Community Engagement",
-  "Career Development Opportunities",
-  "Performance Review & Feedback",
-  "Remote Work & Flexibility Updates",
-  "Diversity & Inclusion Initiatives",
-  "Emergency & Crisis Communications",
-  "Market & Industry Insights",
-];
-
-const departments = [
-  "Quality Assurance",
-  "Customer Service",
-  "IT",
-  "Marketing",
-  "HR",
-  "Administration",
-  "Human Resources",
-  "Executive",
-  "Operations",
-  "Facilities",
-  "Sales",
-  "Finance",
-  "Legal",
-];
-
 const priorities = ["High", "Medium", "Low"];
-const statuses = ["Active", "Draft", "Inactive"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function mapFromApi(p: any): Announcement {
+  const acRef = p.announcement_category_id;
+  const depts = p.departments ?? p.department ?? [];
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    title: p.title ?? "",
+    category:
+      typeof acRef === "object"
+        ? acRef?.name ?? String(acRef?._id ?? "")
+        : String(acRef ?? p.category ?? ""),
+    department: Array.isArray(depts)
+      ? depts.map((d: any) =>
+          typeof d === "object" ? d?.department_name ?? d?.name ?? String(d?._id ?? "") : String(d),
+        )
+      : [],
+    startDate: (p.start_date ?? p.startDate ?? "").slice(0, 10),
+    endDate: (p.end_date ?? p.endDate ?? "").slice(0, 10),
+    priority: p.priority ?? "Medium",
+    status: p.status ?? "Draft",
+    description: p.description ?? "",
+    approvedBy: refLabel(p.approved_by ?? p.approvedBy),
+    createdAt: (p.created_at ?? p.createdAt ?? "").slice(0, 10),
+  };
+}
 
 const formatDate = (dateStr: string) => {
   if (!dateStr) return "-";
@@ -226,8 +208,28 @@ type SortDir = "asc" | "desc";
 
 export const Announcements: React.FC = () => {
   const navigate = useNavigate();
-  const [announcements, setAnnouncements] =
-    useState<Announcement[]>(sampleAnnouncements);
+
+  const { items: raw, create, update, remove, refetch } = useResourceData(
+    announcementHooks,
+    { seed: sampleAnnouncementsSeed as any[], params: { page: 1, limit: 100 } },
+  );
+  const announcements = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Load options from API
+  const acListResult = announcementCategoryHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const acOptions: string[] = useMemo(() => {
+    const data = acListResult.data as any[] | undefined;
+    if (!data) return [];
+    return data.map((e: any) => e.name ?? String(e._id ?? e.id ?? ""));
+  }, [acListResult.data]);
+
+  const deptListResult = departmentHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const deptOptions: string[] = useMemo(() => {
+    const data = deptListResult.data as any[] | undefined;
+    if (!data) return [];
+    return data.map((e: any) => e.department_name ?? e.name ?? String(e._id ?? e.id ?? ""));
+  }, [deptListResult.data]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -372,17 +374,20 @@ export const Announcements: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleStatusUpdate = (id: string, newStatus: "Active" | "Inactive") => {
-    setAnnouncements((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, status: newStatus } : a)),
-    );
-    showToast(
-      `Announcement ${newStatus.toLowerCase()}d successfully!`,
-      "success",
-    );
+  const handleStatusUpdate = async (id: string, newStatus: "Active" | "Inactive") => {
+    try {
+      await hrmStatusActions.announcement(id, newStatus);
+      await refetch();
+      showToast(
+        `Announcement ${newStatus.toLowerCase()}d successfully!`,
+        "success",
+      );
+    } catch {
+      showToast("Failed to update status", "error");
+    }
   };
 
-  const handleSaveAnnouncement = () => {
+  const handleSaveAnnouncement = async () => {
     if (!announcementFormData.title) {
       showToast("Please enter title", "info");
       return;
@@ -408,54 +413,42 @@ export const Announcements: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedAnnouncement) {
-      setAnnouncements((prev) =>
-        prev.map((a) =>
-          a.id === selectedAnnouncement.id
-            ? {
-                ...a,
-                title: announcementFormData.title,
-                category: announcementFormData.category,
-                department: announcementFormData.department,
-                priority: announcementFormData.priority,
-                startDate: announcementFormData.startDate,
-                endDate: announcementFormData.endDate,
-                description: announcementFormData.description,
-              }
-            : a,
-        ),
-      );
-      showToast("Announcement updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newAnnouncement: Announcement = {
-        id: Date.now().toString(),
-        title: announcementFormData.title,
-        category: announcementFormData.category,
-        department: announcementFormData.department,
-        startDate: announcementFormData.startDate,
-        endDate: announcementFormData.endDate,
-        priority: announcementFormData.priority,
-        status: "Draft",
-        description: announcementFormData.description,
-        approvedBy: "",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setAnnouncements((prev) => [newAnnouncement, ...prev]);
-      showToast("Announcement created successfully!", "success");
-      setShowCreateModal(false);
+    const toApi = {
+      title: announcementFormData.title,
+      announcement_category_id: announcementFormData.category,
+      departments: announcementFormData.department,
+      description: announcementFormData.description,
+      priority: announcementFormData.priority,
+      start_date: announcementFormData.startDate,
+      end_date: announcementFormData.endDate,
+    };
+
+    try {
+      if (isEditing && selectedAnnouncement) {
+        await update(selectedAnnouncement.id, toApi);
+        showToast("Announcement updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(toApi);
+        showToast("Announcement created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetAnnouncementForm();
+    } catch {
+      showToast("Failed to save announcement", "error");
     }
-    resetAnnouncementForm();
   };
 
-  const handleDeleteAnnouncement = () => {
+  const handleDeleteAnnouncement = async () => {
     if (selectedAnnouncement) {
-      setAnnouncements((prev) =>
-        prev.filter((a) => a.id !== selectedAnnouncement.id),
-      );
-      showToast("Announcement deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedAnnouncement(null);
+      try {
+        await remove(selectedAnnouncement.id);
+        showToast("Announcement deleted successfully!", "success");
+        setShowDeleteModal(false);
+        setSelectedAnnouncement(null);
+      } catch {
+        showToast("Failed to delete announcement", "error");
+      }
     }
   };
 
@@ -530,6 +523,21 @@ export const Announcements: React.FC = () => {
     </th>
   );
 
+  // ─── Fallback option arrays ───────────────────────────────────────────────
+
+  const displayAcOptions = acOptions.length > 0 ? acOptions : [
+    "General Company Information", "Vendor & Supplier Communications",
+    "Social & Community Engagement", "Career Development Opportunities",
+    "Performance Review & Feedback", "Remote Work & Flexibility Updates",
+    "Diversity & Inclusion Initiatives", "Emergency & Crisis Communications",
+    "Market & Industry Insights",
+  ];
+  const displayDeptOptions = deptOptions.length > 0 ? deptOptions : [
+    "Quality Assurance", "Customer Service", "IT", "Marketing", "HR",
+    "Administration", "Human Resources", "Executive", "Operations",
+    "Facilities", "Sales", "Finance", "Legal",
+  ];
+
   // ═══════════════════════════════════════════════════════════════════════════
   // MODALS
   // ═══════════════════════════════════════════════════════════════════════════
@@ -594,7 +602,7 @@ export const Announcements: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Category</option>
-              {categories.map((cat) => (
+              {displayAcOptions.map((cat) => (
                 <option key={cat} value={cat}>
                   {cat}
                 </option>
@@ -607,7 +615,7 @@ export const Announcements: React.FC = () => {
             </label>
             <div className="border border-gray-300 rounded-md p-3 max-h-32 overflow-y-auto">
               <div className="grid grid-cols-2 gap-2">
-                {departments.map((dept) => (
+                {displayDeptOptions.map((dept) => (
                   <label key={dept} className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"

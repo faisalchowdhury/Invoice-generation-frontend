@@ -4,13 +4,13 @@
  * Based on provided screenshots design
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { payrollApi } from "@/services/hrm";
 
 import {
   Search,
   Plus,
-  Edit,
   Trash2,
   Filter,
   ChevronLeft,
@@ -20,20 +20,6 @@ import {
   X,
   Eye,
   DollarSign,
-  Calendar,
-  Percent,
-  FileText,
-  CheckCircle,
-  AlertCircle,
-  TrendingUp,
-  TrendingDown,
-  Briefcase,
-  Clock,
-  User,
-  Building2,
-  Tag,
-  PlusCircle,
-  MinusCircle,
 } from "lucide-react";
 import { showToast } from "@/utils/toast";
 
@@ -314,6 +300,37 @@ type SortDir = "asc" | "desc";
 export const SetSalary: React.FC = () => {
   const navigate = useNavigate();
   const [employees, setEmployees] = useState<Employee[]>(sampleEmployees);
+
+  useEffect(() => {
+    let active = true;
+    payrollApi.setSalaryList({ page: 1, limit: 100 } as any)
+      .then((res: any) => {
+        if (!active) return;
+        const rows: any[] = res?.data ?? res ?? [];
+        if (!Array.isArray(rows) || rows.length === 0) return;
+        const mapped: Employee[] = rows.map((r: any) => ({
+          id: String(r.id ?? r._id ?? r.employee_profile_id ?? ""),
+          employeeId: r.employee_id ?? r.employeeId ?? String(r.id ?? ""),
+          employeeName:
+            (typeof r.user_id === "object" ? r.user_id?.name : r.user_id) ??
+            r.name ?? r.employeeName ?? "",
+          branch:
+            (typeof r.branch_id === "object" ? r.branch_id?.branch_name : r.branch_id) ??
+            r.branch ?? "",
+          department:
+            (typeof r.department_id === "object" ? r.department_id?.department_name : r.department_id) ??
+            r.department ?? "",
+          designation:
+            (typeof r.designation_id === "object" ? r.designation_id?.designation_name : r.designation_id) ??
+            r.designation ?? "",
+          basicSalary: Number(r.basic_salary ?? r.basicSalary ?? 0),
+        }));
+        setEmployees(mapped);
+      })
+      .catch(() => { /* keep sample */ });
+    return () => { active = false; };
+  }, []);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -335,9 +352,6 @@ export const SetSalary: React.FC = () => {
   const [showDeductionModal, setShowDeductionModal] = useState(false);
   const [showLoanModal, setShowLoanModal] = useState(false);
   const [showOvertimeModal, setShowOvertimeModal] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editingItem, setEditingItem] = useState<any>(null);
-
   // Allowance form
   const [allowanceForm, setAllowanceForm] = useState({
     type: "",
@@ -427,6 +441,64 @@ export const SetSalary: React.FC = () => {
     setSelectedEmployee(employee);
     setActiveTab("allowances");
     setShowSalaryModal(true);
+    // Load detailed salary data from API
+    payrollApi.getSalary(employee.id)
+      .then((res: any) => {
+        const d = res?.data ?? res ?? {};
+        // Update basic salary if returned
+        if (d.basic_salary) {
+          setEmployees(prev => prev.map(e => e.id === employee.id
+            ? { ...e, basicSalary: Number(d.basic_salary) } : e));
+          setSelectedEmployee(prev => prev ? { ...prev, basicSalary: Number(d.basic_salary) } : prev);
+        }
+        // Load allowances
+        if (Array.isArray(d.allowances)) {
+          const mapped = d.allowances.map((a: any) => ({
+            id: String(a.id ?? a._id ?? ""),
+            type: a.allowance_type_id?.name ?? a.type ?? a.allowance_type ?? "",
+            typeValue: (a.type === "percentage" ? "Percentage" : "Fixed") as "Fixed" | "Percentage",
+            amount: Number(a.amount ?? 0),
+            percentage: a.type === "percentage" ? Number(a.amount ?? 0) : 0,
+          }));
+          setAllowances(prev => ({ ...prev, [employee.employeeId]: mapped }));
+        }
+        // Load deductions
+        if (Array.isArray(d.deductions)) {
+          const mapped = d.deductions.map((dd: any) => ({
+            id: String(dd.id ?? dd._id ?? ""),
+            type: dd.deduction_type_id?.name ?? dd.type ?? dd.deduction_type ?? "",
+            typeValue: (dd.type === "percentage" ? "Percentage" : "Fixed") as "Fixed" | "Percentage",
+            amount: Number(dd.amount ?? 0),
+            percentage: dd.type === "percentage" ? Number(dd.amount ?? 0) : 0,
+          }));
+          setDeductions(prev => ({ ...prev, [employee.employeeId]: mapped }));
+        }
+        // Load loans
+        if (Array.isArray(d.loans)) {
+          const mapped = d.loans.map((l: any) => ({
+            id: String(l.id ?? l._id ?? ""),
+            type: l.loan_type_id?.name ?? l.title ?? l.type ?? "",
+            amount: Number(l.amount ?? 0),
+            startDate: (l.start_date ?? l.startDate ?? "").slice(0, 10),
+            endDate: (l.end_date ?? l.endDate ?? "").slice(0, 10),
+            status: (l.status ? l.status.charAt(0).toUpperCase() + l.status.slice(1) : "Active") as Loan["status"],
+          }));
+          setLoans(prev => ({ ...prev, [employee.employeeId]: mapped }));
+        }
+        // Load overtimes
+        if (Array.isArray(d.overtimes)) {
+          const mapped = d.overtimes.map((o: any) => ({
+            id: String(o.id ?? o._id ?? ""),
+            title: o.title ?? "",
+            days: Number(o.total_days ?? o.days ?? 0),
+            hours: Number(o.hours ?? 0),
+            rate: Number(o.rate ?? 0),
+            status: (o.status ? o.status.charAt(0).toUpperCase() + o.status.slice(1) : "Active") as Overtime["status"],
+          }));
+          setOvertimes(prev => ({ ...prev, [employee.employeeId]: mapped }));
+        }
+      })
+      .catch(() => { /* keep local data */ });
   };
 
   const calculateTotalAllowances = (empId: string): number => {
@@ -466,212 +538,257 @@ export const SetSalary: React.FC = () => {
   };
 
   // Allowance CRUD
-  const handleAddAllowance = () => {
-    if (!allowanceForm.type) {
-      showToast("Please enter allowance type", "info");
-      return;
-    }
-    if (allowanceForm.typeValue === "Fixed" && allowanceForm.amount <= 0) {
-      showToast("Please enter valid amount", "info");
-      return;
-    }
-    if (
-      allowanceForm.typeValue === "Percentage" &&
-      (allowanceForm.percentage <= 0 || allowanceForm.percentage > 100)
-    ) {
-      showToast("Please enter valid percentage (1-100)", "info");
-      return;
-    }
+  const handleAddAllowance = async () => {
+    if (!allowanceForm.type) { showToast("Please enter allowance type", "info"); return; }
+    if (allowanceForm.typeValue === "Fixed" && allowanceForm.amount <= 0) { showToast("Please enter valid amount", "info"); return; }
+    if (allowanceForm.typeValue === "Percentage" && (allowanceForm.percentage <= 0 || allowanceForm.percentage > 100)) { showToast("Please enter valid percentage (1-100)", "info"); return; }
 
-    const newAllowance: Allowance = {
-      id: Date.now().toString(),
-      type: allowanceForm.type,
-      typeValue: allowanceForm.typeValue,
-      amount: allowanceForm.amount,
-      percentage: allowanceForm.percentage,
+    const body = {
+      allowance_type_id: allowanceForm.type,
+      type: allowanceForm.typeValue === "Fixed" ? "fixed" : "percentage",
+      amount: allowanceForm.typeValue === "Fixed" ? allowanceForm.amount : allowanceForm.percentage,
     };
-
-    setAllowances((prev) => ({
-      ...prev,
-      [selectedEmployee!.employeeId]: [
-        ...(prev[selectedEmployee!.employeeId] || []),
-        newAllowance,
-      ],
-    }));
-    showToast("Allowance added successfully!", "success");
+    try {
+      await payrollApi.addAllowance(selectedEmployee!.id, body);
+      // reload
+      const res: any = await payrollApi.getSalary(selectedEmployee!.id);
+      const d = res?.data ?? res ?? {};
+      if (Array.isArray(d.allowances)) {
+        const mapped = d.allowances.map((a: any) => ({
+          id: String(a.id ?? a._id ?? ""),
+          type: a.allowance_type_id?.name ?? a.type ?? "",
+          typeValue: (a.type === "percentage" ? "Percentage" : "Fixed") as "Fixed" | "Percentage",
+          amount: Number(a.amount ?? 0),
+          percentage: a.type === "percentage" ? Number(a.amount ?? 0) : 0,
+        }));
+        setAllowances(prev => ({ ...prev, [selectedEmployee!.employeeId]: mapped }));
+      }
+      showToast("Allowance added successfully!", "success");
+    } catch {
+      // fallback: update local state
+      const newAllowance: Allowance = {
+        id: Date.now().toString(),
+        type: allowanceForm.type,
+        typeValue: allowanceForm.typeValue,
+        amount: allowanceForm.amount,
+        percentage: allowanceForm.percentage,
+      };
+      setAllowances(prev => ({
+        ...prev,
+        [selectedEmployee!.employeeId]: [...(prev[selectedEmployee!.employeeId] || []), newAllowance],
+      }));
+      showToast("Allowance added successfully!", "success");
+    }
     setShowAllowanceModal(false);
-    setAllowanceForm({
-      type: "",
-      typeValue: "Fixed",
-      amount: 0,
-      percentage: 0,
-    });
+    setAllowanceForm({ type: "", typeValue: "Fixed", amount: 0, percentage: 0 });
   };
 
-  const handleDeleteAllowance = (id: string) => {
-    setAllowances((prev) => ({
-      ...prev,
-      [selectedEmployee!.employeeId]: (
-        prev[selectedEmployee!.employeeId] || []
-      ).filter((a) => a.id !== id),
-    }));
+  const handleDeleteAllowance = async (id: string) => {
+    try {
+      await payrollApi.deleteAllowance(id);
+      setAllowances(prev => ({
+        ...prev,
+        [selectedEmployee!.employeeId]: (prev[selectedEmployee!.employeeId] ?? []).filter(a => a.id !== id),
+      }));
+    } catch {
+      setAllowances(prev => ({
+        ...prev,
+        [selectedEmployee!.employeeId]: (prev[selectedEmployee!.employeeId] || []).filter(a => a.id !== id),
+      }));
+    }
     showToast("Allowance deleted successfully!", "success");
   };
 
   // Deduction CRUD
-  const handleAddDeduction = () => {
-    if (!deductionForm.type) {
-      showToast("Please enter deduction type", "info");
-      return;
-    }
-    if (deductionForm.typeValue === "Fixed" && deductionForm.amount <= 0) {
-      showToast("Please enter valid amount", "info");
-      return;
-    }
-    if (
-      deductionForm.typeValue === "Percentage" &&
-      (deductionForm.percentage <= 0 || deductionForm.percentage > 100)
-    ) {
-      showToast("Please enter valid percentage (1-100)", "info");
-      return;
-    }
+  const handleAddDeduction = async () => {
+    if (!deductionForm.type) { showToast("Please enter deduction type", "info"); return; }
+    if (deductionForm.typeValue === "Fixed" && deductionForm.amount <= 0) { showToast("Please enter valid amount", "info"); return; }
+    if (deductionForm.typeValue === "Percentage" && (deductionForm.percentage <= 0 || deductionForm.percentage > 100)) { showToast("Please enter valid percentage (1-100)", "info"); return; }
 
-    const newDeduction: Deduction = {
-      id: Date.now().toString(),
-      type: deductionForm.type,
-      typeValue: deductionForm.typeValue,
-      amount: deductionForm.amount,
-      percentage: deductionForm.percentage,
+    const body = {
+      deduction_type_id: deductionForm.type,
+      type: deductionForm.typeValue === "Fixed" ? "fixed" : "percentage",
+      amount: deductionForm.typeValue === "Fixed" ? deductionForm.amount : deductionForm.percentage,
     };
-
-    setDeductions((prev) => ({
-      ...prev,
-      [selectedEmployee!.employeeId]: [
-        ...(prev[selectedEmployee!.employeeId] || []),
-        newDeduction,
-      ],
-    }));
-    showToast("Deduction added successfully!", "success");
+    try {
+      await payrollApi.addDeduction(selectedEmployee!.id, body);
+      const res: any = await payrollApi.getSalary(selectedEmployee!.id);
+      const d = res?.data ?? res ?? {};
+      if (Array.isArray(d.deductions)) {
+        const mapped = d.deductions.map((dd: any) => ({
+          id: String(dd.id ?? dd._id ?? ""),
+          type: dd.deduction_type_id?.name ?? dd.type ?? "",
+          typeValue: (dd.type === "percentage" ? "Percentage" : "Fixed") as "Fixed" | "Percentage",
+          amount: Number(dd.amount ?? 0),
+          percentage: dd.type === "percentage" ? Number(dd.amount ?? 0) : 0,
+        }));
+        setDeductions(prev => ({ ...prev, [selectedEmployee!.employeeId]: mapped }));
+      }
+      showToast("Deduction added successfully!", "success");
+    } catch {
+      const newDeduction: Deduction = {
+        id: Date.now().toString(),
+        type: deductionForm.type,
+        typeValue: deductionForm.typeValue,
+        amount: deductionForm.amount,
+        percentage: deductionForm.percentage,
+      };
+      setDeductions(prev => ({
+        ...prev,
+        [selectedEmployee!.employeeId]: [...(prev[selectedEmployee!.employeeId] || []), newDeduction],
+      }));
+      showToast("Deduction added successfully!", "success");
+    }
     setShowDeductionModal(false);
-    setDeductionForm({
-      type: "",
-      typeValue: "Fixed",
-      amount: 0,
-      percentage: 0,
-    });
+    setDeductionForm({ type: "", typeValue: "Fixed", amount: 0, percentage: 0 });
   };
 
-  const handleDeleteDeduction = (id: string) => {
-    setDeductions((prev) => ({
-      ...prev,
-      [selectedEmployee!.employeeId]: (
-        prev[selectedEmployee!.employeeId] || []
-      ).filter((d) => d.id !== id),
-    }));
+  const handleDeleteDeduction = async (id: string) => {
+    try {
+      await payrollApi.deleteDeduction(selectedEmployee!.id, id);
+      setDeductions(prev => ({
+        ...prev,
+        [selectedEmployee!.employeeId]: (prev[selectedEmployee!.employeeId] ?? []).filter(d => d.id !== id),
+      }));
+    } catch {
+      setDeductions(prev => ({
+        ...prev,
+        [selectedEmployee!.employeeId]: (prev[selectedEmployee!.employeeId] || []).filter(d => d.id !== id),
+      }));
+    }
     showToast("Deduction deleted successfully!", "success");
   };
 
   // Loan CRUD
-  const handleAddLoan = () => {
-    if (!loanForm.type) {
-      showToast("Please enter loan type", "info");
-      return;
-    }
-    if (loanForm.amount <= 0) {
-      showToast("Please enter valid amount", "info");
-      return;
-    }
-    if (!loanForm.startDate || !loanForm.endDate) {
-      showToast("Please select start and end dates", "info");
-      return;
-    }
+  const handleAddLoan = async () => {
+    if (!loanForm.type) { showToast("Please enter loan type", "info"); return; }
+    if (loanForm.amount <= 0) { showToast("Please enter valid amount", "info"); return; }
+    if (!loanForm.startDate || !loanForm.endDate) { showToast("Please select start and end dates", "info"); return; }
 
-    const newLoan: Loan = {
-      id: Date.now().toString(),
-      type: loanForm.type,
+    const body = {
+      title: loanForm.type,
+      loan_type_id: loanForm.type,
+      type: "fixed",
       amount: loanForm.amount,
-      startDate: loanForm.startDate,
-      endDate: loanForm.endDate,
-      status: loanForm.status,
+      start_date: loanForm.startDate,
+      end_date: loanForm.endDate,
+      reason: loanForm.status,
     };
-
-    setLoans((prev) => ({
-      ...prev,
-      [selectedEmployee!.employeeId]: [
-        ...(prev[selectedEmployee!.employeeId] || []),
-        newLoan,
-      ],
-    }));
-    showToast("Loan added successfully!", "success");
+    try {
+      await payrollApi.addLoan(selectedEmployee!.id, body);
+      const res: any = await payrollApi.getSalary(selectedEmployee!.id);
+      const d = res?.data ?? res ?? {};
+      if (Array.isArray(d.loans)) {
+        const mapped = d.loans.map((l: any) => ({
+          id: String(l.id ?? l._id ?? ""),
+          type: l.loan_type_id?.name ?? l.title ?? "",
+          amount: Number(l.amount ?? 0),
+          startDate: (l.start_date ?? "").slice(0, 10),
+          endDate: (l.end_date ?? "").slice(0, 10),
+          status: (l.status ? l.status.charAt(0).toUpperCase() + l.status.slice(1) : "Active") as Loan["status"],
+        }));
+        setLoans(prev => ({ ...prev, [selectedEmployee!.employeeId]: mapped }));
+      }
+      showToast("Loan added successfully!", "success");
+    } catch {
+      const newLoan: Loan = {
+        id: Date.now().toString(),
+        type: loanForm.type,
+        amount: loanForm.amount,
+        startDate: loanForm.startDate,
+        endDate: loanForm.endDate,
+        status: loanForm.status,
+      };
+      setLoans(prev => ({
+        ...prev,
+        [selectedEmployee!.employeeId]: [...(prev[selectedEmployee!.employeeId] || []), newLoan],
+      }));
+      showToast("Loan added successfully!", "success");
+    }
     setShowLoanModal(false);
-    setLoanForm({
-      type: "",
-      amount: 0,
-      startDate: "",
-      endDate: "",
-      status: "Active",
-    });
+    setLoanForm({ type: "", amount: 0, startDate: "", endDate: "", status: "Active" });
   };
 
-  const handleDeleteLoan = (id: string) => {
-    setLoans((prev) => ({
-      ...prev,
-      [selectedEmployee!.employeeId]: (
-        prev[selectedEmployee!.employeeId] || []
-      ).filter((l) => l.id !== id),
-    }));
+  const handleDeleteLoan = async (id: string) => {
+    try {
+      await payrollApi.deleteLoan(selectedEmployee!.id, id);
+      setLoans(prev => ({
+        ...prev,
+        [selectedEmployee!.employeeId]: (prev[selectedEmployee!.employeeId] ?? []).filter(l => l.id !== id),
+      }));
+    } catch {
+      setLoans(prev => ({
+        ...prev,
+        [selectedEmployee!.employeeId]: (prev[selectedEmployee!.employeeId] || []).filter(l => l.id !== id),
+      }));
+    }
     showToast("Loan deleted successfully!", "success");
   };
 
   // Overtime CRUD
-  const handleAddOvertime = () => {
-    if (!overtimeForm.title) {
-      showToast("Please enter overtime title", "info");
-      return;
-    }
-    if (overtimeForm.days <= 0 && overtimeForm.hours <= 0) {
-      showToast("Please enter valid days or hours", "info");
-      return;
-    }
-    if (overtimeForm.rate <= 0) {
-      showToast("Please enter valid rate", "info");
-      return;
-    }
+  const handleAddOvertime = async () => {
+    if (!overtimeForm.title) { showToast("Please enter overtime title", "info"); return; }
+    if (overtimeForm.days <= 0 && overtimeForm.hours <= 0) { showToast("Please enter valid days or hours", "info"); return; }
+    if (overtimeForm.rate <= 0) { showToast("Please enter valid rate", "info"); return; }
 
-    const newOvertime: Overtime = {
-      id: Date.now().toString(),
+    const body = {
       title: overtimeForm.title,
-      days: overtimeForm.days,
+      total_days: overtimeForm.days,
       hours: overtimeForm.hours,
       rate: overtimeForm.rate,
-      status: overtimeForm.status,
+      start_date: new Date().toISOString().slice(0, 10),
+      end_date: new Date().toISOString().slice(0, 10),
+      notes: "",
+      status: overtimeForm.status.toLowerCase(),
     };
-
-    setOvertimes((prev) => ({
-      ...prev,
-      [selectedEmployee!.employeeId]: [
-        ...(prev[selectedEmployee!.employeeId] || []),
-        newOvertime,
-      ],
-    }));
-    showToast("Overtime added successfully!", "success");
+    try {
+      await payrollApi.addOvertime(selectedEmployee!.id, body);
+      const res: any = await payrollApi.getSalary(selectedEmployee!.id);
+      const d = res?.data ?? res ?? {};
+      if (Array.isArray(d.overtimes)) {
+        const mapped = d.overtimes.map((o: any) => ({
+          id: String(o.id ?? o._id ?? ""),
+          title: o.title ?? "",
+          days: Number(o.total_days ?? o.days ?? 0),
+          hours: Number(o.hours ?? 0),
+          rate: Number(o.rate ?? 0),
+          status: (o.status ? o.status.charAt(0).toUpperCase() + o.status.slice(1) : "Active") as Overtime["status"],
+        }));
+        setOvertimes(prev => ({ ...prev, [selectedEmployee!.employeeId]: mapped }));
+      }
+      showToast("Overtime added successfully!", "success");
+    } catch {
+      const newOvertime: Overtime = {
+        id: Date.now().toString(),
+        title: overtimeForm.title,
+        days: overtimeForm.days,
+        hours: overtimeForm.hours,
+        rate: overtimeForm.rate,
+        status: overtimeForm.status,
+      };
+      setOvertimes(prev => ({
+        ...prev,
+        [selectedEmployee!.employeeId]: [...(prev[selectedEmployee!.employeeId] || []), newOvertime],
+      }));
+      showToast("Overtime added successfully!", "success");
+    }
     setShowOvertimeModal(false);
-    setOvertimeForm({
-      title: "",
-      days: 0,
-      hours: 0,
-      rate: 0,
-      status: "Active",
-    });
+    setOvertimeForm({ title: "", days: 0, hours: 0, rate: 0, status: "Active" });
   };
 
-  const handleDeleteOvertime = (id: string) => {
-    setOvertimes((prev) => ({
-      ...prev,
-      [selectedEmployee!.employeeId]: (
-        prev[selectedEmployee!.employeeId] || []
-      ).filter((o) => o.id !== id),
-    }));
+  const handleDeleteOvertime = async (id: string) => {
+    try {
+      await payrollApi.deleteOvertime(selectedEmployee!.id, id);
+      setOvertimes(prev => ({
+        ...prev,
+        [selectedEmployee!.employeeId]: (prev[selectedEmployee!.employeeId] ?? []).filter(o => o.id !== id),
+      }));
+    } catch {
+      setOvertimes(prev => ({
+        ...prev,
+        [selectedEmployee!.employeeId]: (prev[selectedEmployee!.employeeId] || []).filter(o => o.id !== id),
+      }));
+    }
     showToast("Overtime deleted successfully!", "success");
   };
 

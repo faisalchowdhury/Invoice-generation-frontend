@@ -5,8 +5,14 @@
  */
 
 import React, { useState, useMemo } from "react";
+import { refLabel } from "@/services/_http";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  reviewCycleHooks,
+  type ReviewCycle as ApiReviewCycle,
+} from "@/services/performance";
 import {
   Search,
   Plus,
@@ -21,7 +27,6 @@ import {
   Eye,
   Calendar,
   CheckCircle,
-  AlertCircle,
   Clock,
   Repeat,
 } from "lucide-react";
@@ -38,79 +43,41 @@ interface ReviewCycle {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (offline fallback seed, API shape) ────────────────────────────
 
-const sampleReviewCycles: ReviewCycle[] = [
-  {
-    id: "1",
-    name: "Q4 2024 Quarterly Business Review",
-    frequency: "Quarterly",
-    description:
-      "Fourth quarter assessment focusing on KPI achievement and deliverables",
-    status: "Inactive",
-    createdBy: "Company",
-    createdAt: "2026-02-06",
-  },
-  {
-    id: "2",
-    name: "March 2025 Quarterly Prep Review",
-    frequency: "Monthly",
-    description:
-      "Monthly check for quarterly goal preparation and optimization",
-    status: "Active",
-    createdBy: "Company",
-    createdAt: "2026-01-17",
-  },
-  {
-    id: "3",
-    name: "Sales Team Performance Review",
-    frequency: "Quarterly",
-    description:
-      "Sales performance evaluation focusing on revenue targets and client relations",
-    status: "Active",
-    createdBy: "Company",
-    createdAt: "2026-01-17",
-  },
-  {
-    id: "4",
-    name: "Cross-Functional Project Performance Review",
-    frequency: "Quarterly",
-    description:
-      "Project-based evaluation assessing collaboration and deliverable quality",
-    status: "Active",
-    createdBy: "Company",
-    createdAt: "2025-12-31",
-  },
-  {
-    id: "5",
-    name: "Q1 2025 Performance Check-In",
-    frequency: "Quarterly",
-    description: "First quarter review for goal setting and milestone tracking",
-    status: "Active",
-    createdBy: "Company",
-    createdAt: "2025-12-10",
-  },
-  {
-    id: "6",
-    name: "Remote Work Performance Evaluation",
-    frequency: "Semi-Annual",
-    description:
-      "Remote employee assessment focusing on productivity and communication",
-    status: "Active",
-    createdBy: "Company",
-    createdAt: "2025-11-27",
-  },
-  {
-    id: "7",
-    name: "Technical Skills Assessment Cycle",
-    frequency: "Semi-Annual",
-    description:
-      "Technical competency evaluation covering skill proficiency and innovation",
-    status: "Active",
-    createdBy: "Company",
-    createdAt: "2025-11-08",
-  },
+const sampleReviewCycles: ApiReviewCycle[] = [
+  { id: "1", name: "Q4 2024 Quarterly Business Review", frequency: "quarterly", description: "Fourth quarter assessment focusing on KPI achievement and deliverables", status: "inactive" },
+  { id: "2", name: "March 2025 Quarterly Prep Review", frequency: "monthly", description: "Monthly check for quarterly goal preparation and optimization", status: "active" },
+  { id: "3", name: "Sales Team Performance Review", frequency: "quarterly", description: "Sales performance evaluation focusing on revenue targets and client relations", status: "active" },
+  { id: "4", name: "Cross-Functional Project Performance Review", frequency: "quarterly", description: "Project-based evaluation assessing collaboration and deliverable quality", status: "active" },
+  { id: "5", name: "Q1 2025 Performance Check-In", frequency: "quarterly", description: "First quarter review for goal setting and milestone tracking", status: "active" },
+  { id: "6", name: "Remote Work Performance Evaluation", frequency: "semi-annual", description: "Remote employee assessment focusing on productivity and communication", status: "active" },
+  { id: "7", name: "Technical Skills Assessment Cycle", frequency: "semi-annual", description: "Technical competency evaluation covering skill proficiency and innovation", status: "active" },
 ];
+
+// ─── API ↔ display mapping ─────────────────────────────────────────────────────
+
+function mapFrequency(raw: string): ReviewCycle["frequency"] {
+  const f = (raw ?? "quarterly").toLowerCase();
+  if (f === "annual") return "Annual";
+  if (f === "semi-annual" || f === "semi_annual") return "Semi-Annual";
+  if (f === "monthly") return "Monthly";
+  return "Quarterly";
+}
+
+function mapFromApi(p: any): ReviewCycle {
+  const rawStatus = (p.status ?? "active") as string;
+  const status: "Active" | "Inactive" = rawStatus.toLowerCase() === "inactive" ? "Inactive" : "Active";
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    name: p.name ?? "",
+    frequency: mapFrequency(p.frequency ?? "quarterly"),
+    description: p.description ?? "",
+    status,
+    createdBy: refLabel(p.created_by ?? p.createdBy) || "Company",
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
 
 const frequencies = ["Annual", "Semi-Annual", "Quarterly", "Monthly"];
 const statuses = ["Active", "Inactive"];
@@ -134,8 +101,14 @@ type SortDir = "asc" | "desc";
 
 export const ReviewCycles: React.FC = () => {
   const navigate = useNavigate();
-  const [reviewCycles, setReviewCycles] =
-    useState<ReviewCycle[]>(sampleReviewCycles);
+  const {
+    items: rawCycles,
+    create,
+    update,
+    remove,
+  } = useResourceData(reviewCycleHooks, { seed: sampleReviewCycles, params: { page: 1, limit: 100 } });
+  const reviewCycles = useMemo(() => rawCycles.map(mapFromApi), [rawCycles]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -257,7 +230,14 @@ export const ReviewCycles: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSaveCycle = () => {
+  const freqToApi = (f: string): ApiReviewCycle["frequency"] => {
+    if (f === "Annual") return "annual";
+    if (f === "Semi-Annual") return "semi-annual";
+    if (f === "Monthly") return "monthly";
+    return "quarterly";
+  };
+
+  const handleSaveCycle = async () => {
     if (!cycleFormData.name) {
       showToast("Please enter review cycle name", "info");
       return;
@@ -267,46 +247,39 @@ export const ReviewCycles: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedCycle) {
-      setReviewCycles((prev) =>
-        prev.map((c) =>
-          c.id === selectedCycle.id
-            ? {
-                ...c,
-                name: cycleFormData.name,
-                frequency: cycleFormData.frequency,
-                description: cycleFormData.description,
-                status: cycleFormData.status,
-              }
-            : c,
-        ),
-      );
-      showToast("Review cycle updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newCycle: ReviewCycle = {
-        id: Date.now().toString(),
-        name: cycleFormData.name,
-        frequency: cycleFormData.frequency,
-        description: cycleFormData.description,
-        status: cycleFormData.status,
-        createdBy: "Company",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setReviewCycles((prev) => [newCycle, ...prev]);
-      showToast("Review cycle created successfully!", "success");
-      setShowCreateModal(false);
+    const payload: Partial<ApiReviewCycle> = {
+      name: cycleFormData.name,
+      frequency: freqToApi(cycleFormData.frequency),
+      description: cycleFormData.description,
+      status: cycleFormData.status.toLowerCase() as "active" | "inactive",
+    };
+
+    try {
+      if (isEditing && selectedCycle) {
+        await update(selectedCycle.id, payload);
+        showToast("Review cycle updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Review cycle created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetCycleForm();
+    } catch {
+      showToast("Could not save review cycle. Please try again.", "error");
     }
-    resetCycleForm();
   };
 
-  const handleDeleteCycle = () => {
-    if (selectedCycle) {
-      setReviewCycles((prev) => prev.filter((c) => c.id !== selectedCycle.id));
+  const handleDeleteCycle = async () => {
+    if (!selectedCycle) return;
+    try {
+      await remove(selectedCycle.id);
       showToast("Review cycle deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedCycle(null);
+    } catch {
+      showToast("Could not delete review cycle.", "error");
     }
+    setShowDeleteModal(false);
+    setSelectedCycle(null);
   };
 
   const getStatusColor = (status: string) => {

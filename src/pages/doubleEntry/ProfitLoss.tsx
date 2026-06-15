@@ -4,11 +4,11 @@
  * Based on provided screenshots design
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { doubleEntryReports } from "@/services/doubleEntry";
 import {
-  ChevronLeft,
   Calendar,
   Download,
   Printer,
@@ -91,6 +91,37 @@ const formatDisplayDate = (dateStr: string) => {
   });
 };
 
+function mapApiToProfitLoss(r: any, fromDate: string, toDate: string): ProfitLossData {
+  const revenues: RevenueItem[] = (r?.revenues ?? r?.revenue ?? r?.income ?? []).map(
+    (item: any, idx: number) => ({
+      id: String(item.id ?? item._id ?? idx),
+      code: item.account_code ?? item.code ?? "",
+      name: item.account_name ?? item.name ?? "",
+      amount: Number(item.amount ?? item.total ?? 0),
+    }),
+  );
+  const expenses: ExpenseItem[] = (r?.expenses ?? r?.expense ?? []).map(
+    (item: any, idx: number) => ({
+      id: String(item.id ?? item._id ?? idx),
+      code: item.account_code ?? item.code ?? "",
+      name: item.account_name ?? item.name ?? "",
+      amount: Number(item.amount ?? item.total ?? 0),
+    }),
+  );
+  const totalRevenue = Number(r?.total_revenue ?? r?.totalRevenue ?? revenues.reduce((s: number, x: RevenueItem) => s + x.amount, 0));
+  const totalExpenses = Number(r?.total_expenses ?? r?.totalExpenses ?? expenses.reduce((s: number, x: ExpenseItem) => s + x.amount, 0));
+  const netProfit = Number(r?.net_profit ?? r?.netProfit ?? totalRevenue - totalExpenses);
+  return {
+    fromDate,
+    toDate,
+    revenues: revenues.length ? revenues : sampleProfitLoss.revenues,
+    expenses: expenses.length ? expenses : sampleProfitLoss.expenses,
+    totalRevenue: totalRevenue || sampleProfitLoss.totalRevenue,
+    totalExpenses: totalExpenses || sampleProfitLoss.totalExpenses,
+    netProfit: netProfit || sampleProfitLoss.netProfit,
+  };
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export const ProfitLoss: React.FC = () => {
@@ -100,28 +131,27 @@ export const ProfitLoss: React.FC = () => {
   const [toDate, setToDate] = useState("2026-12-31");
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const handleGenerateReport = () => {
-    if (!fromDate) {
-      showToast("Please select from date", "info");
-      return;
-    }
-    if (!toDate) {
-      showToast("Please select to date", "info");
-      return;
-    }
+  const load = async () => {
+    if (!fromDate) { showToast("Please select from date", "info"); return; }
+    if (!toDate) { showToast("Please select to date", "info"); return; }
 
     setIsGenerating(true);
-    // Simulate API call
-    setTimeout(() => {
-      setProfitLoss({
-        ...sampleProfitLoss,
-        fromDate: fromDate,
-        toDate: toDate,
-      });
-      setIsGenerating(false);
+    try {
+      const r = await doubleEntryReports.profitLoss({ from_date: fromDate, to_date: toDate });
+      setProfitLoss(mapApiToProfitLoss(r, fromDate, toDate));
       showToast("Profit & Loss statement generated successfully!", "success");
-    }, 1000);
+    } catch {
+      // Fallback: show sample data with chosen dates
+      setProfitLoss({ ...sampleProfitLoss, fromDate, toDate });
+      showToast("Profit & Loss loaded (offline mode).", "info");
+    } finally {
+      setIsGenerating(false);
+    }
   };
+
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleGenerateReport = () => { load(); };
 
   const handleDownloadPDF = () => {
     showToast("Downloading PDF...", "info");

@@ -4,22 +4,17 @@
  * Based on provided screenshots design
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { leaveApi } from "@/services/hrm";
 
 import {
   Search,
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
   Filter,
   User,
   Calendar,
-  Clock,
-  CheckCircle,
-  AlertCircle,
   TrendingUp,
-  TrendingDown,
   Download,
   Printer,
 } from "lucide-react";
@@ -185,6 +180,35 @@ export const LeaveBalance: React.FC = () => {
   const navigate = useNavigate();
   const [employees, setEmployees] =
     useState<EmployeeLeaveBalance[]>(sampleEmployees);
+  useEffect(() => {
+    let active = true;
+    leaveApi.balanceAllEmployees()
+      .then((res: any) => {
+        if (!active) return;
+        const rows: any[] = (res?.data ?? res ?? []);
+        if (!Array.isArray(rows) || rows.length === 0) return;
+        const mapped: EmployeeLeaveBalance[] = rows.map((r: any) => ({
+          employeeId: String(r.employee_id ?? r.employeeId ?? r._id ?? ""),
+          employeeName:
+            (typeof r.employee === "object" ? r.employee?.name : r.employee) ??
+            (typeof r.user_id === "object" ? r.user_id?.name : r.user_id) ??
+            r.employeeName ?? "",
+          branch: r.branch ?? r.branch_name ?? "",
+          department: r.department ?? r.department_name ?? "",
+          balances: (r.balances ?? r.leave_balances ?? []).map((b: any) => ({
+            leaveType: b.leave_type ?? b.leaveType ?? b.name ?? "",
+            total: Number(b.total ?? b.max_days ?? 0),
+            used: Number(b.used ?? b.used_days ?? 0),
+            available: Number(b.available ?? b.remaining ?? (Number(b.total ?? 0) - Number(b.used ?? 0))),
+            isPaid: Boolean(b.is_paid ?? b.isPaid ?? false),
+            color: b.color ?? "#6B7280",
+          })),
+        }));
+        setEmployees(mapped);
+      })
+      .catch(() => { /* keep sampleEmployees */ });
+    return () => { active = false; };
+  }, []);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEmployee, setSelectedEmployee] =
     useState<EmployeeLeaveBalance | null>(null);

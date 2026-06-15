@@ -21,6 +21,31 @@ import { api } from "@/lib/api/client";
 import type { Entity, ListParams } from "@/lib/api/types";
 import type { ResourceService } from "@/lib/api/createResource";
 
+/**
+ * Render a possibly-populated reference (Mongo ref that may come back as a bare
+ * id string, or as a populated `{ _id, name, ... }` document) as a safe display
+ * string. Never returns an object, so it is always safe as a React child.
+ */
+export function refLabel(v: any): string {
+  if (v == null) return "";
+  if (typeof v === "object") {
+    return (
+      v.name ??
+      v.title ??
+      v.label ??
+      v.full_name ??
+      v.employee_name ??
+      v.branch_name ??
+      v.department_name ??
+      v.designation_name ??
+      (v.user_id && typeof v.user_id === "object" ? v.user_id.name : undefined) ??
+      v.email ??
+      ""
+    );
+  }
+  return String(v);
+}
+
 /** Copy Mongo `_id` onto `id` so the whole UI can rely on `item.id`. */
 export function normalizeId<T = any>(obj: any): T {
   if (obj && typeof obj === "object") {

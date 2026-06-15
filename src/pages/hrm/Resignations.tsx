@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useMemo } from "react";
+import { refLabel } from "@/services/_http";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
 import {
@@ -19,16 +20,15 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Calendar,
-  User,
   FileText,
   Upload,
   CheckCircle,
   AlertCircle,
   Clock,
   UserMinus,
-  Briefcase,
 } from "lucide-react";
+import { useResourceData } from "@/hooks/useResourceData";
+import { resignationHooks, employeeHooks, hrmStatusActions } from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -189,6 +189,45 @@ const reasonOptions = [
   "Consulting career launch leveraging accumulated expertise and industry knowledge for independent professional practice.",
 ];
 
+// ─── Seed (snake_case for API) ────────────────────────────────────────────────
+
+const sampleResignationsSeed = sampleResignations.map((r) => ({
+  id: r.id,
+  employee_id: r.employee,
+  last_working_date: r.lastWorkingDate,
+  reason: r.reason,
+  description: r.description,
+  status: r.status.toLowerCase(),
+}));
+
+// ─── mapFromApi ───────────────────────────────────────────────────────────────
+
+function mapFromApi(p: any): Resignation {
+  const empField = p.employee_id ?? p.employeeId;
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    employee:
+      typeof empField === "object"
+        ? empField?.name ?? ""
+        : String(empField ?? p.employee ?? ""),
+    resignationDate: (p.resignation_date ?? p.resignationDate ?? p.createdAt ?? "").slice(0, 10),
+    lastWorkingDate: (p.last_working_date ?? p.lastWorkingDate ?? "").slice(0, 10),
+    reason: p.reason ?? "",
+    description: p.description ?? "",
+    document: p.document ?? "",
+    status: (() => {
+      const s = (p.status ?? "pending").toLowerCase();
+      if (s === "accepted") return "Accepted";
+      if (s === "rejected") return "Rejected";
+      if (s === "cancelled") return "Cancelled";
+      return "Pending";
+    })() as Resignation["status"],
+    approvedBy: refLabel(p.approved_by ?? p.approvedBy),
+    approvedAt: (p.approved_at ?? p.approvedAt ?? "").slice(0, 10),
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const formatDate = (dateStr: string) => {
@@ -208,8 +247,27 @@ type SortDir = "asc" | "desc";
 
 export const Resignations: React.FC = () => {
   const navigate = useNavigate();
-  const [resignations, setResignations] =
-    useState<Resignation[]>(sampleResignations);
+
+  const { items: raw, create, update, remove, refetch } = useResourceData(
+    resignationHooks,
+    { seed: sampleResignationsSeed as any, params: { page: 1, limit: 100 } },
+  );
+  const resignations = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Employee options from API
+  const empQuery = employeeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const empOptions = useMemo(
+    () =>
+      (empQuery.data ?? []).map((e: any) => ({
+        id: String(e.id ?? e._id ?? ""),
+        name:
+          typeof e.user_id === "object"
+            ? e.user_id?.name ?? ""
+            : e.name ?? e.employee_name ?? "",
+      })),
+    [empQuery.data],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -339,29 +397,20 @@ export const Resignations: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleStatusUpdate = (
+  const handleStatusUpdate = async (
     id: string,
     newStatus: "Accepted" | "Rejected",
   ) => {
-    setResignations((prev) =>
-      prev.map((r) =>
-        r.id === id
-          ? {
-              ...r,
-              status: newStatus,
-              approvedBy: "HR Manager",
-              approvedAt: "Pending",
-            }
-          : r,
-      ),
-    );
-    showToast(
-      `Resignation ${newStatus.toLowerCase()} successfully!`,
-      "success",
-    );
+    try {
+      await hrmStatusActions.resignation(id, newStatus.toLowerCase());
+      refetch();
+      showToast(`Resignation ${newStatus.toLowerCase()} successfully!`, "success");
+    } catch {
+      showToast("Action failed.", "error");
+    }
   };
 
-  const handleSaveResignation = () => {
+  const handleSaveResignation = async () => {
     if (!resignationFormData.employee) {
       showToast("Please select an employee", "info");
       return;
@@ -375,52 +424,39 @@ export const Resignations: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedResignation) {
-      setResignations((prev) =>
-        prev.map((r) =>
-          r.id === selectedResignation.id
-            ? {
-                ...r,
-                employee: resignationFormData.employee,
-                lastWorkingDate: resignationFormData.lastWorkingDate,
-                reason: resignationFormData.reason,
-                description: resignationFormData.description,
-                document: resignationFormData.documentName || r.document,
-              }
-            : r,
-        ),
-      );
-      showToast("Resignation updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newResignation: Resignation = {
-        id: Date.now().toString(),
-        employee: resignationFormData.employee,
-        resignationDate: new Date().toISOString().split("T")[0],
-        lastWorkingDate: resignationFormData.lastWorkingDate,
-        reason: resignationFormData.reason,
-        description: resignationFormData.description,
-        document: resignationFormData.documentName || "",
-        status: "Pending",
-        approvedBy: "",
-        approvedAt: "",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setResignations((prev) => [newResignation, ...prev]);
-      showToast("Resignation created successfully!", "success");
-      setShowCreateModal(false);
+    const payload = {
+      employee_id: resignationFormData.employee,
+      last_working_date: resignationFormData.lastWorkingDate,
+      reason: resignationFormData.reason,
+      description: resignationFormData.description,
+    };
+
+    try {
+      if (isEditing && selectedResignation) {
+        await update(selectedResignation.id, payload);
+        showToast("Resignation updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Resignation created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetResignationForm();
+    } catch {
+      showToast("Operation failed.", "error");
     }
-    resetResignationForm();
   };
 
-  const handleDeleteResignation = () => {
+  const handleDeleteResignation = async () => {
     if (selectedResignation) {
-      setResignations((prev) =>
-        prev.filter((r) => r.id !== selectedResignation.id),
-      );
-      showToast("Resignation deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedResignation(null);
+      try {
+        await remove(selectedResignation.id);
+        showToast("Resignation deleted successfully!", "success");
+        setShowDeleteModal(false);
+        setSelectedResignation(null);
+      } catch {
+        showToast("Delete failed.", "error");
+      }
     }
   };
 
@@ -521,11 +557,17 @@ export const Resignations: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Employee</option>
-              {employees.map((emp) => (
-                <option key={emp} value={emp}>
-                  {emp}
-                </option>
-              ))}
+              {empOptions.length > 0
+                ? empOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.name}
+                    </option>
+                  ))
+                : employees.map((emp) => (
+                    <option key={emp} value={emp}>
+                      {emp}
+                    </option>
+                  ))}
             </select>
           </div>
           <div>

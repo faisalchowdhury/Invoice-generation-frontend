@@ -21,20 +21,16 @@ import {
   X,
   Eye,
   Clock,
-  Calendar,
-  User,
   CheckCircle,
   AlertCircle,
-  Moon,
   Sun,
-  DollarSign,
-  Download,
-  Printer,
 } from "lucide-react";
+import { useResourceData } from "@/hooks/useResourceData";
+import { attendanceHooks, employeeHooks, type Attendance as ApiAttendance } from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Attendance {
+interface AttendanceRow {
   id: string;
   employeeName: string;
   date: string;
@@ -51,133 +47,16 @@ interface Attendance {
 
 // ─── Sample Data ──────────────────────────────────────────────────────────────
 
-const sampleAttendances: Attendance[] = [
-  {
-    id: "1",
-    employeeName: "Anthony Walker",
-    date: "2025-10-31",
-    shift: "Early Morning Shift",
-    clockIn: "2025-10-31 06:00",
-    clockOut: "2025-10-31 06:00",
-    totalHour: 0,
-    breakHour: 0,
-    overtime: 0,
-    status: "Absent",
-    notes: "Demo attendance record",
-    createdAt: "2025-10-31",
-  },
-  {
-    id: "2",
-    employeeName: "Mark Allen",
-    date: "2025-10-31",
-    shift: "Flexible Shift",
-    clockIn: "2025-10-31 11:00",
-    clockOut: "2025-10-31 19:30",
-    totalHour: 8.5,
-    breakHour: 1,
-    overtime: 1.5,
-    status: "Present",
-    notes: "",
-    createdAt: "2025-10-31",
-  },
-  {
-    id: "3",
-    employeeName: "David Wilson",
-    date: "2025-10-28",
-    shift: "Flexible Shift",
-    clockIn: "2025-10-28 18:00",
-    clockOut: "2025-10-28 19:30",
-    totalHour: 8.5,
-    breakHour: 1,
-    overtime: 1.5,
-    status: "Present",
-    notes: "",
-    createdAt: "2025-10-28",
-  },
-  {
-    id: "4",
-    employeeName: "Michael Brown",
-    date: "2025-10-28",
-    shift: "Early Morning Shift",
-    clockIn: "2025-10-28 06:00",
-    clockOut: "2025-10-28 06:00",
-    totalHour: 0,
-    breakHour: 0,
-    overtime: 0,
-    status: "Absent",
-    notes: "",
-    createdAt: "2025-10-28",
-  },
-  {
-    id: "5",
-    employeeName: "John Smith",
-    date: "2025-10-28",
-    shift: "Early Morning Shift",
-    clockIn: "2025-10-28 06:00",
-    clockOut: "2025-10-28 06:00",
-    totalHour: 4,
-    breakHour: 0,
-    overtime: 0,
-    status: "Half Day",
-    notes: "",
-    createdAt: "2025-10-28",
-  },
-  {
-    id: "6",
-    employeeName: "Mark Allen",
-    date: "2025-10-27",
-    shift: "Flexible Shift",
-    clockIn: "2025-10-27 10:00",
-    clockOut: "2025-10-27 18:00",
-    totalHour: 7,
-    breakHour: 1,
-    overtime: 1.5,
-    status: "Present",
-    notes: "",
-    createdAt: "2025-10-27",
-  },
-  {
-    id: "7",
-    employeeName: "Anthony Walker",
-    date: "2025-10-27",
-    shift: "Early Morning Shift",
-    clockIn: "2025-10-27 06:00",
-    clockOut: "2025-10-27 15:30",
-    totalHour: 8.5,
-    breakHour: 1,
-    overtime: 1.5,
-    status: "Present",
-    notes: "",
-    createdAt: "2025-10-27",
-  },
-  {
-    id: "8",
-    employeeName: "Matthew Clark",
-    date: "2025-10-27",
-    shift: "Early Morning Shift",
-    clockIn: "2025-10-27 06:00",
-    clockOut: "2025-10-27 14:00",
-    totalHour: 7,
-    breakHour: 1,
-    overtime: 0,
-    status: "Present",
-    notes: "",
-    createdAt: "2025-10-27",
-  },
-  {
-    id: "9",
-    employeeName: "Daniel Thompson",
-    date: "2025-10-27",
-    shift: "Evening Shift",
-    clockIn: "2025-10-27 14:00",
-    clockOut: "2025-10-27 22:00",
-    totalHour: 7,
-    breakHour: 1,
-    overtime: 0,
-    status: "Present",
-    notes: "",
-    createdAt: "2025-10-27",
-  },
+const sampleAttendancesSeed: ApiAttendance[] = [
+  { id: "1", employee_id: "Anthony Walker", shift_id: "Early Morning Shift", date: "2025-10-31", status: "absent" },
+  { id: "2", employee_id: "Mark Allen", shift_id: "Flexible Shift", date: "2025-10-31", status: "present", clock_in: "2025-10-31T11:00", clock_out: "2025-10-31T19:30" },
+  { id: "3", employee_id: "David Wilson", shift_id: "Flexible Shift", date: "2025-10-28", status: "present", clock_in: "2025-10-28T18:00", clock_out: "2025-10-28T19:30" },
+  { id: "4", employee_id: "Michael Brown", shift_id: "Early Morning Shift", date: "2025-10-28", status: "absent" },
+  { id: "5", employee_id: "John Smith", shift_id: "Early Morning Shift", date: "2025-10-28", status: "late" },
+  { id: "6", employee_id: "Mark Allen", shift_id: "Flexible Shift", date: "2025-10-27", status: "present", clock_in: "2025-10-27T10:00", clock_out: "2025-10-27T18:00" },
+  { id: "7", employee_id: "Anthony Walker", shift_id: "Early Morning Shift", date: "2025-10-27", status: "present", clock_in: "2025-10-27T06:00", clock_out: "2025-10-27T15:30" },
+  { id: "8", employee_id: "Matthew Clark", shift_id: "Early Morning Shift", date: "2025-10-27", status: "present", clock_in: "2025-10-27T06:00", clock_out: "2025-10-27T14:00" },
+  { id: "9", employee_id: "Daniel Thompson", shift_id: "Evening Shift", date: "2025-10-27", status: "present", clock_in: "2025-10-27T14:00", clock_out: "2025-10-27T22:00" },
 ];
 
 const employees = [
@@ -191,15 +70,6 @@ const employees = [
   "Christopher Lee",
   "Robert Taylor",
   "James Garcia",
-];
-
-const shifts = [
-  "Morning Shift",
-  "Evening Shift",
-  "Night Shift",
-  "Early Morning Shift",
-  "Flexible Shift",
-  "Weekend Shift",
 ];
 
 const statuses = ["Present", "Absent", "Half Day", "Late", "Holiday"];
@@ -223,14 +93,6 @@ const formatDateTime = (dateTimeStr: string) => {
   });
 };
 
-const formatTime = (timeStr: string) => {
-  if (!timeStr) return "-";
-  const [hours, minutes] = timeStr.split(":");
-  const hour = parseInt(hours);
-  const ampm = hour >= 12 ? "PM" : "AM";
-  const hour12 = hour % 12 || 12;
-  return `${hour12}:${minutes} ${ampm}`;
-};
 
 type SortField =
   | "employeeName"
@@ -242,12 +104,51 @@ type SortField =
   | "status";
 type SortDir = "asc" | "desc";
 
+// ─── API mapping helpers ──────────────────────────────────────────────────────
+
+const titleCaseStatus = (s: string): AttendanceRow["status"] => {
+  const map: Record<string, AttendanceRow["status"]> = {
+    present: "Present", absent: "Absent", late: "Late",
+    "half day": "Half Day", "half-day": "Half Day", holiday: "Holiday",
+  };
+  return map[(s ?? "").toLowerCase()] ?? "Absent";
+};
+
+const refName = (v: any): string =>
+  v && typeof v === "object" ? v.name ?? v.employee_id ?? "" : String(v ?? "");
+
+function mapFromApiAttendance(p: any): AttendanceRow {
+  const clockIn = p.clock_in ?? p.clockIn ?? "";
+  const clockOut = p.clock_out ?? p.clockOut ?? "";
+  const shift = typeof (p.shift_id) === "object"
+    ? (p.shift_id?.shift_name ?? p.shift_id?.name ?? "")
+    : (p.shift_id ?? p.shift ?? "");
+  const totalHour = Number(p.total_hours ?? p.totalHour ?? 0);
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    employeeName: refName(p.employee_id ?? p.employee) || "",
+    date: (p.date ?? "").slice(0, 10),
+    shift,
+    clockIn,
+    clockOut,
+    totalHour,
+    breakHour: Number(p.break_hours ?? p.breakHour ?? 0),
+    overtime: Number(p.overtime_hours ?? p.overtime ?? 0),
+    status: titleCaseStatus(p.status ?? "absent"),
+    notes: p.notes ?? "",
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export const Attendances: React.FC = () => {
   const navigate = useNavigate();
-  const [attendances, setAttendances] =
-    useState<Attendance[]>(sampleAttendances);
+  const { items: rawAttendances, create, update, remove } = useResourceData(attendanceHooks, {
+    seed: sampleAttendancesSeed,
+    params: { page: 1, limit: 100 },
+  });
+  const attendances = useMemo(() => rawAttendances.map(mapFromApiAttendance), [rawAttendances]);
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -262,7 +163,7 @@ export const Attendances: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedAttendance, setSelectedAttendance] =
-    useState<Attendance | null>(null);
+    useState<AttendanceRow | null>(null);
   const [isEditing, setIsEditing] = useState(false);
 
   // Form state
@@ -272,8 +173,18 @@ export const Attendances: React.FC = () => {
     clockIn: "",
     clockOut: "",
     notes: "",
+    shiftId: "",
   });
 
+  // Employee and shift options from API
+  const employeeQuery = employeeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const employeeOptions = useMemo(
+    () => (employeeQuery.data ?? []).map((e: any) => {
+      const name = typeof e.user_id === "object" ? (e.user_id?.name ?? "") : (e.user_id ?? e.name ?? "");
+      return { id: String(e.id ?? e._id ?? ""), name };
+    }),
+    [employeeQuery.data],
+  );
   // ─── Sorting ────────────────────────────────────────────────────────────────
 
   const handleSort = (field: SortField) => {
@@ -328,34 +239,6 @@ export const Attendances: React.FC = () => {
 
   // ─── Form Helpers ───────────────────────────────────────────────────────────
 
-  const calculateTotalHour = (clockIn: string, clockOut: string): number => {
-    if (!clockIn || !clockOut) return 0;
-    const start = new Date(clockIn);
-    const end = new Date(clockOut);
-    const diff = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-    return Math.round(diff * 100) / 100;
-  };
-
-  const getShiftFromTime = (clockInTime: string): string => {
-    if (!clockInTime) return "Flexible Shift";
-    const hour = new Date(clockInTime).getHours();
-    if (hour >= 5 && hour < 9) return "Early Morning Shift";
-    if (hour >= 9 && hour < 14) return "Morning Shift";
-    if (hour >= 14 && hour < 18) return "Evening Shift";
-    if (hour >= 18 || hour < 5) return "Night Shift";
-    return "Flexible Shift";
-  };
-
-  const getStatusFromHours = (
-    totalHour: number,
-    expectedHour: number = 8,
-  ): string => {
-    if (totalHour === 0) return "Absent";
-    if (totalHour >= expectedHour * 0.9) return "Present";
-    if (totalHour >= expectedHour * 0.5) return "Half Day";
-    return "Late";
-  };
-
   const resetAttendanceForm = () => {
     setAttendanceFormData({
       employeeName: "",
@@ -363,6 +246,7 @@ export const Attendances: React.FC = () => {
       clockIn: "",
       clockOut: "",
       notes: "",
+      shiftId: "",
     });
   };
 
@@ -372,7 +256,7 @@ export const Attendances: React.FC = () => {
     setShowCreateModal(true);
   };
 
-  const openEditModal = (attendance: Attendance) => {
+  const openEditModal = (attendance: AttendanceRow) => {
     setSelectedAttendance(attendance);
     setAttendanceFormData({
       employeeName: attendance.employeeName,
@@ -380,22 +264,23 @@ export const Attendances: React.FC = () => {
       clockIn: attendance.clockIn,
       clockOut: attendance.clockOut,
       notes: attendance.notes,
+      shiftId: attendance.shift,
     });
     setIsEditing(true);
     setShowEditModal(true);
   };
 
-  const openViewModal = (attendance: Attendance) => {
+  const openViewModal = (attendance: AttendanceRow) => {
     setSelectedAttendance(attendance);
     setShowViewModal(true);
   };
 
-  const openDeleteModal = (attendance: Attendance) => {
+  const openDeleteModal = (attendance: AttendanceRow) => {
     setSelectedAttendance(attendance);
     setShowDeleteModal(true);
   };
 
-  const handleSaveAttendance = () => {
+  const handleSaveAttendance = async () => {
     if (!attendanceFormData.employeeName) {
       showToast("Please select an employee", "info");
       return;
@@ -409,65 +294,37 @@ export const Attendances: React.FC = () => {
       return;
     }
 
-    const totalHour = calculateTotalHour(
-      attendanceFormData.clockIn,
-      attendanceFormData.clockOut,
-    );
-    const shift = getShiftFromTime(attendanceFormData.clockIn);
-    const status = getStatusFromHours(totalHour);
-    const overtime = totalHour > 8 ? totalHour - 8 : 0;
-    const breakHour = totalHour > 0 ? 1 : 0;
+    const payload = {
+      employee_id: attendanceFormData.employeeName,
+      shift_id: attendanceFormData.shiftId || undefined,
+      date: attendanceFormData.date,
+      status: "present" as const,
+    };
 
-    if (isEditing && selectedAttendance) {
-      setAttendances((prev) =>
-        prev.map((a: any) =>
-          a.id === selectedAttendance.id
-            ? {
-                ...a,
-                employeeName: attendanceFormData.employeeName,
-                date: attendanceFormData.date,
-                shift: shift,
-                clockIn: attendanceFormData.clockIn,
-                clockOut: attendanceFormData.clockOut || "",
-                totalHour: totalHour,
-                breakHour: breakHour,
-                overtime: overtime,
-                status: status,
-                notes: attendanceFormData.notes,
-              }
-            : a,
-        ),
-      );
-      showToast("Attendance updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newAttendance: Attendance = {
-        id: Date.now().toString(),
-        employeeName: attendanceFormData.employeeName,
-        date: attendanceFormData.date,
-        shift: shift,
-        clockIn: attendanceFormData.clockIn,
-        clockOut: attendanceFormData.clockOut || "",
-        totalHour: totalHour,
-        breakHour: breakHour,
-        overtime: overtime,
-        status: status as any,
-        notes: attendanceFormData.notes,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setAttendances((prev) => [newAttendance, ...prev]);
-      showToast("Attendance created successfully!", "success");
-      setShowCreateModal(false);
+    try {
+      if (isEditing && selectedAttendance) {
+        await update(selectedAttendance.id, { status: payload.status });
+        showToast("Attendance updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Attendance created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetAttendanceForm();
+    } catch {
+      showToast("Could not save attendance. Please try again.", "error");
     }
-    resetAttendanceForm();
   };
 
-  const handleDeleteAttendance = () => {
+  const handleDeleteAttendance = async () => {
     if (selectedAttendance) {
-      setAttendances((prev) =>
-        prev.filter((a) => a.id !== selectedAttendance.id),
-      );
-      showToast("Attendance deleted successfully!", "success");
+      try {
+        await remove(selectedAttendance.id);
+        showToast("Attendance deleted successfully!", "success");
+      } catch {
+        showToast("Could not delete attendance.", "error");
+      }
       setShowDeleteModal(false);
       setSelectedAttendance(null);
     }
@@ -574,11 +431,13 @@ export const Attendances: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Employee</option>
-              {employees.map((emp) => (
-                <option key={emp} value={emp}>
-                  {emp}
-                </option>
-              ))}
+              {employeeOptions.length > 0
+                ? employeeOptions.map((emp) => (
+                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                  ))
+                : employees.map((emp) => (
+                    <option key={emp} value={emp}>{emp}</option>
+                  ))}
             </select>
           </div>
           <div>

@@ -7,6 +7,14 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  employeeReviewHooks,
+  reviewCycleHooks,
+  employeeReviewActions,
+  type EmployeeReview as ApiEmployeeReview,
+} from "@/services/performance";
+import { employeeHooks } from "@/services/hrm";
 import {
   Search,
   Plus,
@@ -21,9 +29,7 @@ import {
   Eye,
   Star,
   User,
-  Calendar,
   CheckCircle,
-  AlertCircle,
   Clock,
   TrendingUp,
 } from "lucide-react";
@@ -40,8 +46,11 @@ interface RatingDetail {
 
 interface EmployeeReview {
   id: string;
+  employeeUserId: string;
   employee: string;
+  reviewerId: string;
   reviewer: string;
+  reviewCycleId: string;
   reviewCycle: string;
   reviewDate: string;
   rating: number;
@@ -51,163 +60,55 @@ interface EmployeeReview {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (offline fallback seed, API shape) ────────────────────────────
 
-const sampleReviews: EmployeeReview[] = [
-  {
-    id: "1",
-    employee: "Daniel Thompson",
-    reviewer: "Anthony Walker",
-    reviewCycle: "2025 Mid-Year Performance Evaluation",
-    reviewDate: "2025-09-11",
-    rating: 4.4,
-    status: "Completed",
-    feedback: "Strong performance in team collaboration and problem-solving.",
-    ratingDetails: [
-      {
-        id: "r1",
-        category: "Work Quality & Accuracy",
-        subCategory: "Error Rate",
-        score: 5,
-        maxScore: 5,
-      },
-      {
-        id: "r2",
-        category: "Productivity & Efficiency",
-        subCategory: "Tasks Completed",
-        score: 4,
-        maxScore: 5,
-      },
-      {
-        id: "r3",
-        category: "Productivity & Efficiency",
-        subCategory: "Output Volume",
-        score: 0,
-        maxScore: 5,
-      },
-      {
-        id: "r4",
-        category: "Team Collaboration",
-        subCategory: "Team Contribution Score",
-        score: 5,
-        maxScore: 5,
-      },
-      {
-        id: "r5",
-        category: "Problem Solving & Critical Thinking",
-        subCategory: "Issues Resolved",
-        score: 0,
-        maxScore: 5,
-      },
-      {
-        id: "r6",
-        category: "Problem Solving & Critical Thinking",
-        subCategory: "Resolution Time",
-        score: 0,
-        maxScore: 5,
-      },
-    ],
-    createdAt: "2025-09-05",
-  },
-  {
-    id: "2",
-    employee: "Matthew Clark",
-    reviewer: "David Wilson",
-    reviewCycle: "Executive Leadership Assessment",
-    reviewDate: "2025-10-11",
-    rating: 4.5,
-    status: "Completed",
-    feedback: "Excellent leadership skills and strategic thinking.",
-    ratingDetails: [],
-    createdAt: "2025-10-05",
-  },
-  {
-    id: "3",
-    employee: "John Smith",
-    reviewer: "Robert Taylor",
-    reviewCycle: "Remote Work Performance Evaluation",
-    reviewDate: "2026-02-06",
-    rating: 3.5,
-    status: "InProgress",
-    feedback: "Good productivity but needs improvement in communication.",
-    ratingDetails: [],
-    createdAt: "2026-01-30",
-  },
-  {
-    id: "4",
-    employee: "John Smith",
-    reviewer: "Daniel Thompson",
-    reviewCycle: "2025 Mid-Year Performance Evaluation",
-    reviewDate: "2026-02-01",
-    rating: 3.3,
-    status: "InProgress",
-    feedback: "Meeting targets but could be more proactive.",
-    ratingDetails: [],
-    createdAt: "2026-01-25",
-  },
-  {
-    id: "5",
-    employee: "Michael Brown",
-    reviewer: "James Garcia",
-    reviewCycle: "March 2025 Quarterly Prep Review",
-    reviewDate: "2026-02-16",
-    rating: 0,
-    status: "Pending",
-    feedback: "",
-    ratingDetails: [],
-    createdAt: "2026-02-10",
-  },
-  {
-    id: "6",
-    employee: "David Wilson",
-    reviewer: "Robert Taylor",
-    reviewCycle: "2025 Mid-Year Performance Evaluation",
-    reviewDate: "2026-01-22",
-    rating: 3.2,
-    status: "InProgress",
-    feedback: "Consistent performer but needs to take more initiative.",
-    ratingDetails: [],
-    createdAt: "2026-01-15",
-  },
-  {
-    id: "7",
-    employee: "Michael Brown",
-    reviewer: "Michael Brown",
-    reviewCycle: "March 2025 Quarterly Prep Review",
-    reviewDate: "2025-12-11",
-    rating: 4.5,
-    status: "Completed",
-    feedback: "Outstanding performance this quarter.",
-    ratingDetails: [],
-    createdAt: "2025-12-05",
-  },
-  {
-    id: "8",
-    employee: "David Wilson",
-    reviewer: "Robert Taylor",
-    reviewCycle: "Customer Service Excellence Review",
-    reviewDate: "2025-09-26",
-    rating: 0,
-    status: "Cancelled",
-    feedback: "",
-    ratingDetails: [],
-    createdAt: "2025-09-20",
-  },
-  {
-    id: "9",
-    employee: "Anthony Walker",
-    reviewer: "Matthew Clark",
-    reviewCycle: "New Hire Probationary Assessment",
-    reviewDate: "2026-02-21",
-    rating: 0,
-    status: "Pending",
-    feedback: "",
-    ratingDetails: [],
-    createdAt: "2026-02-15",
-  },
+const sampleReviews: ApiEmployeeReview[] = [
+  { id: "1", employee_user_id: "emp1", reviewer_id: "emp5", review_cycle_id: "rc1", review_date: "2025-09-11", status: "completed" },
+  { id: "2", employee_user_id: "emp2", reviewer_id: "emp6", review_cycle_id: "rc2", review_date: "2025-10-11", status: "completed" },
+  { id: "3", employee_user_id: "emp3", reviewer_id: "emp7", review_cycle_id: "rc3", review_date: "2026-02-06", status: "in_progress" },
+  { id: "4", employee_user_id: "emp3", reviewer_id: "emp1", review_cycle_id: "rc1", review_date: "2026-02-01", status: "in_progress" },
+  { id: "5", employee_user_id: "emp4", reviewer_id: "emp8", review_cycle_id: "rc4", review_date: "2026-02-16", status: "pending" },
 ];
 
-const employees = [
+// ─── API ↔ display mapping ─────────────────────────────────────────────────────
+
+function mapReviewStatus(raw: string): EmployeeReview["status"] {
+  const s = (raw ?? "pending").toLowerCase();
+  if (s === "in_progress") return "InProgress";
+  if (s === "completed") return "Completed";
+  if (s === "cancelled") return "Cancelled";
+  return "Pending";
+}
+
+function unwrapRef(v: any): { id: string; name: string } {
+  if (v && typeof v === "object") {
+    return { id: String(v._id ?? v.id ?? ""), name: v.name ?? "" };
+  }
+  return { id: String(v ?? ""), name: "" };
+}
+
+function mapFromApi(p: any): EmployeeReview {
+  const emp = unwrapRef(p.employee_user_id ?? p.employeeUserId);
+  const rev = unwrapRef(p.reviewer_id ?? p.reviewerId);
+  const cycle = unwrapRef(p.review_cycle_id ?? p.reviewCycleId);
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    employeeUserId: emp.id,
+    employee: emp.name,
+    reviewerId: rev.id,
+    reviewer: rev.name,
+    reviewCycleId: cycle.id,
+    reviewCycle: cycle.name,
+    reviewDate: (p.review_date ?? p.reviewDate ?? "").slice(0, 10),
+    rating: Number(p.rating ?? 0),
+    status: mapReviewStatus(p.status ?? "pending"),
+    feedback: p.feedback ?? p.pros ?? "",
+    ratingDetails: [],
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
+
+const staticEmployees = [
   "Daniel Thompson",
   "Matthew Clark",
   "John Smith",
@@ -220,7 +121,7 @@ const employees = [
   "Mark Allen",
 ];
 
-const reviewers = [
+const staticReviewers = [
   "Anthony Walker",
   "David Wilson",
   "Robert Taylor",
@@ -231,7 +132,7 @@ const reviewers = [
   "John Smith",
 ];
 
-const reviewCycles = [
+const staticReviewCycles = [
   "2025 Mid-Year Performance Evaluation",
   "Executive Leadership Assessment",
   "Remote Work Performance Evaluation",
@@ -293,7 +194,40 @@ type SortDir = "asc" | "desc";
 
 export const EmployeeReviews: React.FC = () => {
   const navigate = useNavigate();
-  const [reviews, setReviews] = useState<EmployeeReview[]>(sampleReviews);
+  const {
+    items: rawReviews,
+    create,
+    update,
+    remove,
+    refetch,
+  } = useResourceData(employeeReviewHooks, { seed: sampleReviews, params: { page: 1, limit: 100 } });
+  const reviews = useMemo(() => rawReviews.map(mapFromApi), [rawReviews]);
+
+  // Dropdown options
+  const empQuery = employeeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const employeeOptions = useMemo(
+    () =>
+      (empQuery.data ?? []).map((e: any) => ({
+        id: String(e.id ?? e._id ?? ""),
+        name:
+          (typeof e.user_id === "object" ? e.user_id?.name : null) ??
+          e.employee_id ??
+          e.name ??
+          "",
+      })),
+    [empQuery.data],
+  );
+
+  const cycleQuery = reviewCycleHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const reviewCycleOptions = useMemo(
+    () =>
+      (cycleQuery.data ?? []).map((c: any) => ({
+        id: String(c.id ?? c._id ?? ""),
+        name: c.name ?? "",
+      })),
+    [cycleQuery.data],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -307,15 +241,23 @@ export const EmployeeReviews: React.FC = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
-  const [selectedReview, setSelectedReview] = useState<EmployeeReview | null>(
-    null,
-  );
+  const [showConductModal, setShowConductModal] = useState(false);
+  const [selectedReview, setSelectedReview] = useState<EmployeeReview | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+
+  // Conduct/rate state
+  const [conductForm, setConductForm] = useState<any>(null);
+  const [ratings, setRatings] = useState<Record<string, number>>({});
+  const [pros, setPros] = useState("");
+  const [cons, setCons] = useState("");
 
   // Form state
   const [reviewFormData, setReviewFormData] = useState({
+    employeeUserId: "",
     employee: "",
+    reviewerId: "",
     reviewer: "",
+    reviewCycleId: "",
     reviewCycle: "",
     reviewDate: "",
     status: "Pending" as "Pending" | "InProgress" | "Completed" | "Cancelled",
@@ -382,8 +324,11 @@ export const EmployeeReviews: React.FC = () => {
 
   const resetReviewForm = () => {
     setReviewFormData({
+      employeeUserId: "",
       employee: "",
+      reviewerId: "",
       reviewer: "",
+      reviewCycleId: "",
       reviewCycle: "",
       reviewDate: "",
       status: "Pending",
@@ -401,8 +346,11 @@ export const EmployeeReviews: React.FC = () => {
   const openEditModal = (review: EmployeeReview) => {
     setSelectedReview(review);
     setReviewFormData({
+      employeeUserId: review.employeeUserId,
       employee: review.employee,
+      reviewerId: review.reviewerId,
       reviewer: review.reviewer,
+      reviewCycleId: review.reviewCycleId,
       reviewCycle: review.reviewCycle,
       reviewDate: review.reviewDate,
       status: review.status,
@@ -423,16 +371,36 @@ export const EmployeeReviews: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSaveReview = () => {
-    if (!reviewFormData.employee) {
+  const openConductModal = async (review: EmployeeReview) => {
+    setSelectedReview(review);
+    setRatings({});
+    setPros("");
+    setCons("");
+    try {
+      const form = await employeeReviewActions.getConductForm(review.id);
+      setConductForm(form);
+    } catch {
+      setConductForm(null);
+    }
+    setShowConductModal(true);
+  };
+
+  const statusToApi = (s: string): ApiEmployeeReview["status"] => {
+    if (s === "InProgress") return "in_progress";
+    if (s === "Completed") return "completed";
+    return "pending";
+  };
+
+  const handleSaveReview = async () => {
+    if (!reviewFormData.employeeUserId && !reviewFormData.employee) {
       showToast("Please select an employee", "info");
       return;
     }
-    if (!reviewFormData.reviewer) {
+    if (!reviewFormData.reviewerId && !reviewFormData.reviewer) {
       showToast("Please select a reviewer", "info");
       return;
     }
-    if (!reviewFormData.reviewCycle) {
+    if (!reviewFormData.reviewCycleId && !reviewFormData.reviewCycle) {
       showToast("Please select a review cycle", "info");
       return;
     }
@@ -441,51 +409,51 @@ export const EmployeeReviews: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedReview) {
-      setReviews((prev) =>
-        prev.map((r) =>
-          r.id === selectedReview.id
-            ? {
-                ...r,
-                employee: reviewFormData.employee,
-                reviewer: reviewFormData.reviewer,
-                reviewCycle: reviewFormData.reviewCycle,
-                reviewDate: reviewFormData.reviewDate,
-                status: reviewFormData.status,
-                feedback: reviewFormData.feedback,
-                rating: reviewFormData.rating,
-              }
-            : r,
-        ),
-      );
-      showToast("Review updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newReview: EmployeeReview = {
-        id: Date.now().toString(),
-        employee: reviewFormData.employee,
-        reviewer: reviewFormData.reviewer,
-        reviewCycle: reviewFormData.reviewCycle,
-        reviewDate: reviewFormData.reviewDate,
-        rating: reviewFormData.rating,
-        status: reviewFormData.status,
-        feedback: reviewFormData.feedback,
-        ratingDetails: [],
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setReviews((prev) => [newReview, ...prev]);
-      showToast("Review created successfully!", "success");
-      setShowCreateModal(false);
+    const payload: Partial<ApiEmployeeReview> = {
+      employee_user_id: reviewFormData.employeeUserId || reviewFormData.employee,
+      reviewer_id: reviewFormData.reviewerId || reviewFormData.reviewer,
+      review_cycle_id: reviewFormData.reviewCycleId || reviewFormData.reviewCycle,
+      review_date: reviewFormData.reviewDate,
+      status: statusToApi(reviewFormData.status),
+    };
+
+    try {
+      if (isEditing && selectedReview) {
+        await update(selectedReview.id, payload);
+        showToast("Review updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Review created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetReviewForm();
+    } catch {
+      showToast("Could not save review. Please try again.", "error");
     }
-    resetReviewForm();
   };
 
-  const handleDeleteReview = () => {
-    if (selectedReview) {
-      setReviews((prev) => prev.filter((r) => r.id !== selectedReview.id));
+  const handleDeleteReview = async () => {
+    if (!selectedReview) return;
+    try {
+      await remove(selectedReview.id);
       showToast("Review deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedReview(null);
+    } catch {
+      showToast("Could not delete review.", "error");
+    }
+    setShowDeleteModal(false);
+    setSelectedReview(null);
+  };
+
+  const handleSubmitRatings = async () => {
+    if (!selectedReview) return;
+    try {
+      await employeeReviewActions.submitRatings(selectedReview.id, { ratings, pros, cons });
+      showToast("Ratings submitted successfully!", "success");
+      refetch();
+      setShowConductModal(false);
+    } catch {
+      showToast("Could not submit ratings. Please try again.", "error");
     }
   };
 
@@ -576,21 +544,30 @@ export const EmployeeReviews: React.FC = () => {
               Employee *
             </label>
             <select
-              value={reviewFormData.employee}
-              onChange={(e) =>
+              value={reviewFormData.employeeUserId}
+              onChange={(e) => {
+                const selectedId = e.target.value;
+                const opt = employeeOptions.find((em) => em.id === selectedId);
                 setReviewFormData({
                   ...reviewFormData,
-                  employee: e.target.value,
-                })
-              }
+                  employeeUserId: selectedId,
+                  employee: opt?.name ?? selectedId,
+                });
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select employee</option>
-              {employees.map((emp) => (
-                <option key={emp} value={emp}>
-                  {emp}
-                </option>
-              ))}
+              {employeeOptions.length > 0
+                ? employeeOptions.map((em) => (
+                    <option key={em.id} value={em.id}>
+                      {em.name}
+                    </option>
+                  ))
+                : staticEmployees.map((emp) => (
+                    <option key={emp} value={emp}>
+                      {emp}
+                    </option>
+                  ))}
             </select>
           </div>
           <div>
@@ -598,21 +575,30 @@ export const EmployeeReviews: React.FC = () => {
               Reviewer *
             </label>
             <select
-              value={reviewFormData.reviewer}
-              onChange={(e) =>
+              value={reviewFormData.reviewerId}
+              onChange={(e) => {
+                const selectedId = e.target.value;
+                const opt = employeeOptions.find((em) => em.id === selectedId);
                 setReviewFormData({
                   ...reviewFormData,
-                  reviewer: e.target.value,
-                })
-              }
+                  reviewerId: selectedId,
+                  reviewer: opt?.name ?? selectedId,
+                });
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select reviewer</option>
-              {reviewers.map((rev) => (
-                <option key={rev} value={rev}>
-                  {rev}
-                </option>
-              ))}
+              {employeeOptions.length > 0
+                ? employeeOptions.map((em) => (
+                    <option key={em.id} value={em.id}>
+                      {em.name}
+                    </option>
+                  ))
+                : staticReviewers.map((rev) => (
+                    <option key={rev} value={rev}>
+                      {rev}
+                    </option>
+                  ))}
             </select>
           </div>
           <div>
@@ -620,21 +606,30 @@ export const EmployeeReviews: React.FC = () => {
               Review Cycle *
             </label>
             <select
-              value={reviewFormData.reviewCycle}
-              onChange={(e) =>
+              value={reviewFormData.reviewCycleId}
+              onChange={(e) => {
+                const selectedId = e.target.value;
+                const opt = reviewCycleOptions.find((c) => c.id === selectedId);
                 setReviewFormData({
                   ...reviewFormData,
-                  reviewCycle: e.target.value,
-                })
-              }
+                  reviewCycleId: selectedId,
+                  reviewCycle: opt?.name ?? selectedId,
+                });
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select review cycle</option>
-              {reviewCycles.map((cycle) => (
-                <option key={cycle} value={cycle}>
-                  {cycle}
-                </option>
-              ))}
+              {reviewCycleOptions.length > 0
+                ? reviewCycleOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))
+                : staticReviewCycles.map((cycle) => (
+                    <option key={cycle} value={cycle}>
+                      {cycle}
+                    </option>
+                  ))}
             </select>
           </div>
           <div>
@@ -794,7 +789,9 @@ export const EmployeeReviews: React.FC = () => {
                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(selectedReview.status)}`}
                 >
                   {getStatusIcon(selectedReview.status)}
-                  {selectedReview.status}
+                  {selectedReview.status === "InProgress"
+                    ? "In Progress"
+                    : selectedReview.status}
                 </span>
               </div>
             </div>
@@ -842,6 +839,17 @@ export const EmployeeReviews: React.FC = () => {
           >
             Close
           </button>
+          {selectedReview && selectedReview.status !== "Completed" && (
+            <button
+              onClick={() => {
+                setShowViewModal(false);
+                openConductModal(selectedReview);
+              }}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+            >
+              Rate
+            </button>
+          )}
           <button
             onClick={() => {
               setShowViewModal(false);
@@ -851,6 +859,59 @@ export const EmployeeReviews: React.FC = () => {
           >
             Edit
           </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const ConductModal = () => (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+      style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+    >
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Conduct Review</h2>
+            <p className="text-sm text-gray-500 mt-0.5">{selectedReview?.employee}</p>
+          </div>
+          <button onClick={() => setShowConductModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          {conductForm && Array.isArray(conductForm.indicators) && conductForm.indicators.map((ind: any) => (
+            <div key={ind.id ?? ind._id} className="border-b border-gray-100 pb-3">
+              <p className="text-sm font-medium text-gray-700">{ind.name}</p>
+              <input
+                type="number"
+                min={0}
+                max={5}
+                step={0.1}
+                placeholder="Rating (0-5)"
+                value={ratings[String(ind.id ?? ind._id)] ?? ""}
+                onChange={(e) =>
+                  setRatings({ ...ratings, [String(ind.id ?? ind._id)]: parseFloat(e.target.value) || 0 })
+                }
+                className="mt-1 w-32 px-3 py-1.5 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+          ))}
+          {!conductForm && (
+            <p className="text-sm text-gray-500">No indicators loaded. You can still submit pros/cons.</p>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Pros</label>
+            <textarea value={pros} onChange={(e) => setPros(e.target.value)} rows={2} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm resize-y" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Cons</label>
+            <textarea value={cons} onChange={(e) => setCons(e.target.value)} rows={2} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm resize-y" />
+          </div>
+        </div>
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
+          <button onClick={() => setShowConductModal(false)} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">Cancel</button>
+          <button onClick={handleSubmitRatings} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Submit Ratings</button>
         </div>
       </div>
     </div>
@@ -1129,7 +1190,7 @@ export const EmployeeReviews: React.FC = () => {
                     colSpan={7}
                     className="px-4 py-12 text-center text-gray-500"
                   >
-                    No employee reviews found.缓解
+                    No employee reviews found.
                   </td>
                 </tr>
               )}
@@ -1188,6 +1249,7 @@ export const EmployeeReviews: React.FC = () => {
       {/* Modals */}
       {(showCreateModal || showEditModal) && <CreateEditModal />}
       {showViewModal && <ViewModal />}
+      {showConductModal && <ConductModal />}
       {showDeleteModal && <DeleteModal />}
     </div>
   );

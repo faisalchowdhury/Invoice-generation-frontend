@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useMemo } from "react";
+import { refLabel } from "@/services/_http";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
 import {
@@ -19,7 +20,6 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Calendar,
   User,
   FileText,
   Upload,
@@ -28,8 +28,16 @@ import {
   Clock,
   ArrowRightLeft,
   Building2,
-  Briefcase,
 } from "lucide-react";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  employeeTransferHooks,
+  employeeHooks,
+  branchHooks,
+  departmentHooks,
+  designationHooks,
+  hrmStatusActions,
+} from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,246 +59,100 @@ interface EmployeeTransfer {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (API-shaped seed) ───────────────────────────────────────────
 
-const sampleTransfers: EmployeeTransfer[] = [
+const sampleTransfersSeed = [
   {
     id: "1",
-    employee: "Mark Allen",
-    fromBranch: "Customer Service Center",
-    fromDepartment: "Customer Support",
-    fromDesignation: "Senior Associate",
-    toBranch: "North Branch",
-    toDepartment: "Procurement",
-    toDesignation: "Senior Analyst",
-    effectiveDate: "2026-01-24",
-    reason:
-      "Emergency response planning requiring experienced personnel to establish crisis management protocols.",
-    document: "",
+    employee_id: "Mark Allen",
+    to_branch_id: "North Branch",
+    to_department_id: "Procurement",
+    to_designation_id: "Senior Analyst",
+    effective_date: "2026-01-24",
+    reason: "Emergency response planning requiring experienced personnel to establish crisis management protocols.",
     status: "In progress",
-    approvedBy: "",
-    approvedAt: "",
-    createdAt: "2026-01-20",
   },
   {
     id: "2",
-    employee: "Anthony Walker",
-    fromBranch: "Customer Service Center",
-    fromDepartment: "Legal & Compliance",
-    fromDesignation: "Associate",
-    toBranch: "Sales Office",
-    toDepartment: "Sales",
-    toDesignation: "Sales Executive",
-    effectiveDate: "2026-01-19",
+    employee_id: "Anthony Walker",
+    to_branch_id: "Sales Office",
+    to_department_id: "Sales",
+    to_designation_id: "Sales Executive",
+    effective_date: "2026-01-19",
     reason: "Cross-functional skill development and career growth opportunity.",
-    document: "",
     status: "Pending",
-    approvedBy: "",
-    approvedAt: "",
-    createdAt: "2026-01-15",
   },
   {
     id: "3",
-    employee: "Matthew Clark",
-    fromBranch: "Customer Service Center",
-    fromDepartment: "Technical Support",
-    fromDesignation: "Support Engineer",
-    toBranch: "Regional Office",
-    toDepartment: "IT",
-    toDesignation: "System Administrator",
-    effectiveDate: "2026-01-10",
+    employee_id: "Matthew Clark",
+    to_branch_id: "Regional Office",
+    to_department_id: "IT",
+    to_designation_id: "System Administrator",
+    effective_date: "2026-01-10",
     reason: "Technical expertise needed for infrastructure upgrade project.",
-    document: "",
     status: "Approved",
-    approvedBy: "Emily Davis",
-    approvedAt: "2026-01-12",
-    createdAt: "2026-01-05",
   },
   {
     id: "4",
-    employee: "Daniel Thompson",
-    fromBranch: "Sales Office",
-    fromDepartment: "Customer Service",
-    fromDesignation: "Team Lead",
-    toBranch: "Main Office",
-    toDepartment: "Sales & Marketing",
-    toDesignation: "Manager",
-    effectiveDate: "2026-01-09",
+    employee_id: "Daniel Thompson",
+    to_branch_id: "Main Office",
+    to_department_id: "Sales & Marketing",
+    to_designation_id: "Manager",
+    effective_date: "2026-01-09",
     reason: "Leadership expansion and team restructuring.",
-    document: "",
     status: "In progress",
-    approvedBy: "",
-    approvedAt: "",
-    createdAt: "2026-01-04",
   },
   {
     id: "5",
-    employee: "Christopher Lee",
-    fromBranch: "Sales Office",
-    fromDepartment: "Marketing",
-    fromDesignation: "Marketing Executive",
-    toBranch: "Corporate Headquarters",
-    toDepartment: "Brand Management",
-    toDesignation: "Brand Manager",
-    effectiveDate: "2025-12-31",
+    employee_id: "Christopher Lee",
+    to_branch_id: "Corporate Headquarters",
+    to_department_id: "Brand Management",
+    to_designation_id: "Brand Manager",
+    effective_date: "2025-12-31",
     reason: "Corporate branding initiative requiring experienced personnel.",
-    document: "",
     status: "In progress",
-    approvedBy: "",
-    approvedAt: "",
-    createdAt: "2025-12-28",
   },
   {
     id: "6",
-    employee: "James Garcia",
-    fromBranch: "Sales Office",
-    fromDepartment: "Customer Service",
-    fromDesignation: "Senior Consultant",
-    toBranch: "Customer Service Center",
-    toDepartment: "Technical Support",
-    toDesignation: "Team Lead",
-    effectiveDate: "2025-12-25",
+    employee_id: "James Garcia",
+    to_branch_id: "Customer Service Center",
+    to_department_id: "Technical Support",
+    to_designation_id: "Team Lead",
+    effective_date: "2025-12-25",
     reason: "Technical support team expansion and skill enhancement.",
-    document: "",
     status: "Approved",
-    approvedBy: "Michelle Hall",
-    approvedAt: "2025-12-27",
-    createdAt: "2025-12-22",
   },
   {
     id: "7",
-    employee: "Robert Taylor",
-    fromBranch: "Regional Office",
-    fromDepartment: "Finance & Accounting",
-    fromDesignation: "Analyst",
-    toBranch: "Customer Service Center",
-    toDepartment: "Operations",
-    toDesignation: "Operations Analyst",
-    effectiveDate: "2025-12-30",
+    employee_id: "Robert Taylor",
+    to_branch_id: "Customer Service Center",
+    to_department_id: "Operations",
+    to_designation_id: "Operations Analyst",
+    effective_date: "2025-12-30",
     reason: "Process improvement initiative and operational excellence.",
-    document: "",
     status: "In progress",
-    approvedBy: "",
-    approvedAt: "",
-    createdAt: "2025-12-26",
   },
   {
     id: "8",
-    employee: "David Wilson",
-    fromBranch: "Regional Office",
-    fromDepartment: "Human Resources",
-    fromDesignation: "HR Officer",
-    toBranch: "East Branch",
-    toDepartment: "Administration",
-    toDesignation: "Admin Manager",
-    effectiveDate: "2025-12-23",
+    employee_id: "David Wilson",
+    to_branch_id: "East Branch",
+    to_department_id: "Administration",
+    to_designation_id: "Admin Manager",
+    effective_date: "2025-12-23",
     reason: "Branch administration strengthening requirement.",
-    document: "",
     status: "Cancelled",
-    approvedBy: "",
-    approvedAt: "",
-    createdAt: "2025-12-20",
   },
   {
     id: "9",
-    employee: "Michael Brown",
-    fromBranch: "Regional Office",
-    fromDepartment: "Finance & Accounting",
-    fromDesignation: "Assistant Manager",
-    toBranch: "North Branch",
-    toDepartment: "Procurement",
-    toDesignation: "Manager",
-    effectiveDate: "2025-12-13",
+    employee_id: "Michael Brown",
+    to_branch_id: "North Branch",
+    to_department_id: "Procurement",
+    to_designation_id: "Manager",
+    effective_date: "2025-12-13",
     reason: "Procurement department restructuring and leadership gap.",
-    document: "",
     status: "In progress",
-    approvedBy: "",
-    approvedAt: "",
-    createdAt: "2025-12-10",
   },
 ];
-
-const employees = [
-  "Mark Allen",
-  "Anthony Walker",
-  "Matthew Clark",
-  "Daniel Thompson",
-  "Christopher Lee",
-  "James Garcia",
-  "Robert Taylor",
-  "David Wilson",
-  "Michael Brown",
-  "John Smith",
-];
-
-const branches = [
-  "Customer Service Center",
-  "Sales Office",
-  "Regional Office",
-  "Main Office",
-  "North Branch",
-  "South Branch",
-  "East Branch",
-  "West Branch",
-  "Corporate Headquarters",
-];
-
-const departments: Record<string, string[]> = {
-  "Customer Service Center": [
-    "Customer Support",
-    "Technical Support",
-    "Legal & Compliance",
-    "Operations",
-  ],
-  "Sales Office": ["Sales", "Marketing", "Customer Service"],
-  "Regional Office": [
-    "Finance & Accounting",
-    "Human Resources",
-    "IT",
-    "Administration",
-  ],
-  "Main Office": ["Sales & Marketing", "Corporate Affairs", "Executive"],
-  "North Branch": ["Procurement", "Logistics", "Warehouse"],
-  "South Branch": ["Finance & Accounting", "Sales", "Support"],
-  "East Branch": ["Administration", "Facilities", "Security"],
-  "West Branch": ["Operations", "Quality", "Maintenance"],
-  "Corporate Headquarters": ["Brand Management", "Strategy", "Legal"],
-};
-
-const designations: Record<string, string[]> = {
-  "Customer Support": ["Associate", "Senior Associate", "Team Lead", "Manager"],
-  "Technical Support": [
-    "Support Engineer",
-    "Senior Support Engineer",
-    "Team Lead",
-    "Manager",
-  ],
-  "Legal & Compliance": [
-    "Legal Officer",
-    "Compliance Officer",
-    "Manager",
-    "Associate",
-  ],
-  Operations: ["Operations Analyst", "Operations Manager", "Coordinator"],
-  Sales: ["Sales Executive", "Senior Sales Executive", "Sales Manager"],
-  Marketing: ["Marketing Executive", "Marketing Manager", "Brand Manager"],
-  "Customer Service": ["Support Associate", "Senior Consultant", "Team Lead"],
-  "Finance & Accounting": [
-    "Accountant",
-    "Senior Accountant",
-    "Finance Manager",
-    "Analyst",
-    "Assistant Manager",
-  ],
-  "Human Resources": ["HR Officer", "HR Manager", "Recruiter"],
-  IT: ["IT Support", "System Administrator", "Developer", "IT Manager"],
-  Administration: ["Admin Officer", "Admin Manager", "Coordinator"],
-  Procurement: ["Procurement Officer", "Analyst", "Manager"],
-  Logistics: ["Logistics Coordinator", "Supply Chain Analyst", "Manager"],
-  "Sales & Marketing": ["Coordinator", "Specialist", "Manager"],
-  "Brand Management": ["Brand Executive", "Brand Manager", "Director"],
-  Strategy: ["Strategy Analyst", "Strategy Manager", "Director"],
-};
 
 const statuses = [
   "Pending",
@@ -301,6 +163,54 @@ const statuses = [
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function mapFromApi(p: any): EmployeeTransfer {
+  const empRef = p.employee_id;
+  const toBranchRef = p.to_branch_id;
+  const toDeptRef = p.to_department_id;
+  const toDesigRef = p.to_designation_id;
+  const fromBranchRef = p.from_branch_id ?? p.fromBranch;
+  const fromDeptRef = p.from_department_id ?? p.fromDepartment;
+  const fromDesigRef = p.from_designation_id ?? p.fromDesignation;
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    employee:
+      typeof empRef === "object"
+        ? empRef?.name ?? empRef?.first_name ?? String(empRef?._id ?? "")
+        : String(empRef ?? p.employee ?? ""),
+    fromBranch:
+      typeof fromBranchRef === "object"
+        ? fromBranchRef?.branch_name ?? String(fromBranchRef?._id ?? "")
+        : String(fromBranchRef ?? ""),
+    fromDepartment:
+      typeof fromDeptRef === "object"
+        ? fromDeptRef?.department_name ?? String(fromDeptRef?._id ?? "")
+        : String(fromDeptRef ?? ""),
+    fromDesignation:
+      typeof fromDesigRef === "object"
+        ? fromDesigRef?.designation_name ?? String(fromDesigRef?._id ?? "")
+        : String(fromDesigRef ?? ""),
+    toBranch:
+      typeof toBranchRef === "object"
+        ? toBranchRef?.branch_name ?? String(toBranchRef?._id ?? "")
+        : String(toBranchRef ?? p.toBranch ?? ""),
+    toDepartment:
+      typeof toDeptRef === "object"
+        ? toDeptRef?.department_name ?? String(toDeptRef?._id ?? "")
+        : String(toDeptRef ?? p.toDepartment ?? ""),
+    toDesignation:
+      typeof toDesigRef === "object"
+        ? toDesigRef?.designation_name ?? String(toDesigRef?._id ?? "")
+        : String(toDesigRef ?? p.toDesignation ?? ""),
+    effectiveDate: (p.effective_date ?? p.effectiveDate ?? "").slice(0, 10),
+    reason: p.reason ?? "",
+    document: p.document ?? "",
+    status: p.status ?? "Pending",
+    approvedBy: refLabel(p.approved_by ?? p.approvedBy),
+    approvedAt: (p.approved_at ?? p.approvedAt ?? "").slice(0, 10),
+    createdAt: (p.created_at ?? p.createdAt ?? "").slice(0, 10),
+  };
+}
 
 const formatDate = (dateStr: string) => {
   if (!dateStr) return "-";
@@ -324,8 +234,42 @@ type SortDir = "asc" | "desc";
 
 export const EmployeeTransfers: React.FC = () => {
   const navigate = useNavigate();
-  const [transfers, setTransfers] =
-    useState<EmployeeTransfer[]>(sampleTransfers);
+
+  const { items: raw, create, update, remove, refetch } = useResourceData(
+    employeeTransferHooks,
+    { seed: sampleTransfersSeed as any[], params: { page: 1, limit: 100 } },
+  );
+  const transfers = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Load options from API
+  const empListResult = employeeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const empOptions: string[] = useMemo(() => {
+    const data = empListResult.data as any[] | undefined;
+    if (!data) return [];
+    return data.map((e: any) => e.name ?? e.first_name ?? String(e._id ?? e.id ?? ""));
+  }, [empListResult.data]);
+
+  const branchListResult = branchHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const branchOptions: string[] = useMemo(() => {
+    const data = branchListResult.data as any[] | undefined;
+    if (!data) return [];
+    return data.map((e: any) => e.branch_name ?? e.name ?? String(e._id ?? e.id ?? ""));
+  }, [branchListResult.data]);
+
+  const deptListResult = departmentHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const deptOptions: string[] = useMemo(() => {
+    const data = deptListResult.data as any[] | undefined;
+    if (!data) return [];
+    return data.map((e: any) => e.department_name ?? e.name ?? String(e._id ?? e.id ?? ""));
+  }, [deptListResult.data]);
+
+  const desigListResult = designationHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const desigOptions: string[] = useMemo(() => {
+    const data = desigListResult.data as any[] | undefined;
+    if (!data) return [];
+    return data.map((e: any) => e.designation_name ?? e.name ?? String(e._id ?? e.id ?? ""));
+  }, [desigListResult.data]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -474,30 +418,20 @@ export const EmployeeTransfers: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleStatusUpdate = () => {
+  const handleStatusUpdate = async () => {
     if (selectedTransfer && newStatus) {
-      setTransfers((prev) =>
-        prev.map((t) =>
-          t.id === selectedTransfer.id
-            ? {
-                ...t,
-                status: newStatus as any,
-                approvedBy:
-                  newStatus === "Approved" ? "HR Manager" : t.approvedBy,
-                approvedAt:
-                  newStatus === "Approved"
-                    ? new Date().toISOString().split("T")[0]
-                    : t.approvedAt,
-              }
-            : t,
-        ),
-      );
-      showToast(`Transfer status updated to ${newStatus}!`, "success");
-      setShowStatusModal(false);
+      try {
+        await hrmStatusActions.employeeTransfer(selectedTransfer.id, newStatus);
+        await refetch();
+        showToast(`Transfer status updated to ${newStatus}!`, "success");
+        setShowStatusModal(false);
+      } catch {
+        showToast("Failed to update status", "error");
+      }
     }
   };
 
-  const handleSaveTransfer = () => {
+  const handleSaveTransfer = async () => {
     if (!transferFormData.employee) {
       showToast("Please select an employee", "info");
       return;
@@ -519,63 +453,44 @@ export const EmployeeTransfers: React.FC = () => {
       return;
     }
 
-    // Find current employee details (in a real app, fetch from API)
-    const currentDetails = {
-      fromBranch: "Customer Service Center",
-      fromDepartment: "Customer Support",
-      fromDesignation: "Senior Associate",
+    const toApi: Record<string, any> = {
+      employee_id: transferFormData.employee,
+      to_branch_id: transferFormData.toBranch,
+      to_department_id: transferFormData.toDepartment,
+      to_designation_id: transferFormData.toDesignation,
+      effective_date: transferFormData.effectiveDate,
+      reason: transferFormData.reason,
     };
-
-    if (isEditing && selectedTransfer) {
-      setTransfers((prev) =>
-        prev.map((t) =>
-          t.id === selectedTransfer.id
-            ? {
-                ...t,
-                employee: transferFormData.employee,
-                toBranch: transferFormData.toBranch,
-                toDepartment: transferFormData.toDepartment,
-                toDesignation: transferFormData.toDesignation,
-                effectiveDate: transferFormData.effectiveDate,
-                reason: transferFormData.reason,
-                document: transferFormData.documentName || t.document,
-              }
-            : t,
-        ),
-      );
-      showToast("Transfer updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newTransfer: EmployeeTransfer = {
-        id: Date.now().toString(),
-        employee: transferFormData.employee,
-        fromBranch: currentDetails.fromBranch,
-        fromDepartment: currentDetails.fromDepartment,
-        fromDesignation: currentDetails.fromDesignation,
-        toBranch: transferFormData.toBranch,
-        toDepartment: transferFormData.toDepartment,
-        toDesignation: transferFormData.toDesignation,
-        effectiveDate: transferFormData.effectiveDate,
-        reason: transferFormData.reason,
-        document: transferFormData.documentName || "",
-        status: "Pending",
-        approvedBy: "",
-        approvedAt: "",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setTransfers((prev) => [newTransfer, ...prev]);
-      showToast("Transfer created successfully!", "success");
-      setShowCreateModal(false);
+    if (transferFormData.document) {
+      toApi.document = transferFormData.document;
     }
-    resetTransferForm();
+
+    try {
+      if (isEditing && selectedTransfer) {
+        await update(selectedTransfer.id, toApi);
+        showToast("Transfer updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(toApi);
+        showToast("Transfer created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetTransferForm();
+    } catch {
+      showToast("Failed to save transfer", "error");
+    }
   };
 
-  const handleDeleteTransfer = () => {
+  const handleDeleteTransfer = async () => {
     if (selectedTransfer) {
-      setTransfers((prev) => prev.filter((t) => t.id !== selectedTransfer.id));
-      showToast("Transfer deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedTransfer(null);
+      try {
+        await remove(selectedTransfer.id);
+        showToast("Transfer deleted successfully!", "success");
+        setShowDeleteModal(false);
+        setSelectedTransfer(null);
+      } catch {
+        showToast("Failed to delete transfer", "error");
+      }
     }
   };
 
@@ -632,18 +547,32 @@ export const EmployeeTransfers: React.FC = () => {
     </th>
   );
 
+  // ─── Fallback option arrays ───────────────────────────────────────────────
+
+  const displayEmpOptions = empOptions.length > 0 ? empOptions : [
+    "Mark Allen", "Anthony Walker", "Matthew Clark", "Daniel Thompson",
+    "Christopher Lee", "James Garcia", "Robert Taylor", "David Wilson",
+    "Michael Brown", "John Smith",
+  ];
+  const displayBranchOptions = branchOptions.length > 0 ? branchOptions : [
+    "Customer Service Center", "Sales Office", "Regional Office", "Main Office",
+    "North Branch", "South Branch", "East Branch", "West Branch", "Corporate Headquarters",
+  ];
+  const displayDeptOptions = deptOptions.length > 0 ? deptOptions : [
+    "Customer Support", "Technical Support", "Legal & Compliance", "Operations",
+    "Sales", "Marketing", "Customer Service", "Finance & Accounting",
+    "Human Resources", "IT", "Administration", "Procurement",
+  ];
+  const displayDesigOptions = desigOptions.length > 0 ? desigOptions : [
+    "Associate", "Senior Associate", "Team Lead", "Manager", "Analyst",
+    "Senior Analyst", "Director", "Coordinator", "Specialist",
+  ];
+
   // ═══════════════════════════════════════════════════════════════════════════
   // MODALS
   // ═══════════════════════════════════════════════════════════════════════════
 
   const CreateEditModal = () => {
-    const availableDepartments = transferFormData.toBranch
-      ? departments[transferFormData.toBranch] || []
-      : [];
-    const availableDesignations = transferFormData.toDepartment
-      ? designations[transferFormData.toDepartment] || []
-      : [];
-
     return (
       <div
         className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
@@ -690,7 +619,7 @@ export const EmployeeTransfers: React.FC = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
               >
                 <option value="">Select Employee</option>
-                {employees.map((emp) => (
+                {displayEmpOptions.map((emp) => (
                   <option key={emp} value={emp}>
                     {emp}
                   </option>
@@ -714,7 +643,7 @@ export const EmployeeTransfers: React.FC = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
               >
                 <option value="">Select To Branch</option>
-                {branches.map((b) => (
+                {displayBranchOptions.map((b) => (
                   <option key={b} value={b}>
                     {b}
                   </option>
@@ -742,7 +671,7 @@ export const EmployeeTransfers: React.FC = () => {
                     ? "Select To Department"
                     : "Select Branch first"}
                 </option>
-                {availableDepartments.map((d) => (
+                {displayDeptOptions.map((d) => (
                   <option key={d} value={d}>
                     {d}
                   </option>
@@ -769,7 +698,7 @@ export const EmployeeTransfers: React.FC = () => {
                     ? "Select To Designation"
                     : "Select Department first"}
                 </option>
-                {availableDesignations.map((d) => (
+                {displayDesigOptions.map((d) => (
                   <option key={d} value={d}>
                     {d}
                   </option>

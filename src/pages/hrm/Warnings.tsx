@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useMemo } from "react";
+import { refLabel } from "@/services/_http";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
 import {
@@ -19,8 +20,6 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Calendar,
-  User,
   FileText,
   Upload,
   CheckCircle,
@@ -29,6 +28,13 @@ import {
   AlertTriangle,
   Flag,
 } from "lucide-react";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  warningHooks,
+  warningTypeHooks,
+  employeeHooks,
+  hrmStatusActions,
+} from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -232,6 +238,53 @@ const subjects = [
 
 const severities = ["High", "Medium", "Low"];
 
+// ─── Seed (snake_case for API) ────────────────────────────────────────────────
+
+const sampleWarningsSeed = sampleWarnings.map((w) => ({
+  id: w.id,
+  employee_id: w.employee,
+  warning_by: w.warningBy,
+  warning_type_id: w.warningType,
+  subject: w.subject,
+  severity: w.severity.toLowerCase(),
+  warning_date: w.warningDate,
+  description: w.description,
+  status: w.status.toLowerCase(),
+}));
+
+// ─── mapFromApi ───────────────────────────────────────────────────────────────
+
+function mapFromApi(p: any): Warning {
+  const empField = p.employee_id ?? p.employeeId;
+  const wtField = p.warning_type_id ?? p.warningTypeId;
+  const sev = (p.severity ?? "medium");
+  const capFirst = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    employee:
+      typeof empField === "object"
+        ? empField?.name ?? ""
+        : String(empField ?? p.employee ?? ""),
+    warningBy: refLabel(p.warning_by ?? p.warningBy),
+    warningType:
+      typeof wtField === "object"
+        ? wtField?.name ?? ""
+        : String(wtField ?? p.warningType ?? ""),
+    subject: p.subject ?? "",
+    severity: capFirst(sev) as Warning["severity"],
+    warningDate: (p.warning_date ?? p.warningDate ?? "").slice(0, 10),
+    description: p.description ?? "",
+    document: p.document ?? "",
+    status: (() => {
+      const s = (p.status ?? "pending").toLowerCase();
+      if (s === "approved") return "Approved";
+      if (s === "rejected") return "Rejected";
+      return "Pending";
+    })() as Warning["status"],
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const formatDate = (dateStr: string) => {
@@ -258,7 +311,38 @@ type SortDir = "asc" | "desc";
 
 export const Warnings: React.FC = () => {
   const navigate = useNavigate();
-  const [warnings, setWarnings] = useState<Warning[]>(sampleWarnings);
+
+  const { items: raw, create, update, remove, refetch } = useResourceData(
+    warningHooks,
+    { seed: sampleWarningsSeed as any, params: { page: 1, limit: 100 } },
+  );
+  const warnings = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Employee options from API
+  const empQuery = employeeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const empOptions = useMemo(
+    () =>
+      (empQuery.data ?? []).map((e: any) => ({
+        id: String(e.id ?? e._id ?? ""),
+        name:
+          typeof e.user_id === "object"
+            ? e.user_id?.name ?? ""
+            : e.name ?? e.employee_name ?? "",
+      })),
+    [empQuery.data],
+  );
+
+  // Warning type options from API
+  const wtQuery = warningTypeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const wtOptions = useMemo(
+    () =>
+      (wtQuery.data ?? []).map((t: any) => ({
+        id: String(t.id ?? t._id ?? ""),
+        name: t.name ?? t.type_name ?? "",
+      })),
+    [wtQuery.data],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -408,17 +492,20 @@ export const Warnings: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleStatusUpdate = (
+  const handleStatusUpdate = async (
     id: string,
     newStatus: "Approved" | "Rejected",
   ) => {
-    setWarnings((prev) =>
-      prev.map((w) => (w.id === id ? { ...w, status: newStatus } : w)),
-    );
-    showToast(`Warning ${newStatus.toLowerCase()} successfully!`, "success");
+    try {
+      await hrmStatusActions.warningResponse(id, newStatus.toLowerCase());
+      refetch();
+      showToast(`Warning ${newStatus.toLowerCase()} successfully!`, "success");
+    } catch {
+      showToast("Action failed.", "error");
+    }
   };
 
-  const handleSaveWarning = () => {
+  const handleSaveWarning = async () => {
     if (!warningFormData.employee) {
       showToast("Please select an employee", "info");
       return;
@@ -440,53 +527,42 @@ export const Warnings: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedWarning) {
-      setWarnings((prev) =>
-        prev.map((w) =>
-          w.id === selectedWarning.id
-            ? {
-                ...w,
-                employee: warningFormData.employee,
-                warningBy: warningFormData.warningBy,
-                warningType: warningFormData.warningType,
-                subject: warningFormData.subject,
-                severity: warningFormData.severity,
-                warningDate: warningFormData.warningDate,
-                description: warningFormData.description,
-                document: warningFormData.documentName || w.document,
-              }
-            : w,
-        ),
-      );
-      showToast("Warning updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newWarning: Warning = {
-        id: Date.now().toString(),
-        employee: warningFormData.employee,
-        warningBy: warningFormData.warningBy,
-        warningType: warningFormData.warningType,
-        subject: warningFormData.subject,
-        severity: warningFormData.severity,
-        warningDate: warningFormData.warningDate,
-        description: warningFormData.description,
-        document: warningFormData.documentName || "",
-        status: "Pending",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setWarnings((prev) => [newWarning, ...prev]);
-      showToast("Warning created successfully!", "success");
-      setShowCreateModal(false);
+    const payload = {
+      employee_id: warningFormData.employee,
+      warning_by: warningFormData.warningBy,
+      warning_type_id: warningFormData.warningType,
+      subject: warningFormData.subject,
+      severity: warningFormData.severity.toLowerCase(),
+      warning_date: warningFormData.warningDate,
+      description: warningFormData.description,
+    };
+
+    try {
+      if (isEditing && selectedWarning) {
+        await update(selectedWarning.id, payload);
+        showToast("Warning updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Warning created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetWarningForm();
+    } catch {
+      showToast("Operation failed.", "error");
     }
-    resetWarningForm();
   };
 
-  const handleDeleteWarning = () => {
+  const handleDeleteWarning = async () => {
     if (selectedWarning) {
-      setWarnings((prev) => prev.filter((w) => w.id !== selectedWarning.id));
-      showToast("Warning deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedWarning(null);
+      try {
+        await remove(selectedWarning.id);
+        showToast("Warning deleted successfully!", "success");
+        setShowDeleteModal(false);
+        setSelectedWarning(null);
+      } catch {
+        showToast("Delete failed.", "error");
+      }
     }
   };
 
@@ -607,11 +683,17 @@ export const Warnings: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Employee</option>
-              {employees.map((emp) => (
-                <option key={emp} value={emp}>
-                  {emp}
-                </option>
-              ))}
+              {empOptions.length > 0
+                ? empOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.name}
+                    </option>
+                  ))
+                : employees.map((emp) => (
+                    <option key={emp} value={emp}>
+                      {emp}
+                    </option>
+                  ))}
             </select>
           </div>
           <div>
@@ -651,11 +733,17 @@ export const Warnings: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Warning Type</option>
-              {warningTypes.map((wt) => (
-                <option key={wt} value={wt}>
-                  {wt}
-                </option>
-              ))}
+              {wtOptions.length > 0
+                ? wtOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.name}
+                    </option>
+                  ))
+                : warningTypes.map((wt) => (
+                    <option key={wt} value={wt}>
+                      {wt}
+                    </option>
+                  ))}
             </select>
           </div>
           <div>

@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useMemo } from "react";
+import { refLabel } from "@/services/_http";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
 import {
@@ -19,16 +20,21 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Calendar,
   User,
-  Building2,
-  Briefcase,
-  FileText,
   Upload,
   TrendingUp,
   CheckCircle,
   AlertCircle,
 } from "lucide-react";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  promotionHooks,
+  employeeHooks,
+  branchHooks,
+  departmentHooks,
+  designationHooks,
+  hrmStatusActions,
+} from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -246,7 +252,72 @@ const designations: Record<string, string[]> = {
   "Corporate Affairs": ["Officer", "Manager", "Director"],
 };
 
+// ─── Seed (snake_case for API) ────────────────────────────────────────────────
+
+const samplePromotionsSeed = samplePromotions.map((p) => ({
+  id: p.id,
+  employee_id: p.employee,
+  current_branch_id: p.currentBranch,
+  current_department_id: p.currentDepartment,
+  current_designation_id: p.currentDesignation,
+  effective_date: p.effectiveDate,
+  reason: p.reason,
+  status: p.status.toLowerCase(),
+}));
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const titleCase = (s: string) =>
+  s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
+
+function mapFromApi(p: any): Promotion {
+  const empField = p.employee_id ?? p.employeeId;
+  const curBranch = p.current_branch_id ?? p.currentBranchId;
+  const curDept = p.current_department_id ?? p.currentDepartmentId;
+  const curDesig = p.current_designation_id ?? p.currentDesignationId;
+  const toBranch = p.to_branch_id ?? p.toBranchId;
+  const toDept = p.to_department_id ?? p.toDepartmentId;
+  const toDesig = p.to_designation_id ?? p.toDesignationId;
+
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    employee:
+      typeof empField === "object"
+        ? empField?.name ?? ""
+        : String(empField ?? p.employee ?? ""),
+    currentBranch:
+      typeof curBranch === "object"
+        ? curBranch?.branch_name ?? ""
+        : String(curBranch ?? p.currentBranch ?? ""),
+    currentDepartment:
+      typeof curDept === "object"
+        ? curDept?.department_name ?? ""
+        : String(curDept ?? p.currentDepartment ?? ""),
+    currentDesignation:
+      typeof curDesig === "object"
+        ? curDesig?.designation_name ?? ""
+        : String(curDesig ?? p.currentDesignation ?? ""),
+    newBranch:
+      typeof toBranch === "object"
+        ? toBranch?.branch_name ?? ""
+        : String(toBranch ?? p.newBranch ?? "") || "",
+    newDepartment:
+      typeof toDept === "object"
+        ? toDept?.department_name ?? ""
+        : String(toDept ?? p.newDepartment ?? "") || "",
+    newDesignation:
+      typeof toDesig === "object"
+        ? toDesig?.designation_name ?? ""
+        : String(toDesig ?? p.newDesignation ?? "") || "",
+    effectiveDate: (p.effective_date ?? p.effectiveDate ?? "").slice(0, 10),
+    reason: p.reason ?? "",
+    document: p.document ?? "",
+    approvedBy: refLabel(p.approved_by ?? p.approvedBy),
+    approvedAt: (p.approved_at ?? p.approvedAt ?? "").slice(0, 10),
+    status: titleCase(p.status ?? "Pending") as any,
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
 
 const formatDate = (dateStr: string) => {
   if (!dateStr) return "-";
@@ -270,7 +341,60 @@ type SortDir = "asc" | "desc";
 
 export const Promotions: React.FC = () => {
   const navigate = useNavigate();
-  const [promotions, setPromotions] = useState<Promotion[]>(samplePromotions);
+
+  const { items: raw, create, update, remove, refetch } = useResourceData(
+    promotionHooks,
+    { seed: samplePromotionsSeed as any, params: { page: 1, limit: 100 } },
+  );
+  const items = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Employee options from API
+  const empQuery = employeeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const empOptions = useMemo(
+    () =>
+      (empQuery.data ?? []).map((e: any) => ({
+        id: String(e.id ?? e._id ?? ""),
+        name:
+          typeof e.user_id === "object"
+            ? e.user_id?.name ?? ""
+            : e.name ?? e.employee_name ?? "",
+      })),
+    [empQuery.data],
+  );
+
+  // Branch options from API
+  const branchQuery = branchHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const branchOptions = useMemo(
+    () =>
+      (branchQuery.data ?? []).map((b: any) => ({
+        id: String(b.id ?? b._id ?? ""),
+        name: b.branch_name ?? b.name ?? "",
+      })),
+    [branchQuery.data],
+  );
+
+  // Department options from API
+  const deptQuery = departmentHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const deptOptions = useMemo(
+    () =>
+      (deptQuery.data ?? []).map((d: any) => ({
+        id: String(d.id ?? d._id ?? ""),
+        name: d.department_name ?? d.name ?? "",
+      })),
+    [deptQuery.data],
+  );
+
+  // Designation options from API
+  const desigQuery = designationHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const desigOptions = useMemo(
+    () =>
+      (desigQuery.data ?? []).map((d: any) => ({
+        id: String(d.id ?? d._id ?? ""),
+        name: d.designation_name ?? d.name ?? "",
+      })),
+    [desigQuery.data],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -319,7 +443,7 @@ export const Promotions: React.FC = () => {
   // ─── Filtered & Sorted ─────────────────────────────────────────────────────
 
   const filteredPromotions = useMemo(() => {
-    let result = [...promotions];
+    let result = [...items];
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -346,7 +470,7 @@ export const Promotions: React.FC = () => {
       return 0;
     });
     return result;
-  }, [promotions, searchQuery, statusFilter, sortField, sortDir]);
+  }, [items, searchQuery, statusFilter, sortField, sortDir]);
 
   const totalPages = Math.ceil(filteredPromotions.length / perPage);
   const paginatedPromotions = filteredPromotions.slice(
@@ -391,13 +515,9 @@ export const Promotions: React.FC = () => {
   };
 
   const handleEmployeeChange = (employee: string) => {
-    // In a real app, you would fetch the employee's current details
     setPromotionFormData({
       ...promotionFormData,
       employee: employee,
-      currentBranch: "Customer Service Center",
-      currentDepartment: "Legal & Compliance",
-      currentDesignation: "Associate",
     });
   };
 
@@ -462,7 +582,7 @@ export const Promotions: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSavePromotion = () => {
+  const handleSavePromotion = async () => {
     if (!promotionFormData.employee) {
       showToast("Please select an employee", "info");
       return;
@@ -500,61 +620,51 @@ export const Promotions: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedPromotion) {
-      setPromotions((prev) =>
-        prev.map((p) =>
-          p.id === selectedPromotion.id
-            ? {
-                ...p,
-                employee: promotionFormData.employee,
-                currentBranch: promotionFormData.currentBranch,
-                currentDepartment: promotionFormData.currentDepartment,
-                currentDesignation: promotionFormData.currentDesignation,
-                newBranch: promotionFormData.newBranch,
-                newDepartment: promotionFormData.newDepartment,
-                newDesignation: promotionFormData.newDesignation,
-                effectiveDate: promotionFormData.effectiveDate,
-                reason: promotionFormData.reason,
-                document: promotionFormData.documentName || p.document,
-              }
-            : p,
-        ),
-      );
-      showToast("Promotion updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newPromotion: Promotion = {
-        id: Date.now().toString(),
-        employee: promotionFormData.employee,
-        currentBranch: promotionFormData.currentBranch,
-        currentDepartment: promotionFormData.currentDepartment,
-        currentDesignation: promotionFormData.currentDesignation,
-        newBranch: promotionFormData.newBranch,
-        newDepartment: promotionFormData.newDepartment,
-        newDesignation: promotionFormData.newDesignation,
-        effectiveDate: promotionFormData.effectiveDate,
-        reason: promotionFormData.reason,
-        document: promotionFormData.documentName || "",
-        approvedBy: "",
-        approvedAt: "",
-        status: "Pending",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setPromotions((prev) => [newPromotion, ...prev]);
-      showToast("Promotion created successfully!", "success");
-      setShowCreateModal(false);
+    const payload = {
+      employee_id: promotionFormData.employee,
+      current_branch_id: promotionFormData.currentBranch,
+      current_department_id: promotionFormData.currentDepartment,
+      current_designation_id: promotionFormData.currentDesignation,
+      effective_date: promotionFormData.effectiveDate,
+      reason: promotionFormData.reason,
+    };
+
+    try {
+      if (isEditing && selectedPromotion) {
+        await update(selectedPromotion.id, payload);
+        showToast("Promotion updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Promotion created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetPromotionForm();
+    } catch {
+      showToast("Operation failed.", "error");
     }
-    resetPromotionForm();
   };
 
-  const handleDeletePromotion = () => {
+  const handleDeletePromotion = async () => {
     if (selectedPromotion) {
-      setPromotions((prev) =>
-        prev.filter((p) => p.id !== selectedPromotion.id),
-      );
-      showToast("Promotion deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedPromotion(null);
+      try {
+        await remove(selectedPromotion.id);
+        showToast("Promotion deleted successfully!", "success");
+        setShowDeleteModal(false);
+        setSelectedPromotion(null);
+      } catch {
+        showToast("Delete failed.", "error");
+      }
+    }
+  };
+
+  const handlePromotionStatus = async (id: string, status: string) => {
+    try {
+      await hrmStatusActions.promotion(id, status);
+      refetch();
+      showToast(`Promotion ${status} successfully!`, "success");
+    } catch {
+      showToast("Action failed.", "error");
     }
   };
 
@@ -612,18 +722,22 @@ export const Promotions: React.FC = () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   const CreateEditModal = () => {
-    const availableCurrentDepartments = promotionFormData.currentBranch
-      ? departments[promotionFormData.currentBranch] || []
-      : [];
-    const availableCurrentDesignations = promotionFormData.currentDepartment
-      ? designations[promotionFormData.currentDepartment] || []
-      : [];
-    const availableNewDepartments = promotionFormData.newBranch
-      ? departments[promotionFormData.newBranch] || []
-      : [];
-    const availableNewDesignations = promotionFormData.newDepartment
-      ? designations[promotionFormData.newDepartment] || []
-      : [];
+    const availableCurrentDepartments =
+      branchOptions.length === 0 && promotionFormData.currentBranch
+        ? departments[promotionFormData.currentBranch] || []
+        : [];
+    const availableCurrentDesignations =
+      branchOptions.length === 0 && promotionFormData.currentDepartment
+        ? designations[promotionFormData.currentDepartment] || []
+        : [];
+    const availableNewDepartments =
+      branchOptions.length === 0 && promotionFormData.newBranch
+        ? departments[promotionFormData.newBranch] || []
+        : [];
+    const availableNewDesignations =
+      branchOptions.length === 0 && promotionFormData.newDepartment
+        ? designations[promotionFormData.newDepartment] || []
+        : [];
 
     return (
       <div
@@ -664,11 +778,17 @@ export const Promotions: React.FC = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
               >
                 <option value="">Select Employee</option>
-                {employees.map((emp) => (
-                  <option key={emp} value={emp}>
-                    {emp}
-                  </option>
-                ))}
+                {empOptions.length > 0
+                  ? empOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.name}
+                      </option>
+                    ))
+                  : employees.map((emp) => (
+                      <option key={emp} value={emp}>
+                        {emp}
+                      </option>
+                    ))}
               </select>
             </div>
 
@@ -687,11 +807,17 @@ export const Promotions: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
                   >
                     <option value="">Select Current Branch</option>
-                    {branches.map((b) => (
-                      <option key={b} value={b}>
-                        {b}
-                      </option>
-                    ))}
+                    {branchOptions.length > 0
+                      ? branchOptions.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
+                          </option>
+                        ))
+                      : branches.map((b) => (
+                          <option key={b} value={b}>
+                            {b}
+                          </option>
+                        ))}
                   </select>
                 </div>
                 <div>
@@ -703,19 +829,30 @@ export const Promotions: React.FC = () => {
                     onChange={(e) =>
                       handleCurrentDepartmentChange(e.target.value)
                     }
-                    disabled={!promotionFormData.currentBranch}
+                    disabled={
+                      branchOptions.length === 0
+                        ? !promotionFormData.currentBranch
+                        : false
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white disabled:bg-gray-100"
                   >
                     <option value="">
-                      {promotionFormData.currentBranch
-                        ? "Select Current Department"
-                        : "Select Branch first"}
+                      {branchOptions.length === 0 &&
+                      !promotionFormData.currentBranch
+                        ? "Select Branch first"
+                        : "Select Current Department"}
                     </option>
-                    {availableCurrentDepartments.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
+                    {deptOptions.length > 0
+                      ? deptOptions.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}
+                          </option>
+                        ))
+                      : availableCurrentDepartments.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
                   </select>
                 </div>
                 <div>
@@ -730,19 +867,30 @@ export const Promotions: React.FC = () => {
                         currentDesignation: e.target.value,
                       })
                     }
-                    disabled={!promotionFormData.currentDepartment}
+                    disabled={
+                      branchOptions.length === 0
+                        ? !promotionFormData.currentDepartment
+                        : false
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white disabled:bg-gray-100"
                   >
                     <option value="">
-                      {promotionFormData.currentDepartment
-                        ? "Select Current Designation"
-                        : "Select Department first"}
+                      {branchOptions.length === 0 &&
+                      !promotionFormData.currentDepartment
+                        ? "Select Department first"
+                        : "Select Current Designation"}
                     </option>
-                    {availableCurrentDesignations.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
+                    {desigOptions.length > 0
+                      ? desigOptions.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}
+                          </option>
+                        ))
+                      : availableCurrentDesignations.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
                   </select>
                 </div>
               </div>
@@ -763,11 +911,17 @@ export const Promotions: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
                   >
                     <option value="">Select New Branch</option>
-                    {branches.map((b) => (
-                      <option key={b} value={b}>
-                        {b}
-                      </option>
-                    ))}
+                    {branchOptions.length > 0
+                      ? branchOptions.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
+                          </option>
+                        ))
+                      : branches.map((b) => (
+                          <option key={b} value={b}>
+                            {b}
+                          </option>
+                        ))}
                   </select>
                 </div>
                 <div>
@@ -777,19 +931,29 @@ export const Promotions: React.FC = () => {
                   <select
                     value={promotionFormData.newDepartment}
                     onChange={(e) => handleNewDepartmentChange(e.target.value)}
-                    disabled={!promotionFormData.newBranch}
+                    disabled={
+                      branchOptions.length === 0
+                        ? !promotionFormData.newBranch
+                        : false
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white disabled:bg-gray-100"
                   >
                     <option value="">
-                      {promotionFormData.newBranch
-                        ? "Select New Department"
-                        : "Select Branch first"}
+                      {branchOptions.length === 0 && !promotionFormData.newBranch
+                        ? "Select Branch first"
+                        : "Select New Department"}
                     </option>
-                    {availableNewDepartments.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
+                    {deptOptions.length > 0
+                      ? deptOptions.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}
+                          </option>
+                        ))
+                      : availableNewDepartments.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
                   </select>
                 </div>
                 <div>
@@ -804,19 +968,30 @@ export const Promotions: React.FC = () => {
                         newDesignation: e.target.value,
                       })
                     }
-                    disabled={!promotionFormData.newDepartment}
+                    disabled={
+                      branchOptions.length === 0
+                        ? !promotionFormData.newDepartment
+                        : false
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white disabled:bg-gray-100"
                   >
                     <option value="">
-                      {promotionFormData.newDepartment
-                        ? "Select New Designation"
-                        : "Select Department first"}
+                      {branchOptions.length === 0 &&
+                      !promotionFormData.newDepartment
+                        ? "Select Department first"
+                        : "Select New Designation"}
                     </option>
-                    {availableNewDesignations.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
+                    {desigOptions.length > 0
+                      ? desigOptions.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}
+                          </option>
+                        ))
+                      : availableNewDesignations.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
                   </select>
                 </div>
               </div>
@@ -1010,22 +1185,52 @@ export const Promotions: React.FC = () => {
             )}
           </div>
         )}
-        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
-          <button
-            onClick={() => setShowViewModal(false)}
-            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-          >
-            Close
-          </button>
-          <button
-            onClick={() => {
-              setShowViewModal(false);
-              if (selectedPromotion) openEditModal(selectedPromotion);
-            }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-          >
-            Edit Promotion
-          </button>
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-between gap-3">
+          <div className="flex gap-2">
+            {selectedPromotion?.status === "Pending" && (
+              <>
+                <button
+                  onClick={() => {
+                    if (selectedPromotion)
+                      handlePromotionStatus(selectedPromotion.id, "Approved");
+                    setShowViewModal(false);
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                >
+                  <CheckCircle className="w-4 h-4 inline mr-1" />
+                  Approve
+                </button>
+                <button
+                  onClick={() => {
+                    if (selectedPromotion)
+                      handlePromotionStatus(selectedPromotion.id, "Rejected");
+                    setShowViewModal(false);
+                  }}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                >
+                  <X className="w-4 h-4 inline mr-1" />
+                  Reject
+                </button>
+              </>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowViewModal(false)}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+            >
+              Close
+            </button>
+            <button
+              onClick={() => {
+                setShowViewModal(false);
+                if (selectedPromotion) openEditModal(selectedPromotion);
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            >
+              Edit Promotion
+            </button>
+          </div>
         </div>
       </div>
     </div>

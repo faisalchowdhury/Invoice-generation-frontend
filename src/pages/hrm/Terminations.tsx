@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useMemo } from "react";
+import { refLabel } from "@/services/_http";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
 import {
@@ -19,17 +20,20 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Calendar,
-  User,
   FileText,
   Upload,
   CheckCircle,
   AlertCircle,
   Clock,
   UserX,
-  Briefcase,
-  Download,
 } from "lucide-react";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  terminationHooks,
+  terminationTypeHooks,
+  employeeHooks,
+  hrmStatusActions,
+} from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -208,6 +212,52 @@ const terminationTypes = [
   "Breach of Contract",
 ];
 
+// ─── Seed (snake_case for API) ────────────────────────────────────────────────
+
+const sampleTerminationsSeed = sampleTerminations.map((t) => ({
+  id: t.id,
+  employee_id: t.employee,
+  termination_type_id: t.terminationType,
+  notice_date: t.noticeDate,
+  termination_date: t.terminationDate,
+  reason: t.reason,
+  description: t.description,
+  status: t.status.toLowerCase(),
+}));
+
+// ─── mapFromApi ───────────────────────────────────────────────────────────────
+
+function mapFromApi(p: any): Termination {
+  const empField = p.employee_id ?? p.employeeId;
+  const ttField = p.termination_type_id ?? p.terminationTypeId;
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    employee:
+      typeof empField === "object"
+        ? empField?.name ?? ""
+        : String(empField ?? p.employee ?? ""),
+    terminationType:
+      typeof ttField === "object"
+        ? ttField?.name ?? ""
+        : String(ttField ?? p.terminationType ?? ""),
+    noticeDate: (p.notice_date ?? p.noticeDate ?? "").slice(0, 10),
+    terminationDate: (p.termination_date ?? p.terminationDate ?? "").slice(0, 10),
+    reason: p.reason ?? "",
+    description: p.description ?? "",
+    document: p.document ?? "",
+    status: (() => {
+      const s = (p.status ?? "pending").toLowerCase();
+      if (s === "approved") return "Approved";
+      if (s === "rejected") return "Rejected";
+      if (s === "cancelled") return "Cancelled";
+      return "Pending";
+    })() as Termination["status"],
+    approvedBy: refLabel(p.approved_by ?? p.approvedBy),
+    approvedAt: (p.approved_at ?? p.approvedAt ?? "").slice(0, 10),
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const formatDate = (dateStr: string) => {
@@ -232,8 +282,38 @@ type SortDir = "asc" | "desc";
 
 export const Terminations: React.FC = () => {
   const navigate = useNavigate();
-  const [terminations, setTerminations] =
-    useState<Termination[]>(sampleTerminations);
+
+  const { items: raw, create, update, remove, refetch } = useResourceData(
+    terminationHooks,
+    { seed: sampleTerminationsSeed as any, params: { page: 1, limit: 100 } },
+  );
+  const terminations = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Employee options from API
+  const empQuery = employeeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const empOptions = useMemo(
+    () =>
+      (empQuery.data ?? []).map((e: any) => ({
+        id: String(e.id ?? e._id ?? ""),
+        name:
+          typeof e.user_id === "object"
+            ? e.user_id?.name ?? ""
+            : e.name ?? e.employee_name ?? "",
+      })),
+    [empQuery.data],
+  );
+
+  // Termination type options from API
+  const ttQuery = terminationTypeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const ttOptions = useMemo(
+    () =>
+      (ttQuery.data ?? []).map((t: any) => ({
+        id: String(t.id ?? t._id ?? ""),
+        name: t.name ?? t.type_name ?? "",
+      })),
+    [ttQuery.data],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -369,29 +449,20 @@ export const Terminations: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleStatusUpdate = (
+  const handleStatusUpdate = async (
     id: string,
     newStatus: "Approved" | "Rejected",
   ) => {
-    setTerminations((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? {
-              ...t,
-              status: newStatus,
-              approvedBy: "HR Manager",
-              approvedAt: "Pending",
-            }
-          : t,
-      ),
-    );
-    showToast(
-      `Termination ${newStatus.toLowerCase()} successfully!`,
-      "success",
-    );
+    try {
+      await hrmStatusActions.termination(id, newStatus.toLowerCase());
+      refetch();
+      showToast(`Termination ${newStatus.toLowerCase()} successfully!`, "success");
+    } catch {
+      showToast("Action failed.", "error");
+    }
   };
 
-  const handleSaveTermination = () => {
+  const handleSaveTermination = async () => {
     if (!terminationFormData.employee) {
       showToast("Please select an employee", "info");
       return;
@@ -417,55 +488,41 @@ export const Terminations: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedTermination) {
-      setTerminations((prev) =>
-        prev.map((t) =>
-          t.id === selectedTermination.id
-            ? {
-                ...t,
-                employee: terminationFormData.employee,
-                terminationType: terminationFormData.terminationType,
-                noticeDate: terminationFormData.noticeDate,
-                terminationDate: terminationFormData.terminationDate,
-                reason: terminationFormData.reason,
-                description: terminationFormData.description,
-                document: terminationFormData.documentName || t.document,
-              }
-            : t,
-        ),
-      );
-      showToast("Termination updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newTermination: Termination = {
-        id: Date.now().toString(),
-        employee: terminationFormData.employee,
-        terminationType: terminationFormData.terminationType,
-        noticeDate: terminationFormData.noticeDate,
-        terminationDate: terminationFormData.terminationDate,
-        reason: terminationFormData.reason,
-        description: terminationFormData.description,
-        document: terminationFormData.documentName || "",
-        status: "Pending",
-        approvedBy: "",
-        approvedAt: "",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setTerminations((prev) => [newTermination, ...prev]);
-      showToast("Termination created successfully!", "success");
-      setShowCreateModal(false);
+    const payload = {
+      employee_id: terminationFormData.employee,
+      termination_type_id: terminationFormData.terminationType,
+      notice_date: terminationFormData.noticeDate,
+      termination_date: terminationFormData.terminationDate,
+      reason: terminationFormData.reason,
+      description: terminationFormData.description,
+    };
+
+    try {
+      if (isEditing && selectedTermination) {
+        await update(selectedTermination.id, payload);
+        showToast("Termination updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Termination created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetTerminationForm();
+    } catch {
+      showToast("Operation failed.", "error");
     }
-    resetTerminationForm();
   };
 
-  const handleDeleteTermination = () => {
+  const handleDeleteTermination = async () => {
     if (selectedTermination) {
-      setTerminations((prev) =>
-        prev.filter((t) => t.id !== selectedTermination.id),
-      );
-      showToast("Termination deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedTermination(null);
+      try {
+        await remove(selectedTermination.id);
+        showToast("Termination deleted successfully!", "success");
+        setShowDeleteModal(false);
+        setSelectedTermination(null);
+      } catch {
+        showToast("Delete failed.", "error");
+      }
     }
   };
 
@@ -566,11 +623,17 @@ export const Terminations: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Employee</option>
-              {employees.map((emp) => (
-                <option key={emp} value={emp}>
-                  {emp}
-                </option>
-              ))}
+              {empOptions.length > 0
+                ? empOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.name}
+                    </option>
+                  ))
+                : employees.map((emp) => (
+                    <option key={emp} value={emp}>
+                      {emp}
+                    </option>
+                  ))}
             </select>
           </div>
           <div>
@@ -588,11 +651,17 @@ export const Terminations: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Termination Type</option>
-              {terminationTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
+              {ttOptions.length > 0
+                ? ttOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.name}
+                    </option>
+                  ))
+                : terminationTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-4">

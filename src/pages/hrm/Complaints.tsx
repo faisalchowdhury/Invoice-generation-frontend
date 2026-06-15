@@ -19,7 +19,6 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Calendar,
   User,
   FileText,
   Upload,
@@ -29,6 +28,13 @@ import {
   Flag,
   UserX,
 } from "lucide-react";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  complaintHooks,
+  complaintTypeHooks,
+  employeeHooks,
+  hrmStatusActions,
+} from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,172 +53,108 @@ interface Complaint {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (API-shaped seed) ───────────────────────────────────────────
 
-const sampleComplaints: Complaint[] = [
+const sampleComplaintsSeed = [
   {
     id: "1",
-    employee: "Mark Allen",
-    againstEmployee: "Daniel Thompson",
-    complaintType: "General Administrative Issues",
+    employee_id: "Mark Allen",
+    against_employee_id: "Daniel Thompson",
+    complaint_type_id: "General Administrative Issues",
     subject: "Parking and Transportation Issues Resolution",
     description:
       "Parking and transportation issues requiring resolution to improve employee accessibility and convenience.",
-    complaintDate: "2026-01-12",
-    document: "",
+    complaint_date: "2026-01-12",
     status: "In progress",
-    resolvedBy: "",
-    resolvedAt: "",
-    createdAt: "2026-01-12",
   },
   {
     id: "2",
-    employee: "Anthony Walker",
-    againstEmployee: "John Smith",
-    complaintType: "Legal & Regulatory Compliance",
+    employee_id: "Anthony Walker",
+    against_employee_id: "John Smith",
+    complaint_type_id: "Legal & Regulatory Compliance",
     subject: "Temperature Control - Uncomfortable Working Conditions",
     description:
       "Temperature control issues causing uncomfortable working conditions for employees.",
-    complaintDate: "2026-01-07",
-    document: "",
+    complaint_date: "2026-01-07",
     status: "Resolved",
-    resolvedBy: "HR Manager",
-    resolvedAt: "2026-01-10",
-    createdAt: "2026-01-07",
   },
   {
     id: "3",
-    employee: "Matthew Clark",
-    againstEmployee: "Robert Taylor",
-    complaintType: "Diversity & Inclusion Concerns",
+    employee_id: "Matthew Clark",
+    against_employee_id: "Robert Taylor",
+    complaint_type_id: "Diversity & Inclusion Concerns",
     subject: "Noise Pollution - Excessive Workplace Disturbance",
     description:
       "Noise pollution from excessive workplace disturbance affecting concentration and productivity during work hours.",
-    complaintDate: "2026-01-02",
-    document: "",
+    complaint_date: "2026-01-02",
     status: "In progress",
-    resolvedBy: "",
-    resolvedAt: "",
-    createdAt: "2026-01-02",
   },
   {
     id: "4",
-    employee: "Daniel Thompson",
-    againstEmployee: "Michael Brown",
-    complaintType: "Remote Work & Flexibility Issues",
+    employee_id: "Daniel Thompson",
+    against_employee_id: "Michael Brown",
+    complaint_type_id: "Remote Work & Flexibility Issues",
     subject: "Ergonomic Issues - Repetitive Strain Injuries",
     description:
       "Ergonomic issues leading to repetitive strain injuries among remote workers.",
-    complaintDate: "2025-12-28",
-    document: "",
+    complaint_date: "2025-12-28",
     status: "Assigned",
-    resolvedBy: "",
-    resolvedAt: "",
-    createdAt: "2025-12-28",
   },
   {
     id: "5",
-    employee: "Christopher Lee",
-    againstEmployee: "John Smith",
-    complaintType: "Security & Access Control",
+    employee_id: "Christopher Lee",
+    against_employee_id: "John Smith",
+    complaint_type_id: "Security & Access Control",
     subject: "Environmental Health Hazards - Chemical Exposure",
     description:
       "Environmental health hazards from chemical exposure in workplace.",
-    complaintDate: "2025-12-23",
-    document: "",
+    complaint_date: "2025-12-23",
     status: "Resolved",
-    resolvedBy: "Safety Officer",
-    resolvedAt: "2025-12-26",
-    createdAt: "2025-12-23",
   },
   {
     id: "6",
-    employee: "James Garcia",
-    againstEmployee: "Robert Taylor",
-    complaintType: "Environmental & Sustainability Issues",
+    employee_id: "James Garcia",
+    against_employee_id: "Robert Taylor",
+    complaint_type_id: "Environmental & Sustainability Issues",
     subject: "Data Security Breach - Unauthorized Access",
     description:
       "Data security breach due to unauthorized access to confidential information.",
-    complaintDate: "2025-12-18",
-    document: "",
+    complaint_date: "2025-12-18",
     status: "Resolved",
-    resolvedBy: "IT Security",
-    resolvedAt: "2025-12-21",
-    createdAt: "2025-12-18",
   },
   {
     id: "7",
-    employee: "Robert Taylor",
-    againstEmployee: "Anthony Walker",
-    complaintType: "Financial & Budget Concerns",
+    employee_id: "Robert Taylor",
+    against_employee_id: "Anthony Walker",
+    complaint_type_id: "Financial & Budget Concerns",
     subject: "Substance Abuse in Workplace Environment",
     description:
       "Substance abuse concerns affecting workplace safety and environment.",
-    complaintDate: "2025-12-13",
-    document: "",
+    complaint_date: "2025-12-13",
     status: "In progress",
-    resolvedBy: "",
-    resolvedAt: "",
-    createdAt: "2025-12-13",
   },
   {
     id: "8",
-    employee: "David Wilson",
-    againstEmployee: "Michael Brown",
-    complaintType: "Customer Service & Relations",
+    employee_id: "David Wilson",
+    against_employee_id: "Michael Brown",
+    complaint_type_id: "Customer Service & Relations",
     subject: "Conflict of Interest - Undisclosed Relationships",
     description:
       "Conflict of interest due to undisclosed relationships affecting decision making.",
-    complaintDate: "2025-12-08",
-    document: "",
+    complaint_date: "2025-12-08",
     status: "Resolved",
-    resolvedBy: "Compliance Officer",
-    resolvedAt: "2025-12-11",
-    createdAt: "2025-12-08",
   },
   {
     id: "9",
-    employee: "Michael Brown",
-    againstEmployee: "Anthony Walker",
-    complaintType: "Quality & Process Improvement",
+    employee_id: "Michael Brown",
+    against_employee_id: "Anthony Walker",
+    complaint_type_id: "Quality & Process Improvement",
     subject: "Misuse of Company Resources and Equipment",
     description:
       "Misuse of company resources and equipment for personal benefit.",
-    complaintDate: "2025-12-03",
-    document: "",
+    complaint_date: "2025-12-03",
     status: "Resolved",
-    resolvedBy: "Department Head",
-    resolvedAt: "2025-12-06",
-    createdAt: "2025-12-03",
   },
-];
-
-const employees = [
-  "Mark Allen",
-  "Anthony Walker",
-  "Matthew Clark",
-  "Daniel Thompson",
-  "Christopher Lee",
-  "James Garcia",
-  "Robert Taylor",
-  "David Wilson",
-  "Michael Brown",
-  "John Smith",
-];
-
-const complaintTypes = [
-  "General Administrative Issues",
-  "Legal & Regulatory Compliance",
-  "Diversity & Inclusion Concerns",
-  "Remote Work & Flexibility Issues",
-  "Security & Access Control",
-  "Environmental & Sustainability Issues",
-  "Financial & Budget Concerns",
-  "Customer Service & Relations",
-  "Quality & Process Improvement",
-  "Workplace Harassment",
-  "Discrimination",
-  "Payroll Issues",
 ];
 
 const subjects = [
@@ -227,9 +169,36 @@ const subjects = [
   "Misuse of Company Resources and Equipment",
 ];
 
-const statuses = ["In progress", "Resolved", "Assigned", "Closed", "Pending"];
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function mapFromApi(p: any): Complaint {
+  const employeeRef = p.employee_id;
+  const againstRef = p.against_employee_id;
+  const ctRef = p.complaint_type_id;
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    employee:
+      typeof employeeRef === "object"
+        ? employeeRef?.name ?? employeeRef?.first_name ?? String(employeeRef?._id ?? "")
+        : String(employeeRef ?? p.employee ?? ""),
+    againstEmployee:
+      typeof againstRef === "object"
+        ? againstRef?.name ?? againstRef?.first_name ?? String(againstRef?._id ?? "")
+        : String(againstRef ?? p.againstEmployee ?? p.against_employee ?? ""),
+    complaintType:
+      typeof ctRef === "object"
+        ? ctRef?.name ?? String(ctRef?._id ?? "")
+        : String(ctRef ?? p.complaintType ?? p.complaint_type ?? ""),
+    subject: p.subject ?? "",
+    description: p.description ?? "",
+    complaintDate: (p.complaint_date ?? p.complaintDate ?? "").slice(0, 10),
+    document: p.document ?? "",
+    status: p.status ?? "Pending",
+    resolvedBy: p.resolved_by ?? p.resolvedBy ?? "",
+    resolvedAt: (p.resolved_at ?? p.resolvedAt ?? "").slice(0, 10),
+    createdAt: (p.created_at ?? p.createdAt ?? "").slice(0, 10),
+  };
+}
 
 const formatDate = (dateStr: string) => {
   if (!dateStr) return "-";
@@ -254,7 +223,28 @@ type SortDir = "asc" | "desc";
 
 export const Complaints: React.FC = () => {
   const navigate = useNavigate();
-  const [complaints, setComplaints] = useState<Complaint[]>(sampleComplaints);
+
+  const { items: raw, create, update, remove, refetch } = useResourceData(
+    complaintHooks,
+    { seed: sampleComplaintsSeed as any[], params: { page: 1, limit: 100 } },
+  );
+  const items = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Load options from API
+  const empListResult = employeeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const empOptions: string[] = useMemo(() => {
+    const data = empListResult.data as any[] | undefined;
+    if (!data) return [];
+    return data.map((e: any) => e.name ?? e.first_name ?? String(e._id ?? e.id ?? ""));
+  }, [empListResult.data]);
+
+  const ctListResult = complaintTypeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const ctOptions: string[] = useMemo(() => {
+    const data = ctListResult.data as any[] | undefined;
+    if (!data) return [];
+    return data.map((e: any) => e.name ?? String(e._id ?? e.id ?? ""));
+  }, [ctListResult.data]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -300,7 +290,7 @@ export const Complaints: React.FC = () => {
   // ─── Filtered & Sorted ─────────────────────────────────────────────────────
 
   const filteredComplaints = useMemo(() => {
-    let result = [...complaints];
+    let result = [...items];
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -328,7 +318,7 @@ export const Complaints: React.FC = () => {
       return 0;
     });
     return result;
-  }, [complaints, searchQuery, statusFilter, sortField, sortDir]);
+  }, [items, searchQuery, statusFilter, sortField, sortDir]);
 
   const totalPages = Math.ceil(filteredComplaints.length / perPage);
   const paginatedComplaints = filteredComplaints.slice(
@@ -393,23 +383,17 @@ export const Complaints: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleStatusUpdate = (id: string, newStatus: "Resolved" | "Closed") => {
-    setComplaints((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? {
-              ...c,
-              status: newStatus,
-              resolvedBy: "In progress",
-              resolvedAt: "In progress",
-            }
-          : c,
-      ),
-    );
-    showToast(`Complaint ${newStatus.toLowerCase()} successfully!`, "success");
+  const handleStatusUpdate = async (id: string, newStatus: "Resolved" | "Closed") => {
+    try {
+      await hrmStatusActions.complaint(id, newStatus);
+      await refetch();
+      showToast(`Complaint ${newStatus.toLowerCase()} successfully!`, "success");
+    } catch {
+      showToast("Failed to update status", "error");
+    }
   };
 
-  const handleSaveComplaint = () => {
+  const handleSaveComplaint = async () => {
     if (!complaintFormData.employee) {
       showToast("Please select an employee", "info");
       return;
@@ -431,55 +415,44 @@ export const Complaints: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedComplaint) {
-      setComplaints((prev) =>
-        prev.map((c) =>
-          c.id === selectedComplaint.id
-            ? {
-                ...c,
-                employee: complaintFormData.employee,
-                againstEmployee: complaintFormData.againstEmployee,
-                complaintType: complaintFormData.complaintType,
-                subject: complaintFormData.subject,
-                description: complaintFormData.description,
-                complaintDate: complaintFormData.complaintDate,
-                document: complaintFormData.documentName || c.document,
-              }
-            : c,
-        ),
-      );
-      showToast("Complaint updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newComplaint: Complaint = {
-        id: Date.now().toString(),
-        employee: complaintFormData.employee,
-        againstEmployee: complaintFormData.againstEmployee,
-        complaintType: complaintFormData.complaintType,
-        subject: complaintFormData.subject,
-        description: complaintFormData.description,
-        complaintDate: complaintFormData.complaintDate,
-        document: complaintFormData.documentName || "",
-        status: "Pending",
-        resolvedBy: "",
-        resolvedAt: "",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setComplaints((prev) => [newComplaint, ...prev]);
-      showToast("Complaint created successfully!", "success");
-      setShowCreateModal(false);
+    const toApi: Record<string, any> = {
+      employee_id: complaintFormData.employee,
+      against_employee_id: complaintFormData.againstEmployee,
+      complaint_type_id: complaintFormData.complaintType,
+      subject: complaintFormData.subject,
+      description: complaintFormData.description,
+      complaint_date: complaintFormData.complaintDate,
+    };
+    if (complaintFormData.document) {
+      toApi.document = complaintFormData.document;
     }
-    resetComplaintForm();
+
+    try {
+      if (isEditing && selectedComplaint) {
+        await update(selectedComplaint.id, toApi);
+        showToast("Complaint updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(toApi);
+        showToast("Complaint created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetComplaintForm();
+    } catch {
+      showToast("Failed to save complaint", "error");
+    }
   };
 
-  const handleDeleteComplaint = () => {
+  const handleDeleteComplaint = async () => {
     if (selectedComplaint) {
-      setComplaints((prev) =>
-        prev.filter((c) => c.id !== selectedComplaint.id),
-      );
-      showToast("Complaint deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedComplaint(null);
+      try {
+        await remove(selectedComplaint.id);
+        showToast("Complaint deleted successfully!", "success");
+        setShowDeleteModal(false);
+        setSelectedComplaint(null);
+      } catch {
+        showToast("Failed to delete complaint", "error");
+      }
     }
   };
 
@@ -536,6 +509,22 @@ export const Complaints: React.FC = () => {
     </th>
   );
 
+  // ─── Fallback option arrays ───────────────────────────────────────────────
+
+  const displayEmpOptions = empOptions.length > 0 ? empOptions : [
+    "Mark Allen", "Anthony Walker", "Matthew Clark", "Daniel Thompson",
+    "Christopher Lee", "James Garcia", "Robert Taylor", "David Wilson",
+    "Michael Brown", "John Smith",
+  ];
+  const displayCtOptions = ctOptions.length > 0 ? ctOptions : [
+    "General Administrative Issues", "Legal & Regulatory Compliance",
+    "Diversity & Inclusion Concerns", "Remote Work & Flexibility Issues",
+    "Security & Access Control", "Environmental & Sustainability Issues",
+    "Financial & Budget Concerns", "Customer Service & Relations",
+    "Quality & Process Improvement", "Workplace Harassment", "Discrimination",
+    "Payroll Issues",
+  ];
+
   // ═══════════════════════════════════════════════════════════════════════════
   // MODALS
   // ═══════════════════════════════════════════════════════════════════════════
@@ -584,7 +573,7 @@ export const Complaints: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Employee</option>
-              {employees.map((emp) => (
+              {displayEmpOptions.map((emp) => (
                 <option key={emp} value={emp}>
                   {emp}
                 </option>
@@ -606,7 +595,7 @@ export const Complaints: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Against Employee</option>
-              {employees.map((emp) => (
+              {displayEmpOptions.map((emp) => (
                 <option key={emp} value={emp}>
                   {emp}
                 </option>
@@ -628,7 +617,7 @@ export const Complaints: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Complaint Type</option>
-              {complaintTypes.map((ct) => (
+              {displayCtOptions.map((ct) => (
                 <option key={ct} value={ct}>
                   {ct}
                 </option>

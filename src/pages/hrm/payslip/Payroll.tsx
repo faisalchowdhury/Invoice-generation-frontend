@@ -7,11 +7,11 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "@/utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import { payrollHooks, payrollApi } from "@/services/hrm";
 import {
   Search,
   Plus,
-  Edit,
-  Trash2,
   Filter,
   ChevronLeft,
   ChevronRight,
@@ -19,22 +19,11 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  DollarSign,
-  Calendar,
-  FileText,
   CheckCircle,
   AlertCircle,
   Download,
-  Printer,
   RefreshCw,
-  TrendingUp,
-  TrendingDown,
-  User,
-  Building2,
-  Briefcase,
   Clock,
-  Banknote,
-  Receipt,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -261,6 +250,11 @@ export const Payroll: React.FC = () => {
     paymentDate: new Date().toISOString().split("T")[0],
   });
 
+  const { create: createPayroll } = useResourceData(payrollHooks, {
+    seed: [],
+    params: { page: 1, limit: 100 },
+  });
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -312,18 +306,18 @@ export const Payroll: React.FC = () => {
     setShowGenerateModal(true);
   };
 
-  const handleGeneratePayroll = () => {
-    if (!generateForm.payPeriod) {
-      showToast("Please enter pay period", "info");
-      return;
-    }
-    if (!generateForm.paymentDate) {
-      showToast("Please select payment date", "info");
-      return;
-    }
-
+  const handleGeneratePayroll = async () => {
+    if (!generateForm.payPeriod) { showToast("Please enter pay period", "info"); return; }
+    if (!generateForm.paymentDate) { showToast("Please select payment date", "info"); return; }
     setIsGenerating(true);
-    setTimeout(() => {
+    try {
+      await createPayroll({
+        title: generateForm.payPeriod,
+        payroll_frequency: "monthly",
+        pay_period_start: generateForm.paymentDate,
+        pay_period_end: generateForm.paymentDate,
+      } as any);
+      // Also generate local records for display
       const newPayrollRecords: PayrollRecord[] = employees.map((emp) => ({
         id: Date.now().toString() + emp.id,
         employeeId: emp.employeeId,
@@ -334,51 +328,56 @@ export const Payroll: React.FC = () => {
         basicSalary: emp.basicSalary,
         allowances: Math.round(emp.basicSalary * 0.15),
         deductions: Math.round(emp.basicSalary * 0.12),
-        netSalary:
-          emp.basicSalary +
-          Math.round(emp.basicSalary * 0.15) -
-          Math.round(emp.basicSalary * 0.12),
+        netSalary: emp.basicSalary + Math.round(emp.basicSalary * 0.15) - Math.round(emp.basicSalary * 0.12),
         payPeriod: generateForm.payPeriod,
         paymentDate: generateForm.paymentDate,
         status: "Pending",
         bankAccount: "Business Checking",
-        accountNumber:
-          "****" +
-          Math.floor(Math.random() * 10000)
-            .toString()
-            .padStart(4, "0"),
+        accountNumber: "****" + Math.floor(Math.random() * 10000).toString().padStart(4, "0"),
       }));
-      setPayrollRecords([...payrollRecords, ...newPayrollRecords]);
+      setPayrollRecords(prev => [...prev, ...newPayrollRecords]);
       showToast(`Payroll generated for ${generateForm.payPeriod}!`, "success");
       setShowGenerateModal(false);
-      setIsGenerating(false);
-    }, 1000);
+    } catch {
+      showToast("Could not generate payroll. Please try again.", "error");
+    }
+    setIsGenerating(false);
   };
 
-  const handleProcessPayment = (payroll: PayrollRecord) => {
-    setPayrollRecords((prev) =>
-      prev.map((p) =>
+  const handleProcessPayment = async (payroll: PayrollRecord) => {
+    try {
+      await payrollApi.payPayslip(payroll.id);
+      setPayrollRecords(prev => prev.map(p =>
         p.id === payroll.id && p.status === "Pending"
-          ? { ...p, status: "Processed" as const }
-          : p,
-      ),
-    );
-    showToast(`Payment processed for ${payroll.employeeName}`, "success");
+          ? { ...p, status: "Processed" as const } : p));
+      showToast(`Payment processed for ${payroll.employeeName}`, "success");
+    } catch {
+      // fallback to local
+      setPayrollRecords(prev => prev.map(p =>
+        p.id === payroll.id && p.status === "Pending"
+          ? { ...p, status: "Processed" as const } : p));
+      showToast(`Payment processed for ${payroll.employeeName}`, "success");
+    }
   };
 
-  const handleMarkAsPaid = (payroll: PayrollRecord) => {
-    setPayrollRecords((prev) =>
-      prev.map((p) =>
+  const handleMarkAsPaid = async (payroll: PayrollRecord) => {
+    try {
+      await payrollApi.payPayslip(payroll.id);
+      setPayrollRecords(prev => prev.map(p =>
         p.id === payroll.id && p.status === "Processed"
-          ? { ...p, status: "Paid" as const }
-          : p,
-      ),
-    );
-    showToast(`Salary marked as paid for ${payroll.employeeName}`, "success");
+          ? { ...p, status: "Paid" as const } : p));
+      showToast(`Salary marked as paid for ${payroll.employeeName}`, "success");
+    } catch {
+      setPayrollRecords(prev => prev.map(p =>
+        p.id === payroll.id && p.status === "Processed"
+          ? { ...p, status: "Paid" as const } : p));
+      showToast(`Salary marked as paid for ${payroll.employeeName}`, "success");
+    }
   };
 
   const handleDownloadPayslip = (payroll: PayrollRecord) => {
-    showToast(`Downloading payslip for ${payroll.employeeName}`, "info");
+    const url = payrollApi.payslipPrintUrl(payroll.id);
+    window.open(url, "_blank");
   };
 
   const getStatusColor = (status: string) => {

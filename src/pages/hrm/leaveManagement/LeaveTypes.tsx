@@ -19,15 +19,11 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Calendar,
-  DollarSign,
   CheckCircle,
   AlertCircle,
-  Palette,
-  FileText,
-  User,
-  Clock,
 } from "lucide-react";
+import { useResourceData } from "@/hooks/useResourceData";
+import { leaveTypeHooks, type HrmMaster } from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,84 +37,32 @@ interface LeaveType {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (API shape / seed) ──────────────────────────────────────────
 
-const sampleLeaveTypes: LeaveType[] = [
-  {
-    id: "1",
-    name: "Annual Leave",
-    maxDaysPerYear: 21,
-    isPaid: true,
-    color: "#10B981",
-    description: "Yearly vacation leave for employees to rest and recharge.",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "2",
-    name: "Sick Leave",
-    maxDaysPerYear: 10,
-    isPaid: true,
-    color: "#3B82F6",
-    description: "Leave for illness or medical appointments.",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "3",
-    name: "Maternity Leave",
-    maxDaysPerYear: 90,
-    isPaid: true,
-    color: "#EC4899",
-    description: "Leave for new mothers after childbirth.",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "4",
-    name: "Paternity Leave",
-    maxDaysPerYear: 15,
-    isPaid: true,
-    color: "#06B6D4",
-    description: "Leave for new fathers after childbirth.",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "5",
-    name: "Personal Leave",
-    maxDaysPerYear: 5,
-    isPaid: false,
-    color: "#F59E0B",
-    description: "Leave for personal matters and emergencies.",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "6",
-    name: "Bereavement Leave",
-    maxDaysPerYear: 3,
-    isPaid: true,
-    color: "#6B7280",
-    description: "Leave for mourning the loss of a family member.",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "7",
-    name: "Study Leave",
-    maxDaysPerYear: 30,
-    isPaid: false,
-    color: "#8B5CF6",
-    description: "Leave for educational pursuits and examinations.",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "8",
-    name: "Emergency Leave",
-    maxDaysPerYear: 2,
-    isPaid: true,
-    color: "#EF4444",
-    description: "Leave for unexpected urgent situations.",
-    createdAt: "2024-01-01",
-  },
+const sampleLeaveTypesSeed: HrmMaster[] = [
+  { id: "1", name: "Annual Leave", max_days_per_year: 21, is_paid: true, color: "#10B981", description: "Yearly vacation leave..." },
+  { id: "2", name: "Sick Leave", max_days_per_year: 10, is_paid: true, color: "#3B82F6", description: "Leave for illness..." },
+  { id: "3", name: "Maternity Leave", max_days_per_year: 90, is_paid: true, color: "#EC4899", description: "Leave for new mothers..." },
+  { id: "4", name: "Paternity Leave", max_days_per_year: 15, is_paid: true, color: "#06B6D4", description: "Leave for new fathers..." },
+  { id: "5", name: "Personal Leave", max_days_per_year: 5, is_paid: false, color: "#F59E0B", description: "Leave for personal matters..." },
+  { id: "6", name: "Bereavement Leave", max_days_per_year: 3, is_paid: true, color: "#6B7280", description: "Leave for mourning..." },
+  { id: "7", name: "Study Leave", max_days_per_year: 30, is_paid: false, color: "#8B5CF6", description: "Leave for educational pursuits..." },
+  { id: "8", name: "Emergency Leave", max_days_per_year: 2, is_paid: true, color: "#EF4444", description: "Leave for unexpected situations..." },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function mapFromApi(p: any): LeaveType {
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    name: p.name ?? "",
+    maxDaysPerYear: Number(p.max_days_per_year ?? p.maxDaysPerYear ?? 0),
+    isPaid: Boolean(p.is_paid ?? p.isPaid ?? false),
+    color: p.color ?? "#10B981",
+    description: p.description ?? "",
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
 
 type SortField = "name" | "maxDaysPerYear" | "isPaid";
 type SortDir = "asc" | "desc";
@@ -127,7 +71,12 @@ type SortDir = "asc" | "desc";
 
 export const LeaveTypes: React.FC = () => {
   const navigate = useNavigate();
-  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>(sampleLeaveTypes);
+  const { items: rawLeaveTypes, create, update, remove } = useResourceData(leaveTypeHooks, {
+    seed: sampleLeaveTypesSeed,
+    params: { page: 1, limit: 100 },
+  });
+  const leaveTypes = useMemo(() => rawLeaveTypes.map(mapFromApi), [rawLeaveTypes]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -250,7 +199,7 @@ export const LeaveTypes: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSaveLeaveType = () => {
+  const handleSaveLeaveType = async () => {
     if (!leaveTypeFormData.name) {
       showToast("Please enter leave type name", "info");
       return;
@@ -260,46 +209,35 @@ export const LeaveTypes: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedLeaveType) {
-      setLeaveTypes((prev) =>
-        prev.map((l) =>
-          l.id === selectedLeaveType.id
-            ? {
-                ...l,
-                name: leaveTypeFormData.name,
-                maxDaysPerYear: leaveTypeFormData.maxDaysPerYear,
-                isPaid: leaveTypeFormData.isPaid,
-                color: leaveTypeFormData.color,
-                description: leaveTypeFormData.description,
-              }
-            : l,
-        ),
-      );
-      showToast("Leave type updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newLeaveType: LeaveType = {
-        id: Date.now().toString(),
-        name: leaveTypeFormData.name,
-        maxDaysPerYear: leaveTypeFormData.maxDaysPerYear,
-        isPaid: leaveTypeFormData.isPaid,
-        color: leaveTypeFormData.color,
-        description: leaveTypeFormData.description,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setLeaveTypes((prev) => [newLeaveType, ...prev]);
-      showToast("Leave type created successfully!", "success");
-      setShowCreateModal(false);
+    const payload = {
+      name: leaveTypeFormData.name,
+      max_days_per_year: leaveTypeFormData.maxDaysPerYear,
+      is_paid: leaveTypeFormData.isPaid,
+    };
+    try {
+      if (isEditing && selectedLeaveType) {
+        await update(selectedLeaveType.id, payload);
+        showToast("Leave type updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Leave type created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetLeaveTypeForm();
+    } catch {
+      showToast("Could not save leave type. Please try again.", "error");
     }
-    resetLeaveTypeForm();
   };
 
-  const handleDeleteLeaveType = () => {
+  const handleDeleteLeaveType = async () => {
     if (selectedLeaveType) {
-      setLeaveTypes((prev) =>
-        prev.filter((l) => l.id !== selectedLeaveType.id),
-      );
-      showToast("Leave type deleted successfully!", "success");
+      try {
+        await remove(selectedLeaveType.id);
+        showToast("Leave type deleted successfully!", "success");
+      } catch {
+        showToast("Could not delete leave type.", "error");
+      }
       setShowDeleteModal(false);
       setSelectedLeaveType(null);
     }

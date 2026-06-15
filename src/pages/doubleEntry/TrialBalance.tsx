@@ -4,16 +4,15 @@
  * Based on provided screenshots design
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { doubleEntryReports } from "@/services/doubleEntry";
 import {
-  ChevronLeft,
   Calendar,
   Download,
   Printer,
   RefreshCw,
-  DollarSign,
   TrendingUp,
   TrendingDown,
 } from "lucide-react";
@@ -31,174 +30,30 @@ interface TrialBalanceAccount {
 // ─── Sample Data ──────────────────────────────────────────────────────────────
 
 const sampleTrialBalance: TrialBalanceAccount[] = [
-  {
-    id: "1",
-    accountCode: "1000",
-    accountName: "Cash",
-    debit: 579790.99,
-    credit: 0,
-  },
-  {
-    id: "2",
-    accountCode: "1005",
-    accountName: "Petty Cash",
-    debit: 121847.72,
-    credit: 0,
-  },
-  {
-    id: "3",
-    accountCode: "1010",
-    accountName: "Bank Account - Main",
-    debit: 41388.94,
-    credit: 0,
-  },
-  {
-    id: "4",
-    accountCode: "1020",
-    accountName: "Bank Account - Savings",
-    debit: 0,
-    credit: 726626.65,
-  },
-  {
-    id: "5",
-    accountCode: "1100",
-    accountName: "Accounts Receivable",
-    debit: 7619.27,
-    credit: 0,
-  },
-  {
-    id: "6",
-    accountCode: "1200",
-    accountName: "Inventory",
-    debit: 4532.0,
-    credit: 0,
-  },
-  {
-    id: "7",
-    accountCode: "1500",
-    accountName: "Tax Receivable (VAT/GST Input)",
-    debit: 4831.95,
-    credit: 0,
-  },
-  {
-    id: "8",
-    accountCode: "2000",
-    accountName: "Accounts Payable",
-    debit: 0,
-    credit: 13910.45,
-  },
-  {
-    id: "9",
-    accountCode: "2210",
-    accountName: "VAT Payable (Sales Tax Output)",
-    debit: 0,
-    credit: 5425.48,
-  },
-  {
-    id: "10",
-    accountCode: "4010",
-    accountName: "Product Sales",
-    debit: 0,
-    credit: 450.0,
-  },
-  {
-    id: "11",
-    accountCode: "4030",
-    accountName: "Consulting Revenue",
-    debit: 0,
-    credit: 2400.0,
-  },
-  {
-    id: "12",
-    accountCode: "4040",
-    accountName: "Subscription Revenue",
-    debit: 0,
-    credit: 42.5,
-  },
-  {
-    id: "13",
-    accountCode: "4100",
-    accountName: "Sales Revenue",
-    debit: 0,
-    credit: 44060.57,
-  },
-  {
-    id: "14",
-    accountCode: "4110",
-    accountName: "Commission Income",
-    debit: 0,
-    credit: 890.0,
-  },
-  {
-    id: "15",
-    accountCode: "4120",
-    accountName: "Rental Income",
-    debit: 0,
-    credit: 2000.0,
-  },
-  {
-    id: "16",
-    accountCode: "4130",
-    accountName: "Maintenance Income",
-    debit: 0,
-    credit: 1200.0,
-  },
-  {
-    id: "17",
-    accountCode: "4200",
-    accountName: "Service Revenue",
-    debit: 0,
-    credit: 53050.0,
-  },
-  {
-    id: "18",
-    accountCode: "5100",
-    accountName: "Cost of Goods Sold",
-    debit: 10678.0,
-    credit: 0,
-  },
-  {
-    id: "19",
-    accountCode: "5200",
-    accountName: "Salaries Expense",
-    debit: 76209.78,
-    credit: 0,
-  },
-  {
-    id: "20",
-    accountCode: "5310",
-    accountName: "Office Supplies",
-    debit: 585.0,
-    credit: 0,
-  },
-  {
-    id: "21",
-    accountCode: "5320",
-    accountName: "Marketing Expense",
-    debit: 1200.0,
-    credit: 0,
-  },
-  {
-    id: "22",
-    accountCode: "5330",
-    accountName: "Travel Expense",
-    debit: 750.0,
-    credit: 0,
-  },
-  {
-    id: "23",
-    accountCode: "5400",
-    accountName: "Utilities Expense",
-    debit: 210.0,
-    credit: 0,
-  },
-  {
-    id: "24",
-    accountCode: "5510",
-    accountName: "Bank Charges",
-    debit: 412.0,
-    credit: 0,
-  },
+  { id: "1", accountCode: "1000", accountName: "Cash", debit: 579790.99, credit: 0 },
+  { id: "2", accountCode: "1005", accountName: "Petty Cash", debit: 121847.72, credit: 0 },
+  { id: "3", accountCode: "1010", accountName: "Bank Account - Main", debit: 41388.94, credit: 0 },
+  { id: "4", accountCode: "1020", accountName: "Bank Account - Savings", debit: 0, credit: 726626.65 },
+  { id: "5", accountCode: "1100", accountName: "Accounts Receivable", debit: 7619.27, credit: 0 },
+  { id: "6", accountCode: "1200", accountName: "Inventory", debit: 4532.0, credit: 0 },
+  { id: "7", accountCode: "1500", accountName: "Tax Receivable (VAT/GST Input)", debit: 4831.95, credit: 0 },
+  { id: "8", accountCode: "2000", accountName: "Accounts Payable", debit: 0, credit: 13910.45 },
+  { id: "9", accountCode: "2210", accountName: "VAT Payable (Sales Tax Output)", debit: 0, credit: 5425.48 },
+  { id: "10", accountCode: "4010", accountName: "Product Sales", debit: 0, credit: 450.0 },
+  { id: "11", accountCode: "4030", accountName: "Consulting Revenue", debit: 0, credit: 2400.0 },
+  { id: "12", accountCode: "4040", accountName: "Subscription Revenue", debit: 0, credit: 42.5 },
+  { id: "13", accountCode: "4100", accountName: "Sales Revenue", debit: 0, credit: 44060.57 },
+  { id: "14", accountCode: "4110", accountName: "Commission Income", debit: 0, credit: 890.0 },
+  { id: "15", accountCode: "4120", accountName: "Rental Income", debit: 0, credit: 2000.0 },
+  { id: "16", accountCode: "4130", accountName: "Maintenance Income", debit: 0, credit: 1200.0 },
+  { id: "17", accountCode: "4200", accountName: "Service Revenue", debit: 0, credit: 53050.0 },
+  { id: "18", accountCode: "5100", accountName: "Cost of Goods Sold", debit: 10678.0, credit: 0 },
+  { id: "19", accountCode: "5200", accountName: "Salaries Expense", debit: 76209.78, credit: 0 },
+  { id: "20", accountCode: "5310", accountName: "Office Supplies", debit: 585.0, credit: 0 },
+  { id: "21", accountCode: "5320", accountName: "Marketing Expense", debit: 1200.0, credit: 0 },
+  { id: "22", accountCode: "5330", accountName: "Travel Expense", debit: 750.0, credit: 0 },
+  { id: "23", accountCode: "5400", accountName: "Utilities Expense", debit: 210.0, credit: 0 },
+  { id: "24", accountCode: "5510", accountName: "Bank Charges", debit: 412.0, credit: 0 },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -218,34 +73,57 @@ const formatDisplayDate = (dateStr: string) => {
   });
 };
 
+/** Convert a raw API row to display shape, reading keys tolerantly. */
+function mapRow(raw: any, idx: number): TrialBalanceAccount {
+  return {
+    id: String(raw.id ?? raw._id ?? idx),
+    accountCode: raw.account_code ?? raw.accountCode ?? raw.code ?? "",
+    accountName: raw.account_name ?? raw.accountName ?? raw.name ?? "",
+    debit: Number(raw.debit ?? raw.debit_amount ?? 0),
+    credit: Number(raw.credit ?? raw.credit_amount ?? 0),
+  };
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export const TrialBalance: React.FC = () => {
   const navigate = useNavigate();
-  const [trialBalance, setTrialBalance] =
-    useState<TrialBalanceAccount[]>(sampleTrialBalance);
+  const [trialBalance] = useState<TrialBalanceAccount[]>(sampleTrialBalance);
   const [fromDate, setFromDate] = useState("2026-01-01");
   const [toDate, setToDate] = useState("2026-12-31");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [report, setReport] = useState<any>(null);
+
+  // Map API response → display rows (falls back to sample on empty)
+  const displayRows = useMemo<TrialBalanceAccount[]>(() => {
+    if (!report) return trialBalance;
+    const rows: any[] =
+      report?.rows ?? report?.data ?? report?.accounts ?? report?.lines ?? [];
+    if (!Array.isArray(rows) || rows.length === 0) return trialBalance;
+    return rows.map(mapRow);
+  }, [report, trialBalance]);
 
   // Calculate totals
-  const totalDebit = trialBalance.reduce(
-    (sum, account) => sum + account.debit,
-    0,
-  );
-  const totalCredit = trialBalance.reduce(
-    (sum, account) => sum + account.credit,
-    0,
-  );
+  const totalDebit = displayRows.reduce((sum, account) => sum + account.debit, 0);
+  const totalCredit = displayRows.reduce((sum, account) => sum + account.credit, 0);
 
-  const handleGenerateReport = () => {
+  const load = async () => {
     setIsGenerating(true);
-    // Simulate API call
-    setTimeout(() => {
-      setIsGenerating(false);
+    try {
+      const r = await doubleEntryReports.trialBalance({ from_date: fromDate, to_date: toDate });
+      setReport(r);
       showToast("Trial balance report generated successfully!", "success");
-    }, 1000);
+    } catch {
+      /* keep sample */
+      showToast("Trial balance loaded (offline mode).", "info");
+    } finally {
+      setIsGenerating(false);
+    }
   };
+
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleGenerateReport = () => { load(); };
 
   const handleDownloadPDF = () => {
     showToast("Downloading PDF...", "info");
@@ -414,7 +292,7 @@ export const TrialBalance: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {trialBalance.map((account) => (
+                  {displayRows.map((account) => (
                     <tr key={account.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-mono text-sm font-medium text-gray-900">
                         {account.accountCode}

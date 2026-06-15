@@ -19,24 +19,21 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Calendar,
-  FileText,
   CheckCircle,
   AlertCircle,
   Clock,
   User,
-  Download,
   Paperclip,
-  Send,
   CheckSquare,
   XCircle,
-  Calendar as CalendarIcon,
 } from "lucide-react";
 import { showToast } from "@/utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import { leaveHooks, leaveApi, leaveTypeHooks, employeeHooks, type LeaveApplication as ApiLeaveApplication } from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface LeaveApplication {
+interface LeaveApp {
   id: string;
   employee: string;
   leaveType: string;
@@ -55,153 +52,17 @@ interface LeaveApplication {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (API shape / seed) ──────────────────────────────────────────
 
-const sampleLeaveApplications: LeaveApplication[] = [
-  {
-    id: "1",
-    employee: "Daniel Thompson",
-    leaveType: "Personal Leave",
-    leaveTypePaid: false,
-    startDate: "2025-10-09",
-    endDate: "2025-10-13",
-    days: 3,
-    status: "Rejected",
-    appliedOn: "2026-01-19",
-    approvedBy: "HR Manager",
-    approvedAt: "2026-01-20",
-    reason: "Personal vacation and relaxation time needed",
-    approverComment: "Insufficient documentation provided",
-    attachment: "leave-application.png",
-    syncToCalendar: false,
-    createdAt: "2026-01-19",
-  },
-  {
-    id: "2",
-    employee: "Daniel Thompson",
-    leaveType: "Paternity Leave",
-    leaveTypePaid: true,
-    startDate: "2025-10-13",
-    endDate: "2025-10-13",
-    days: 1,
-    status: "Pending",
-    appliedOn: "2026-01-19",
-    approvedBy: "",
-    approvedAt: "",
-    reason: "New child birth",
-    approverComment: "",
-    attachment: "",
-    syncToCalendar: false,
-    createdAt: "2026-01-19",
-  },
-  {
-    id: "3",
-    employee: "Daniel Thompson",
-    leaveType: "Bereavement Leave",
-    leaveTypePaid: true,
-    startDate: "2025-10-17",
-    endDate: "2025-10-20",
-    days: 2,
-    status: "Approved",
-    appliedOn: "2026-01-19",
-    approvedBy: "HR Manager",
-    approvedAt: "2026-01-20",
-    reason: "Family member passed away",
-    approverComment: "Approved as per policy",
-    attachment: "",
-    syncToCalendar: false,
-    createdAt: "2026-01-19",
-  },
-  {
-    id: "4",
-    employee: "Matthew Clark",
-    leaveType: "Study Leave",
-    leaveTypePaid: false,
-    startDate: "2025-10-01",
-    endDate: "2025-10-01",
-    days: 1,
-    status: "Approved",
-    appliedOn: "2026-01-19",
-    approvedBy: "HR Manager",
-    approvedAt: "2026-01-20",
-    reason: "Exam preparation",
-    approverComment: "Approved",
-    attachment: "",
-    syncToCalendar: false,
-    createdAt: "2026-01-19",
-  },
-  {
-    id: "5",
-    employee: "Matthew Clark",
-    leaveType: "Personal Leave",
-    leaveTypePaid: false,
-    startDate: "2025-10-06",
-    endDate: "2025-10-07",
-    days: 2,
-    status: "Rejected",
-    appliedOn: "2026-01-19",
-    approvedBy: "HR Manager",
-    approvedAt: "2026-01-20",
-    reason: "Personal matters",
-    approverComment: "Request denied due to workload",
-    attachment: "",
-    syncToCalendar: false,
-    createdAt: "2026-01-19",
-  },
-  {
-    id: "6",
-    employee: "Matthew Clark",
-    leaveType: "Study Leave",
-    leaveTypePaid: false,
-    startDate: "2025-10-09",
-    endDate: "2025-10-13",
-    days: 3,
-    status: "Pending",
-    appliedOn: "2026-01-19",
-    approvedBy: "",
-    approvedAt: "",
-    reason: "Final exams preparation",
-    approverComment: "",
-    attachment: "",
-    syncToCalendar: false,
-    createdAt: "2026-01-19",
-  },
-  {
-    id: "7",
-    employee: "Matthew Clark",
-    leaveType: "Bereavement Leave",
-    leaveTypePaid: true,
-    startDate: "2025-10-13",
-    endDate: "2025-10-13",
-    days: 1,
-    status: "Approved",
-    appliedOn: "2026-01-19",
-    approvedBy: "HR Manager",
-    approvedAt: "2026-01-20",
-    reason: "Grandfather passed away",
-    approverComment: "Approved. My condolences.",
-    attachment: "",
-    syncToCalendar: false,
-    createdAt: "2026-01-19",
-  },
-  {
-    id: "8",
-    employee: "Matthew Clark",
-    leaveType: "Emergency Leave",
-    leaveTypePaid: true,
-    startDate: "2025-10-17",
-    endDate: "2025-10-20",
-    days: 2,
-    status: "Rejected",
-    appliedOn: "2026-01-19",
-    approvedBy: "HR Manager",
-    approvedAt: "2026-01-20",
-    reason: "Child illness and need to provide care",
-    approverComment: "Request rejected - insufficient notice",
-    attachment: "",
-    syncToCalendar: false,
-    createdAt: "2026-01-19",
-  },
+const sampleLeaveApplicationsSeed: ApiLeaveApplication[] = [
+  { id: "1", employee_id: "Daniel Thompson", leave_type_id: "Personal Leave", start_date: "2025-10-09", end_date: "2025-10-13", reason: "Personal vacation", status: "rejected", approver_comment: "Insufficient documentation" },
+  { id: "2", employee_id: "Daniel Thompson", leave_type_id: "Paternity Leave", start_date: "2025-10-13", end_date: "2025-10-13", reason: "New child birth", status: "pending" },
+  { id: "3", employee_id: "Daniel Thompson", leave_type_id: "Bereavement Leave", start_date: "2025-10-17", end_date: "2025-10-20", reason: "Family member passed away", status: "approved", approver_comment: "Approved as per policy" },
+  { id: "4", employee_id: "Matthew Clark", leave_type_id: "Study Leave", start_date: "2025-10-01", end_date: "2025-10-01", reason: "Exam preparation", status: "approved" },
+  { id: "5", employee_id: "Matthew Clark", leave_type_id: "Personal Leave", start_date: "2025-10-06", end_date: "2025-10-07", reason: "Personal matters", status: "rejected" },
+  { id: "6", employee_id: "Matthew Clark", leave_type_id: "Study Leave", start_date: "2025-10-09", end_date: "2025-10-13", reason: "Final exams", status: "pending" },
+  { id: "7", employee_id: "Matthew Clark", leave_type_id: "Bereavement Leave", start_date: "2025-10-13", end_date: "2025-10-13", reason: "Grandfather passed away", status: "approved" },
+  { id: "8", employee_id: "Matthew Clark", leave_type_id: "Emergency Leave", start_date: "2025-10-17", end_date: "2025-10-20", reason: "Child illness", status: "rejected" },
 ];
 
 const employees = [
@@ -249,6 +110,36 @@ const calculateDays = (startDate: string, endDate: string): number => {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 };
 
+const titleCase = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+const refName = (v: any): string =>
+  v && typeof v === "object" ? v.name ?? v.employee_id ?? "" : String(v ?? "");
+
+function mapFromApi(p: any): LeaveApp {
+  const start = (p.start_date ?? p.startDate ?? "").slice(0, 10);
+  const end = (p.end_date ?? p.endDate ?? "").slice(0, 10);
+  const days = start && end ? calculateDays(start, end) : (p.days ?? 0);
+  const statusRaw = (p.status ?? "pending").toLowerCase();
+  const status = titleCase(statusRaw) as LeaveApp["status"];
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    employee: refName(p.employee_id ?? p.employee) || "",
+    leaveType: refName(p.leave_type_id ?? p.leaveType) || "",
+    leaveTypePaid: Boolean(p.leave_type_id?.is_paid ?? p.leaveTypePaid ?? false),
+    startDate: start,
+    endDate: end,
+    days,
+    status,
+    appliedOn: (p.createdAt ?? p.appliedOn ?? "").slice(0, 10),
+    approvedBy: refName(p.approved_by ?? "") || (p.approvedBy ?? ""),
+    approvedAt: (p.approvedAt ?? p.approved_at ?? "").slice(0, 10),
+    reason: p.reason ?? "",
+    approverComment: p.approver_comment ?? p.approverComment ?? "",
+    attachment: p.attachment ?? "",
+    syncToCalendar: p.syncToCalendar ?? false,
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
+
 type SortField =
   | "employee"
   | "leaveType"
@@ -263,9 +154,32 @@ type SortDir = "asc" | "desc";
 
 export const LeaveApplications: React.FC = () => {
   const navigate = useNavigate();
-  const [leaveApplications, setLeaveApplications] = useState<
-    LeaveApplication[]
-  >(sampleLeaveApplications);
+
+  const { items: rawLeaveApplications, create, update, remove, refetch } = useResourceData(leaveHooks, {
+    seed: sampleLeaveApplicationsSeed,
+    params: { page: 1, limit: 100 },
+  });
+  const leaveApplications = useMemo(() => rawLeaveApplications.map(mapFromApi), [rawLeaveApplications]);
+
+  const employeeQuery = employeeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const employeeOptions = useMemo(
+    () => (employeeQuery.data ?? []).map((e: any) => {
+      const name = typeof e.user_id === "object" ? (e.user_id?.name ?? "") : (e.user_id ?? e.name ?? "");
+      return { id: String(e.id ?? e._id ?? ""), name };
+    }),
+    [employeeQuery.data],
+  );
+
+  const leaveTypeQuery = leaveTypeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const leaveTypeOptions = useMemo(
+    () => (leaveTypeQuery.data ?? []).map((lt: any) => ({
+      id: String(lt.id ?? lt._id ?? ""),
+      name: lt.name ?? "",
+      paid: Boolean(lt.is_paid ?? lt.isPaid ?? false),
+    })),
+    [leaveTypeQuery.data],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -280,7 +194,7 @@ export const LeaveApplications: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedApplication, setSelectedApplication] =
-    useState<LeaveApplication | null>(null);
+    useState<LeaveApp | null>(null);
   const [isEditing, setIsEditing] = useState(false);
 
   // Form state
@@ -430,7 +344,7 @@ export const LeaveApplications: React.FC = () => {
     setShowCreateModal(true);
   };
 
-  const openEditModal = (application: LeaveApplication) => {
+  const openEditModal = (application: LeaveApp) => {
     setSelectedApplication(application);
     setLeaveFormData({
       employee: application.employee,
@@ -451,41 +365,27 @@ export const LeaveApplications: React.FC = () => {
     setShowEditModal(true);
   };
 
-  const openViewModal = (application: LeaveApplication) => {
+  const openViewModal = (application: LeaveApp) => {
     setSelectedApplication(application);
     setShowViewModal(true);
   };
 
-  const openDeleteModal = (application: LeaveApplication) => {
+  const openDeleteModal = (application: LeaveApp) => {
     setSelectedApplication(application);
     setShowDeleteModal(true);
   };
 
-  const handleStatusUpdate = (
-    id: string,
-    newStatus: "Approved" | "Rejected",
-  ) => {
-    setLeaveApplications((prev) =>
-      prev.map((a: any) =>
-        a.id === id
-          ? {
-              ...a,
-              status: newStatus,
-              approvedBy: "HR Manager",
-              approvedAt: "Pending",
-              approverComment:
-                newStatus === "Rejected" ? "Request denied" : "Approved",
-            }
-          : a,
-      ),
-    );
-    showToast(
-      `Leave application ${newStatus.toLowerCase()} successfully!`,
-      "success",
-    );
+  const handleStatusUpdate = async (id: string, newStatus: "Approved" | "Rejected") => {
+    try {
+      await leaveApi.setStatus(id, newStatus.toLowerCase());
+      refetch();
+      showToast(`Leave application ${newStatus.toLowerCase()} successfully!`, "success");
+    } catch {
+      showToast("Could not update status. Please try again.", "error");
+    }
   };
 
-  const handleSaveLeaveApplication = () => {
+  const handleSaveLeaveApplication = async () => {
     if (!leaveFormData.employee) {
       showToast("Please select an employee", "info");
       return;
@@ -508,9 +408,6 @@ export const LeaveApplications: React.FC = () => {
     }
 
     const days = calculateDays(leaveFormData.startDate, leaveFormData.endDate);
-    const leaveTypeObj = leaveTypes.find(
-      (lt) => lt.name === leaveFormData.leaveType,
-    );
 
     if (days > leaveBalance.available && leaveBalance.available > 0) {
       showToast(
@@ -520,58 +417,37 @@ export const LeaveApplications: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedApplication) {
-      setLeaveApplications((prev) =>
-        prev.map((a) =>
-          a.id === selectedApplication.id
-            ? {
-                ...a,
-                employee: leaveFormData.employee,
-                leaveType: leaveFormData.leaveType,
-                leaveTypePaid: leaveTypeObj?.paid || false,
-                startDate: leaveFormData.startDate,
-                endDate: leaveFormData.endDate,
-                days: days,
-                reason: leaveFormData.reason,
-                syncToCalendar: leaveFormData.syncToCalendar,
-              }
-            : a,
-        ),
-      );
-      showToast("Leave application updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newApplication: LeaveApplication = {
-        id: Date.now().toString(),
-        employee: leaveFormData.employee,
-        leaveType: leaveFormData.leaveType,
-        leaveTypePaid: leaveTypeObj?.paid || false,
-        startDate: leaveFormData.startDate,
-        endDate: leaveFormData.endDate,
-        days: days,
-        status: "Pending",
-        appliedOn: new Date().toISOString().split("T")[0],
-        approvedBy: "",
-        approvedAt: "",
-        reason: leaveFormData.reason,
-        approverComment: "",
-        attachment: "",
-        syncToCalendar: leaveFormData.syncToCalendar,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setLeaveApplications((prev) => [newApplication, ...prev]);
-      showToast("Leave application created successfully!", "success");
-      setShowCreateModal(false);
+    const payload = {
+      employee_id: leaveFormData.employee,
+      leave_type_id: leaveFormData.leaveType,
+      start_date: leaveFormData.startDate,
+      end_date: leaveFormData.endDate,
+      reason: leaveFormData.reason,
+    };
+    try {
+      if (isEditing && selectedApplication) {
+        await update(selectedApplication.id, payload);
+        showToast("Leave application updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Leave application created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetLeaveForm();
+    } catch {
+      showToast("Could not save leave application. Please try again.", "error");
     }
-    resetLeaveForm();
   };
 
-  const handleDeleteLeaveApplication = () => {
+  const handleDeleteLeaveApplication = async () => {
     if (selectedApplication) {
-      setLeaveApplications((prev) =>
-        prev.filter((a) => a.id !== selectedApplication.id),
-      );
-      showToast("Leave application deleted successfully!", "success");
+      try {
+        await remove(selectedApplication.id);
+        showToast("Leave application deleted successfully!", "success");
+      } catch {
+        showToast("Could not delete leave application.", "error");
+      }
       setShowDeleteModal(false);
       setSelectedApplication(null);
     }
@@ -671,11 +547,13 @@ export const LeaveApplications: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Employee</option>
-              {employees.map((emp) => (
-                <option key={emp} value={emp}>
-                  {emp}
-                </option>
-              ))}
+              {employeeOptions.length > 0
+                ? employeeOptions.map((emp) => (
+                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                  ))
+                : employees.map((emp) => (
+                    <option key={emp} value={emp}>{emp}</option>
+                  ))}
             </select>
           </div>
           <div>
@@ -693,11 +571,13 @@ export const LeaveApplications: React.FC = () => {
                   ? "Select Leave Type"
                   : "Select Employee first"}
               </option>
-              {leaveTypes.map((lt) => (
-                <option key={lt.name} value={lt.name}>
-                  {lt.name} {lt.paid ? "(Paid)" : "(Unpaid)"}
-                </option>
-              ))}
+              {leaveTypeOptions.length > 0
+                ? leaveTypeOptions.map((lt) => (
+                    <option key={lt.id} value={lt.id}>{lt.name} {lt.paid ? "(Paid)" : "(Unpaid)"}</option>
+                  ))
+                : leaveTypes.map((lt) => (
+                    <option key={lt.name} value={lt.name}>{lt.name} {lt.paid ? "(Paid)" : "(Unpaid)"}</option>
+                  ))}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-4">

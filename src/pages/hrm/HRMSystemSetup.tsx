@@ -6,19 +6,24 @@
  * Event Types, Allowance Types, Deduction Types, Loan Types, Working Days, Ip Restricts
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
 import {
-  Search,
+  branchHooks, departmentHooks, designationHooks,
+  employeeDocumentTypeHooks, awardTypeHooks, terminationTypeHooks,
+  warningTypeHooks, complaintTypeHooks, holidayTypeHooks,
+  documentCategoryHooks, announcementCategoryHooks, eventTypeHooks,
+  allowanceTypeHooks, deductionTypeHooks, loanTypeHooks,
+  ipRestrictHooks, hrmSetupExtras,
+  type HrmMaster,
+} from "@/services/hrm";
+import {
   Plus,
   Edit,
   Trash2,
   X,
-  Eye,
-  CheckCircle,
-  AlertCircle,
-  ChevronLeft,
   Building2,
   Users,
   Briefcase,
@@ -33,164 +38,30 @@ import {
   Gift,
   Home,
   Wifi,
-  Save,
   Shield,
   UserX,
-  UserCog,
 } from "lucide-react";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Generic mapFromApi ───────────────────────────────────────────────────────
 
-interface Branch {
-  id: string;
-  name: string;
-  code: string;
-  address: string;
-  city: string;
-  state: string;
-  country: string;
-  phone: string;
-  email: string;
-  isActive: boolean;
-  createdAt: string;
+function mapMaster(p: any): { id: string; name: string; [key: string]: any } {
+  return {
+    ...p,
+    id: String(p.id ?? p._id ?? ""),
+    name: p.branch_name ?? p.department_name ?? p.designation_name ??
+          p.shift_name ?? p.document_name ?? p.warning_type_name ??
+          p.complaint_type ?? p.holiday_type ?? p.document_type ??
+          p.announcement_category ?? p.event_type ??
+          p.termination_type ?? p.name ?? "",
+  };
 }
 
-interface Department {
-  id: string;
-  name: string;
-  branchId: string;
-  branchName: string;
-  description: string;
-  isActive: boolean;
-  createdAt: string;
-}
+// ─── Seed Data (API snake_case shape) ─────────────────────────────────────────
 
-interface Designation {
-  id: string;
-  name: string;
-  branchId: string;
-  branchName: string;
-  departmentId: string;
-  departmentName: string;
-  description: string;
-  isActive: boolean;
-  createdAt: string;
-}
-
-interface DocumentType {
-  id: string;
-  name: string;
-  description: string;
-  isRequired: boolean;
-  isActive: boolean;
-  createdAt: string;
-}
-
-interface AwardType {
-  id: string;
-  name: string;
-  description: string;
-  isActive: boolean;
-  createdAt: string;
-}
-
-interface TerminationType {
-  id: string;
-  name: string;
-  description: string;
-  isActive: boolean;
-  createdAt: string;
-}
-
-interface WarningType {
-  id: string;
-  name: string;
-  description: string;
-  severity: "Low" | "Medium" | "High";
-  isActive: boolean;
-  createdAt: string;
-}
-
-interface ComplaintType {
-  id: string;
-  name: string;
-  description: string;
-  isActive: boolean;
-  createdAt: string;
-}
-
-interface HolidayType {
-  id: string;
-  name: string;
-  description: string;
-  isPaid: boolean;
-  isActive: boolean;
-  createdAt: string;
-}
-
-interface DocumentCategory {
-  id: string;
-  name: string;
-  status: "Enabled" | "Disabled";
-  description: string;
-  createdAt: string;
-}
-
-interface AnnouncementCategory {
-  id: string;
-  name: string;
-  description: string;
-  isActive: boolean;
-  createdAt: string;
-}
-
-interface EventType {
-  id: string;
-  name: string;
-  description: string;
-  color: string;
-  isActive: boolean;
-  createdAt: string;
-}
-
-interface AllowanceType {
-  id: string;
-  name: string;
-  description: string;
-  isActive: boolean;
-  createdAt: string;
-}
-
-interface DeductionType {
-  id: string;
-  name: string;
-  description: string;
-  isActive: boolean;
-  createdAt: string;
-}
-
-interface LoanType {
-  id: string;
-  name: string;
-  description: string;
-  isActive: boolean;
-  createdAt: string;
-}
-
-interface IpRestrict {
-  id: string;
-  ipAddress: string;
-  description: string;
-  isActive: boolean;
-  createdAt: string;
-}
-
-// ─── Sample Data ──────────────────────────────────────────────────────────────
-
-const sampleBranches: Branch[] = [
+const sampleBranches: HrmMaster[] = [
   {
     id: "1",
-    name: "Main Office",
+    branch_name: "Main Office",
     code: "MO",
     address: "123 Main St",
     city: "New York",
@@ -320,7 +191,7 @@ const sampleBranches: Branch[] = [
   },
 ];
 
-const sampleDepartments: Department[] = [
+const sampleDepartments: HrmMaster[] = [
   {
     id: "1",
     name: "Human Resources",
@@ -413,7 +284,7 @@ const sampleDepartments: Department[] = [
   },
 ];
 
-const sampleDesignations: Designation[] = [
+const sampleDesignations: HrmMaster[] = [
   {
     id: "1",
     name: "Senior Executive",
@@ -526,7 +397,7 @@ const sampleDesignations: Designation[] = [
   },
 ];
 
-const sampleDocumentTypes: DocumentType[] = [
+const sampleDocumentTypes: HrmMaster[] = [
   {
     id: "1",
     name: "Employment Contract",
@@ -609,7 +480,7 @@ const sampleDocumentTypes: DocumentType[] = [
   },
 ];
 
-const sampleAwardTypes: AwardType[] = [
+const sampleAwardTypes: HrmMaster[] = [
   {
     id: "1",
     name: "Employee of the Month",
@@ -682,7 +553,7 @@ const sampleAwardTypes: AwardType[] = [
   },
 ];
 
-const sampleTerminationTypes: TerminationType[] = [
+const sampleTerminationTypes: HrmMaster[] = [
   {
     id: "1",
     name: "Voluntary Resignation",
@@ -720,7 +591,7 @@ const sampleTerminationTypes: TerminationType[] = [
   },
 ];
 
-const sampleWarningTypes: WarningType[] = [
+const sampleWarningTypes: HrmMaster[] = [
   {
     id: "1",
     name: "Repeated Errors",
@@ -803,7 +674,7 @@ const sampleWarningTypes: WarningType[] = [
   },
 ];
 
-const sampleComplaintTypes: ComplaintType[] = [
+const sampleComplaintTypes: HrmMaster[] = [
   {
     id: "1",
     name: "General Administrative Issues",
@@ -876,7 +747,7 @@ const sampleComplaintTypes: ComplaintType[] = [
   },
 ];
 
-const sampleHolidayTypes: HolidayType[] = [
+const sampleHolidayTypes: HrmMaster[] = [
   {
     id: "1",
     name: "National Holiday",
@@ -959,7 +830,7 @@ const sampleHolidayTypes: HolidayType[] = [
   },
 ];
 
-const sampleDocumentCategories: DocumentCategory[] = [
+const sampleDocumentCategories: HrmMaster[] = [
   {
     id: "1",
     name: "Identity Documents",
@@ -1032,7 +903,7 @@ const sampleDocumentCategories: DocumentCategory[] = [
   },
 ];
 
-const sampleAnnouncementCategories: AnnouncementCategory[] = [
+const sampleAnnouncementCategories: HrmMaster[] = [
   {
     id: "1",
     name: "General Company Information",
@@ -1105,7 +976,7 @@ const sampleAnnouncementCategories: AnnouncementCategory[] = [
   },
 ];
 
-const sampleEventTypes: EventType[] = [
+const sampleEventTypes: HrmMaster[] = [
   {
     id: "1",
     name: "Sprint Planning",
@@ -1188,7 +1059,7 @@ const sampleEventTypes: EventType[] = [
   },
 ];
 
-const sampleAllowanceTypes: AllowanceType[] = [
+const sampleAllowanceTypes: HrmMaster[] = [
   {
     id: "1",
     name: "House Rent Allowance (HRA)",
@@ -1261,7 +1132,7 @@ const sampleAllowanceTypes: AllowanceType[] = [
   },
 ];
 
-const sampleDeductionTypes: DeductionType[] = [
+const sampleDeductionTypes: HrmMaster[] = [
   {
     id: "1",
     name: "Income Tax",
@@ -1334,7 +1205,7 @@ const sampleDeductionTypes: DeductionType[] = [
   },
 ];
 
-const sampleLoanTypes: LoanType[] = [
+const sampleLoanTypes: HrmMaster[] = [
   {
     id: "1",
     name: "Personal Loan",
@@ -1407,7 +1278,7 @@ const sampleLoanTypes: LoanType[] = [
   },
 ];
 
-const sampleIpRestricts: IpRestrict[] = [
+const sampleIpRestricts: HrmMaster[] = [
   {
     id: "1",
     ipAddress: "192.168.1.100",
@@ -1491,40 +1362,44 @@ export const HRMSystemSetup: React.FC = () => {
   const navigate = useNavigate();
   const [activeModule, setActiveModule] = useState<ModuleType>("branches");
 
-  // Data states
-  const [branches, setBranches] = useState<Branch[]>(sampleBranches);
-  const [departments, setDepartments] =
-    useState<Department[]>(sampleDepartments);
-  const [designations, setDesignations] =
-    useState<Designation[]>(sampleDesignations);
-  const [documentTypes, setDocumentTypes] =
-    useState<DocumentType[]>(sampleDocumentTypes);
-  const [awardTypes, setAwardTypes] = useState<AwardType[]>(sampleAwardTypes);
-  const [terminationTypes, setTerminationTypes] = useState<TerminationType[]>(
-    sampleTerminationTypes,
-  );
-  const [warningTypes, setWarningTypes] =
-    useState<WarningType[]>(sampleWarningTypes);
-  const [complaintTypes, setComplaintTypes] =
-    useState<ComplaintType[]>(sampleComplaintTypes);
-  const [holidayTypes, setHolidayTypes] =
-    useState<HolidayType[]>(sampleHolidayTypes);
-  const [documentCategories, setDocumentCategories] = useState<
-    DocumentCategory[]
-  >(sampleDocumentCategories);
-  const [announcementCategories, setAnnouncementCategories] = useState<
-    AnnouncementCategory[]
-  >(sampleAnnouncementCategories);
-  const [eventTypes, setEventTypes] = useState<EventType[]>(sampleEventTypes);
-  const [allowanceTypes, setAllowanceTypes] =
-    useState<AllowanceType[]>(sampleAllowanceTypes);
-  const [deductionTypes, setDeductionTypes] =
-    useState<DeductionType[]>(sampleDeductionTypes);
-  const [loanTypes, setLoanTypes] = useState<LoanType[]>(sampleLoanTypes);
-  const [ipRestricts, setIpRestricts] =
-    useState<IpRestrict[]>(sampleIpRestricts);
+  // ─── API data hooks for all masters ─────────────────────────────────────────
+  const P = { page: 1, limit: 100 };
+  const branchRes = useResourceData(branchHooks, { seed: sampleBranches, params: P });
+  const departmentRes = useResourceData(departmentHooks, { seed: sampleDepartments, params: P });
+  const designationRes = useResourceData(designationHooks, { seed: sampleDesignations, params: P });
+  const documentTypeRes = useResourceData(employeeDocumentTypeHooks, { seed: sampleDocumentTypes, params: P });
+  const awardTypeRes = useResourceData(awardTypeHooks, { seed: sampleAwardTypes, params: P });
+  const terminationTypeRes = useResourceData(terminationTypeHooks, { seed: sampleTerminationTypes, params: P });
+  const warningTypeRes = useResourceData(warningTypeHooks, { seed: sampleWarningTypes, params: P });
+  const complaintTypeRes = useResourceData(complaintTypeHooks, { seed: sampleComplaintTypes, params: P });
+  const holidayTypeRes = useResourceData(holidayTypeHooks, { seed: sampleHolidayTypes, params: P });
+  const documentCategoryRes = useResourceData(documentCategoryHooks, { seed: sampleDocumentCategories, params: P });
+  const announcementCategoryRes = useResourceData(announcementCategoryHooks, { seed: sampleAnnouncementCategories, params: P });
+  const eventTypeRes = useResourceData(eventTypeHooks, { seed: sampleEventTypes, params: P });
+  const allowanceTypeRes = useResourceData(allowanceTypeHooks, { seed: sampleAllowanceTypes, params: P });
+  const deductionTypeRes = useResourceData(deductionTypeHooks, { seed: sampleDeductionTypes, params: P });
+  const loanTypeRes = useResourceData(loanTypeHooks, { seed: sampleLoanTypes, params: P });
+  const ipRestrictRes = useResourceData(ipRestrictHooks, { seed: sampleIpRestricts, params: P });
 
-  // Working days (checkbox state)
+  // Map raw API items to display shape
+  const branches = useMemo(() => branchRes.items.map(mapMaster), [branchRes.items]);
+  const departments = useMemo(() => departmentRes.items.map(mapMaster), [departmentRes.items]);
+  const designations = useMemo(() => designationRes.items.map(mapMaster), [designationRes.items]);
+  const documentTypes = useMemo(() => documentTypeRes.items.map(mapMaster), [documentTypeRes.items]);
+  const awardTypes = useMemo(() => awardTypeRes.items.map(mapMaster), [awardTypeRes.items]);
+  const terminationTypes = useMemo(() => terminationTypeRes.items.map(mapMaster), [terminationTypeRes.items]);
+  const warningTypes = useMemo(() => warningTypeRes.items.map(mapMaster), [warningTypeRes.items]);
+  const complaintTypes = useMemo(() => complaintTypeRes.items.map(mapMaster), [complaintTypeRes.items]);
+  const holidayTypes = useMemo(() => holidayTypeRes.items.map(mapMaster), [holidayTypeRes.items]);
+  const documentCategories = useMemo(() => documentCategoryRes.items.map(mapMaster), [documentCategoryRes.items]);
+  const announcementCategories = useMemo(() => announcementCategoryRes.items.map(mapMaster), [announcementCategoryRes.items]);
+  const eventTypes = useMemo(() => eventTypeRes.items.map(mapMaster), [eventTypeRes.items]);
+  const allowanceTypes = useMemo(() => allowanceTypeRes.items.map(mapMaster), [allowanceTypeRes.items]);
+  const deductionTypes = useMemo(() => deductionTypeRes.items.map(mapMaster), [deductionTypeRes.items]);
+  const loanTypes = useMemo(() => loanTypeRes.items.map(mapMaster), [loanTypeRes.items]);
+  const ipRestricts = useMemo(() => ipRestrictRes.items.map(mapMaster), [ipRestrictRes.items]);
+
+  // Working days
   const [workingDays, setWorkingDays] = useState({
     monday: true,
     tuesday: true,
@@ -1534,6 +1409,24 @@ export const HRMSystemSetup: React.FC = () => {
     saturday: false,
     sunday: false,
   });
+
+  // Load working days on mount
+  useEffect(() => {
+    hrmSetupExtras.getWorkingDays().then((res: any) => {
+      const days: number[] = res?.working_days ?? res?.data?.working_days ?? [];
+      if (days.length > 0) {
+        setWorkingDays({
+          monday: days.includes(1),
+          tuesday: days.includes(2),
+          wednesday: days.includes(3),
+          thursday: days.includes(4),
+          friday: days.includes(5),
+          saturday: days.includes(6),
+          sunday: days.includes(0),
+        });
+      }
+    }).catch(() => {});
+  }, []);
 
   // Modal states
   const [showModal, setShowModal] = useState(false);
@@ -1634,6 +1527,30 @@ export const HRMSystemSetup: React.FC = () => {
     description: "",
     isActive: true,
   });
+
+  // ─── Lookup helpers: resolve hooks for active module ────────────────────────
+
+  function getActiveHooks() {
+    switch (activeModule) {
+      case "branches": return branchRes;
+      case "departments": return departmentRes;
+      case "designations": return designationRes;
+      case "documentTypes": return documentTypeRes;
+      case "awardTypes": return awardTypeRes;
+      case "terminationTypes": return terminationTypeRes;
+      case "warningTypes": return warningTypeRes;
+      case "complaintTypes": return complaintTypeRes;
+      case "holidayTypes": return holidayTypeRes;
+      case "documentCategories": return documentCategoryRes;
+      case "announcementCategories": return announcementCategoryRes;
+      case "eventTypes": return eventTypeRes;
+      case "allowanceTypes": return allowanceTypeRes;
+      case "deductionTypes": return deductionTypeRes;
+      case "loanTypes": return loanTypeRes;
+      case "ipRestricts": return ipRestrictRes;
+      default: return null;
+    }
+  }
 
   // ─── Generic CRUD Helpers ───────────────────────────────────────────────────
 
@@ -1838,471 +1755,153 @@ export const HRMSystemSetup: React.FC = () => {
     setIpRestrictForm({ ipAddress: "", description: "", isActive: true });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    const hooks = getActiveHooks();
+    let toApi: Record<string, unknown> = {};
+    let label = "";
+
     switch (activeModule) {
       case "branches":
-        if (!branchForm.name) {
-          showToast("Please enter branch name", "info");
-          return;
-        }
-        if (isEditing && editingId) {
-          setBranches((prev) =>
-            prev.map((b) => (b.id === editingId ? { ...b, ...branchForm } : b)),
-          );
-          showToast("Branch updated successfully!", "success");
-        } else {
-          const newBranch: Branch = {
-            id: Date.now().toString(),
-            ...branchForm,
-            code:
-              branchForm.code || branchForm.name.substring(0, 3).toUpperCase(),
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setBranches((prev) => [...prev, newBranch]);
-          showToast("Branch created successfully!", "success");
-        }
+        if (!branchForm.name) { showToast("Please enter branch name", "info"); return; }
+        toApi = { branch_name: branchForm.name, code: branchForm.code, address: branchForm.address, city: branchForm.city, state: branchForm.state, country: branchForm.country, phone: branchForm.phone, email: branchForm.email };
+        label = "Branch";
         break;
       case "departments":
-        if (!departmentForm.name) {
-          showToast("Please enter department name", "info");
-          return;
-        }
-        if (!departmentForm.branchId) {
-          showToast("Please select branch", "info");
-          return;
-        }
-        const branch = branches.find((b) => b.id === departmentForm.branchId);
-        if (isEditing && editingId) {
-          setDepartments((prev) =>
-            prev.map((d) =>
-              d.id === editingId
-                ? { ...d, ...departmentForm, branchName: branch?.name || "" }
-                : d,
-            ),
-          );
-          showToast("Department updated successfully!", "success");
-        } else {
-          const newDept: Department = {
-            id: Date.now().toString(),
-            ...departmentForm,
-            branchName: branch?.name || "",
-            isActive: true,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setDepartments((prev) => [...prev, newDept]);
-          showToast("Department created successfully!", "success");
-        }
+        if (!departmentForm.name) { showToast("Please enter department name", "info"); return; }
+        if (!departmentForm.branchId) { showToast("Please select branch", "info"); return; }
+        toApi = { department_name: departmentForm.name, branch_id: departmentForm.branchId };
+        label = "Department";
         break;
       case "designations":
-        if (!designationForm.name) {
-          showToast("Please enter designation name", "info");
-          return;
-        }
-        if (!designationForm.branchId) {
-          showToast("Please select branch", "info");
-          return;
-        }
-        if (!designationForm.departmentId) {
-          showToast("Please select department", "info");
-          return;
-        }
-        const branchDes = branches.find(
-          (b) => b.id === designationForm.branchId,
-        );
-        const deptDes = departments.find(
-          (d) => d.id === designationForm.departmentId,
-        );
-        if (isEditing && editingId) {
-          setDesignations((prev) =>
-            prev.map((d) =>
-              d.id === editingId
-                ? {
-                    ...d,
-                    ...designationForm,
-                    branchName: branchDes?.name || "",
-                    departmentName: deptDes?.name || "",
-                  }
-                : d,
-            ),
-          );
-          showToast("Designation updated successfully!", "success");
-        } else {
-          const newDes: Designation = {
-            id: Date.now().toString(),
-            ...designationForm,
-            branchName: branchDes?.name || "",
-            departmentName: deptDes?.name || "",
-            isActive: true,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setDesignations((prev) => [...prev, newDes]);
-          showToast("Designation created successfully!", "success");
-        }
+        if (!designationForm.name) { showToast("Please enter designation name", "info"); return; }
+        if (!designationForm.branchId) { showToast("Please select branch", "info"); return; }
+        if (!designationForm.departmentId) { showToast("Please select department", "info"); return; }
+        toApi = { designation_name: designationForm.name, branch_id: designationForm.branchId, department_id: designationForm.departmentId };
+        label = "Designation";
         break;
       case "documentTypes":
-        if (!documentTypeForm.name) {
-          showToast("Please enter document type name", "info");
-          return;
-        }
-        if (isEditing && editingId) {
-          setDocumentTypes((prev) =>
-            prev.map((d) =>
-              d.id === editingId ? { ...d, ...documentTypeForm } : d,
-            ),
-          );
-          showToast("Document type updated successfully!", "success");
-        } else {
-          const newDoc: DocumentType = {
-            id: Date.now().toString(),
-            ...documentTypeForm,
-            isActive: true,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setDocumentTypes((prev) => [...prev, newDoc]);
-          showToast("Document type created successfully!", "success");
-        }
+        if (!documentTypeForm.name) { showToast("Please enter document type name", "info"); return; }
+        toApi = { document_name: documentTypeForm.name, is_required: documentTypeForm.isRequired };
+        label = "Document type";
         break;
       case "awardTypes":
-        if (!awardTypeForm.name) {
-          showToast("Please enter award type name", "info");
-          return;
-        }
-        if (isEditing && editingId) {
-          setAwardTypes((prev) =>
-            prev.map((a) =>
-              a.id === editingId ? { ...a, ...awardTypeForm } : a,
-            ),
-          );
-          showToast("Award type updated successfully!", "success");
-        } else {
-          const newAward: AwardType = {
-            id: Date.now().toString(),
-            ...awardTypeForm,
-            isActive: true,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setAwardTypes((prev) => [...prev, newAward]);
-          showToast("Award type created successfully!", "success");
-        }
+        if (!awardTypeForm.name) { showToast("Please enter award type name", "info"); return; }
+        toApi = { name: awardTypeForm.name };
+        label = "Award type";
         break;
       case "terminationTypes":
-        if (!terminationTypeForm.name) {
-          showToast("Please enter termination type name", "info");
-          return;
-        }
-        if (isEditing && editingId) {
-          setTerminationTypes((prev) =>
-            prev.map((t) =>
-              t.id === editingId ? { ...t, ...terminationTypeForm } : t,
-            ),
-          );
-          showToast("Termination type updated successfully!", "success");
-        } else {
-          const newTerm: TerminationType = {
-            id: Date.now().toString(),
-            ...terminationTypeForm,
-            isActive: true,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setTerminationTypes((prev) => [...prev, newTerm]);
-          showToast("Termination type created successfully!", "success");
-        }
+        if (!terminationTypeForm.name) { showToast("Please enter termination type name", "info"); return; }
+        toApi = { termination_type: terminationTypeForm.name };
+        label = "Termination type";
         break;
       case "warningTypes":
-        if (!warningTypeForm.name) {
-          showToast("Please enter warning type name", "info");
-          return;
-        }
-        if (isEditing && editingId) {
-          setWarningTypes((prev) =>
-            prev.map((w) =>
-              w.id === editingId ? { ...w, ...warningTypeForm } : w,
-            ),
-          );
-          showToast("Warning type updated successfully!", "success");
-        } else {
-          const newWarning: WarningType = {
-            id: Date.now().toString(),
-            ...warningTypeForm,
-            isActive: true,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setWarningTypes((prev) => [...prev, newWarning]);
-          showToast("Warning type created successfully!", "success");
-        }
+        if (!warningTypeForm.name) { showToast("Please enter warning type name", "info"); return; }
+        toApi = { warning_type_name: warningTypeForm.name };
+        label = "Warning type";
         break;
       case "complaintTypes":
-        if (!complaintTypeForm.name) {
-          showToast("Please enter complaint type name", "info");
-          return;
-        }
-        if (isEditing && editingId) {
-          setComplaintTypes((prev) =>
-            prev.map((c) =>
-              c.id === editingId ? { ...c, ...complaintTypeForm } : c,
-            ),
-          );
-          showToast("Complaint type updated successfully!", "success");
-        } else {
-          const newComplaint: ComplaintType = {
-            id: Date.now().toString(),
-            ...complaintTypeForm,
-            isActive: true,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setComplaintTypes((prev) => [...prev, newComplaint]);
-          showToast("Complaint type created successfully!", "success");
-        }
+        if (!complaintTypeForm.name) { showToast("Please enter complaint type name", "info"); return; }
+        toApi = { complaint_type: complaintTypeForm.name };
+        label = "Complaint type";
         break;
       case "holidayTypes":
-        if (!holidayTypeForm.name) {
-          showToast("Please enter holiday type name", "info");
-          return;
-        }
-        if (isEditing && editingId) {
-          setHolidayTypes((prev) =>
-            prev.map((h) =>
-              h.id === editingId ? { ...h, ...holidayTypeForm } : h,
-            ),
-          );
-          showToast("Holiday type updated successfully!", "success");
-        } else {
-          const newHoliday: HolidayType = {
-            id: Date.now().toString(),
-            ...holidayTypeForm,
-            isActive: true,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setHolidayTypes((prev) => [...prev, newHoliday]);
-          showToast("Holiday type created successfully!", "success");
-        }
+        if (!holidayTypeForm.name) { showToast("Please enter holiday type name", "info"); return; }
+        toApi = { holiday_type: holidayTypeForm.name };
+        label = "Holiday type";
         break;
       case "documentCategories":
-        if (!documentCategoryForm.name) {
-          showToast("Please enter document category name", "info");
-          return;
-        }
-        if (isEditing && editingId) {
-          setDocumentCategories((prev) =>
-            prev.map((d) =>
-              d.id === editingId ? { ...d, ...documentCategoryForm } : d,
-            ),
-          );
-          showToast("Document category updated successfully!", "success");
-        } else {
-          const newCat: DocumentCategory = {
-            id: Date.now().toString(),
-            ...documentCategoryForm,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setDocumentCategories((prev) => [...prev, newCat]);
-          showToast("Document category created successfully!", "success");
-        }
+        if (!documentCategoryForm.name) { showToast("Please enter document category name", "info"); return; }
+        toApi = { document_type: documentCategoryForm.name };
+        label = "Document category";
         break;
       case "announcementCategories":
-        if (!announcementCategoryForm.name) {
-          showToast("Please enter announcement category name", "info");
-          return;
-        }
-        if (isEditing && editingId) {
-          setAnnouncementCategories((prev) =>
-            prev.map((a) =>
-              a.id === editingId ? { ...a, ...announcementCategoryForm } : a,
-            ),
-          );
-          showToast("Announcement category updated successfully!", "success");
-        } else {
-          const newAnn: AnnouncementCategory = {
-            id: Date.now().toString(),
-            ...announcementCategoryForm,
-            isActive: true,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setAnnouncementCategories((prev) => [...prev, newAnn]);
-          showToast("Announcement category created successfully!", "success");
-        }
+        if (!announcementCategoryForm.name) { showToast("Please enter announcement category name", "info"); return; }
+        toApi = { announcement_category: announcementCategoryForm.name };
+        label = "Announcement category";
         break;
       case "eventTypes":
-        if (!eventTypeForm.name) {
-          showToast("Please enter event type name", "info");
-          return;
-        }
-        if (isEditing && editingId) {
-          setEventTypes((prev) =>
-            prev.map((e) =>
-              e.id === editingId ? { ...e, ...eventTypeForm } : e,
-            ),
-          );
-          showToast("Event type updated successfully!", "success");
-        } else {
-          const newEvent: EventType = {
-            id: Date.now().toString(),
-            ...eventTypeForm,
-            isActive: true,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setEventTypes((prev) => [...prev, newEvent]);
-          showToast("Event type created successfully!", "success");
-        }
+        if (!eventTypeForm.name) { showToast("Please enter event type name", "info"); return; }
+        toApi = { event_type: eventTypeForm.name };
+        label = "Event type";
         break;
       case "allowanceTypes":
-        if (!allowanceTypeForm.name) {
-          showToast("Please enter allowance type name", "info");
-          return;
-        }
-        if (isEditing && editingId) {
-          setAllowanceTypes((prev) =>
-            prev.map((a) =>
-              a.id === editingId ? { ...a, ...allowanceTypeForm } : a,
-            ),
-          );
-          showToast("Allowance type updated successfully!", "success");
-        } else {
-          const newAllow: AllowanceType = {
-            id: Date.now().toString(),
-            ...allowanceTypeForm,
-            isActive: true,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setAllowanceTypes((prev) => [...prev, newAllow]);
-          showToast("Allowance type created successfully!", "success");
-        }
+        if (!allowanceTypeForm.name) { showToast("Please enter allowance type name", "info"); return; }
+        toApi = { name: allowanceTypeForm.name };
+        label = "Allowance type";
         break;
       case "deductionTypes":
-        if (!deductionTypeForm.name) {
-          showToast("Please enter deduction type name", "info");
-          return;
-        }
-        if (isEditing && editingId) {
-          setDeductionTypes((prev) =>
-            prev.map((d) =>
-              d.id === editingId ? { ...d, ...deductionTypeForm } : d,
-            ),
-          );
-          showToast("Deduction type updated successfully!", "success");
-        } else {
-          const newDed: DeductionType = {
-            id: Date.now().toString(),
-            ...deductionTypeForm,
-            isActive: true,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setDeductionTypes((prev) => [...prev, newDed]);
-          showToast("Deduction type created successfully!", "success");
-        }
+        if (!deductionTypeForm.name) { showToast("Please enter deduction type name", "info"); return; }
+        toApi = { name: deductionTypeForm.name };
+        label = "Deduction type";
         break;
       case "loanTypes":
-        if (!loanTypeForm.name) {
-          showToast("Please enter loan type name", "info");
-          return;
-        }
-        if (isEditing && editingId) {
-          setLoanTypes((prev) =>
-            prev.map((l) =>
-              l.id === editingId ? { ...l, ...loanTypeForm } : l,
-            ),
-          );
-          showToast("Loan type updated successfully!", "success");
-        } else {
-          const newLoan: LoanType = {
-            id: Date.now().toString(),
-            ...loanTypeForm,
-            isActive: true,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setLoanTypes((prev) => [...prev, newLoan]);
-          showToast("Loan type created successfully!", "success");
-        }
+        if (!loanTypeForm.name) { showToast("Please enter loan type name", "info"); return; }
+        toApi = { name: loanTypeForm.name };
+        label = "Loan type";
         break;
       case "ipRestricts":
-        if (!ipRestrictForm.ipAddress) {
-          showToast("Please enter IP address", "info");
-          return;
-        }
-        if (isEditing && editingId) {
-          setIpRestricts((prev) =>
-            prev.map((i) =>
-              i.id === editingId ? { ...i, ...ipRestrictForm } : i,
-            ),
-          );
-          showToast("IP restrict updated successfully!", "success");
-        } else {
-          const newIp: IpRestrict = {
-            id: Date.now().toString(),
-            ...ipRestrictForm,
-            isActive: true,
-            createdAt: new Date().toISOString().split("T")[0],
-          };
-          setIpRestricts((prev) => [...prev, newIp]);
-          showToast("IP restrict created successfully!", "success");
-        }
+        if (!ipRestrictForm.ipAddress) { showToast("Please enter IP address", "info"); return; }
+        toApi = { ip: ipRestrictForm.ipAddress };
+        label = "IP restrict";
         break;
       case "workingDays":
         showToast("Working days saved successfully!", "success");
-        break;
+        return;
+    }
+
+    if (!hooks) return;
+    try {
+      if (isEditing && editingId) {
+        await hooks.update(editingId, toApi);
+        showToast(`${label} updated successfully!`, "success");
+      } else {
+        await hooks.create(toApi);
+        showToast(`${label} created successfully!`, "success");
+      }
+    } catch {
+      showToast("Operation failed. Please try again.", "error");
     }
     setShowModal(false);
     resetForm();
   };
 
-  const handleDelete = (id: string, type: ModuleType, name: string) => {
-    if (confirm(`Are you sure you want to delete ${name}?`)) {
-      switch (type) {
-        case "branches":
-          setBranches((prev) => prev.filter((b) => b.id !== id));
-          break;
-        case "departments":
-          setDepartments((prev) => prev.filter((d) => d.id !== id));
-          break;
-        case "designations":
-          setDesignations((prev) => prev.filter((d) => d.id !== id));
-          break;
-        case "documentTypes":
-          setDocumentTypes((prev) => prev.filter((d) => d.id !== id));
-          break;
-        case "awardTypes":
-          setAwardTypes((prev) => prev.filter((a) => a.id !== id));
-          break;
-        case "terminationTypes":
-          setTerminationTypes((prev) => prev.filter((t) => t.id !== id));
-          break;
-        case "warningTypes":
-          setWarningTypes((prev) => prev.filter((w) => w.id !== id));
-          break;
-        case "complaintTypes":
-          setComplaintTypes((prev) => prev.filter((c) => c.id !== id));
-          break;
-        case "holidayTypes":
-          setHolidayTypes((prev) => prev.filter((h) => h.id !== id));
-          break;
-        case "documentCategories":
-          setDocumentCategories((prev) => prev.filter((d) => d.id !== id));
-          break;
-        case "announcementCategories":
-          setAnnouncementCategories((prev) => prev.filter((a) => a.id !== id));
-          break;
-        case "eventTypes":
-          setEventTypes((prev) => prev.filter((e) => e.id !== id));
-          break;
-        case "allowanceTypes":
-          setAllowanceTypes((prev) => prev.filter((a) => a.id !== id));
-          break;
-        case "deductionTypes":
-          setDeductionTypes((prev) => prev.filter((d) => d.id !== id));
-          break;
-        case "loanTypes":
-          setLoanTypes((prev) => prev.filter((l) => l.id !== id));
-          break;
-        case "ipRestricts":
-          setIpRestricts((prev) => prev.filter((i) => i.id !== id));
-          break;
-      }
-      showToast(`${type.slice(0, -1)} deleted successfully!`, "success");
+  const handleDelete = async (id: string, type: ModuleType, name: string) => {
+    if (!confirm(`Are you sure you want to delete ${name}?`)) return;
+    const hooksMap: Partial<Record<ModuleType, typeof branchRes>> = {
+      branches: branchRes, departments: departmentRes, designations: designationRes,
+      documentTypes: documentTypeRes, awardTypes: awardTypeRes,
+      terminationTypes: terminationTypeRes, warningTypes: warningTypeRes,
+      complaintTypes: complaintTypeRes, holidayTypes: holidayTypeRes,
+      documentCategories: documentCategoryRes, announcementCategories: announcementCategoryRes,
+      eventTypes: eventTypeRes, allowanceTypes: allowanceTypeRes,
+      deductionTypes: deductionTypeRes, loanTypes: loanTypeRes,
+      ipRestricts: ipRestrictRes,
+    };
+    const h = hooksMap[type];
+    if (!h) return;
+    try {
+      await h.remove(id);
+      showToast(`${type} deleted successfully!`, "success");
+    } catch {
+      showToast("Delete failed. Please try again.", "error");
     }
   };
 
-  const handleWorkingDaysSave = () => {
-    showToast("Working days saved successfully!", "success");
+  const handleWorkingDaysSave = async () => {
+    const days: number[] = [];
+    if (workingDays.sunday) days.push(0);
+    if (workingDays.monday) days.push(1);
+    if (workingDays.tuesday) days.push(2);
+    if (workingDays.wednesday) days.push(3);
+    if (workingDays.thursday) days.push(4);
+    if (workingDays.friday) days.push(5);
+    if (workingDays.saturday) days.push(6);
+    try {
+      await hrmSetupExtras.updateWorkingDays(days);
+      showToast("Working days saved successfully!", "success");
+    } catch {
+      showToast("Save failed. Please try again.", "error");
+    }
   };
 
   // ─── Render Module Content ──────────────────────────────────────────────────

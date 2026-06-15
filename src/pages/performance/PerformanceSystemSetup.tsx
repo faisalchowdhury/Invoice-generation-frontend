@@ -1,13 +1,19 @@
 /**
  * File: src/pages/performance/PerformanceSystemSetup.tsx
- * Performance System Setup page – mirrors HRMSystemSetup structure
- * Includes: Goal Types (and placeholder modules for KPIs, Review Cycles, etc.)
- * Design 100% matches the provided screenshot and HRM code style
+ * Performance System Setup page – manages Indicator Categories and Goal Types.
+ * Design 100% matches the provided screenshot and HRM code style.
  */
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  indicatorCategoryHooks,
+  goalTypeHooks,
+  type IndicatorCategory as ApiIndicatorCategory,
+  type GoalType as ApiGoalType,
+} from "@/services/performance";
 import {
   Search,
   Plus,
@@ -22,12 +28,11 @@ import {
   CalendarDays,
   Settings2,
   FileCheck,
-  Star,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface GoalType {
+interface CategoryItem {
   id: string;
   name: string;
   description: string;
@@ -35,91 +40,82 @@ interface GoalType {
   createdAt: string;
 }
 
-// Additional performance module types can be added later (e.g., Kpi, ReviewCycle)
-// For now we only implement Goal Types fully.
+// ─── Sample Data (offline fallback seeds, API shape) ─────────────────────────
 
-// ─── Sample Data (exactly from screenshot) ───────────────────────────────────
-
-const sampleGoalTypes: GoalType[] = [
-  {
-    id: "1",
-    name: "Work Quality & Accuracy",
-    description: "Precision, attention to detail, and error-free delivery",
-    isActive: true,
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "2",
-    name: "Productivity & Efficiency",
-    description:
-      "Output volume, task completion rate, and resource optimization",
-    isActive: true,
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "3",
-    name: "Communication & Interpersonal Skills",
-    description: "Clarity in communication and relationship building",
-    isActive: false,
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "4",
-    name: "Team Collaboration",
-    description:
-      "Contribution to team success and cross-functional cooperation",
-    isActive: true,
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "5",
-    name: "Problem Solving & Critical Thinking",
-    description: "Analytical approach to challenges and solution development",
-    isActive: true,
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "6",
-    name: "Leadership & Mentoring",
-    description: "Ability to guide teams, develop others, and drive results",
-    isActive: true,
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "7",
-    name: "Innovation & Process Improvement",
-    description:
-      "Creative thinking and contribution to operational enhancements",
-    isActive: false,
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "8",
-    name: "Time Management & Organization",
-    description:
-      "Prioritization skills, deadline adherence, and workflow efficiency",
-    isActive: true,
-    createdAt: "2024-01-01",
-  },
+const sampleCategories: ApiIndicatorCategory[] = [
+  { id: "1", name: "Leadership & Mentoring", description: "Ability to guide teams, develop others, and drive results", status: "active" },
+  { id: "2", name: "Customer Focus & Service", description: "Customer orientation and service delivery", status: "active" },
+  { id: "3", name: "Problem Solving & Critical Thinking", description: "Analytical approach to challenges and solution development", status: "active" },
+  { id: "4", name: "Productivity & Efficiency", description: "Output volume, task completion rate, and resource optimization", status: "active" },
+  { id: "5", name: "Professional Growth & Development", description: "Continuous learning and skill development", status: "inactive" },
+  { id: "6", name: "Team Collaboration", description: "Contribution to team success and cross-functional cooperation", status: "active" },
+  { id: "7", name: "Time Management & Organization", description: "Prioritization skills, deadline adherence, and workflow efficiency", status: "active" },
+  { id: "8", name: "Work Quality & Accuracy", description: "Precision, attention to detail, and error-free delivery", status: "active" },
 ];
 
-// ─── Module Type Definition (extensible for future performance modules) ───────
+const sampleGoalTypes: ApiGoalType[] = [
+  { id: "1", name: "Work Quality & Accuracy", description: "Precision, attention to detail, and error-free delivery", status: "active" },
+  { id: "2", name: "Productivity & Efficiency", description: "Output volume, task completion rate, and resource optimization", status: "active" },
+  { id: "3", name: "Communication & Interpersonal Skills", description: "Clarity in communication and relationship building", status: "inactive" },
+  { id: "4", name: "Team Collaboration", description: "Contribution to team success and cross-functional cooperation", status: "active" },
+  { id: "5", name: "Problem Solving & Critical Thinking", description: "Analytical approach to challenges and solution development", status: "active" },
+  { id: "6", name: "Leadership & Mentoring", description: "Ability to guide teams, develop others, and drive results", status: "active" },
+  { id: "7", name: "Innovation & Process Improvement", description: "Creative thinking and contribution to operational enhancements", status: "inactive" },
+  { id: "8", name: "Time Management & Organization", description: "Prioritization skills, deadline adherence, and workflow efficiency", status: "active" },
+];
+
+// ─── API ↔ display mapping ────────────────────────────────────────────────────
+
+function mapItem(p: any): CategoryItem {
+  const rawStatus = (p.status ?? "active") as string;
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    name: p.name ?? "",
+    description: p.description ?? "",
+    isActive: rawStatus.toLowerCase() !== "inactive",
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
+
+// ─── Module Type Definition ──────────────────────────────────────────────────
 
 type ModuleType =
+  | "indicatorCategories"
   | "goalTypes"
   | "kpis"
   | "reviewCycles"
-  | "competencies"
   | "feedbackTemplates";
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export const PerformanceSystemSetup: React.FC = () => {
   const navigate = useNavigate();
-  const [activeModule, setActiveModule] = useState<ModuleType>("goalTypes");
+  const [activeModule, setActiveModule] = useState<ModuleType>("indicatorCategories");
 
-  // Data states (only goalTypes is fully implemented; others can be added later)
-  const [goalTypes, setGoalTypes] = useState<GoalType[]>(sampleGoalTypes);
+  // ── Indicator Categories data ────────────────────────────────────────────
+  const {
+    items: rawCategories,
+    create: createCategory,
+    update: updateCategory,
+    remove: removeCategory,
+  } = useResourceData(indicatorCategoryHooks, {
+    seed: sampleCategories,
+    params: { page: 1, limit: 100 },
+  });
+  const categories = useMemo(() => rawCategories.map(mapItem), [rawCategories]);
+
+  // ── Goal Types data ──────────────────────────────────────────────────────
+  const {
+    items: rawGoalTypes,
+    create: createGoalType,
+    update: updateGoalType,
+    remove: removeGoalType,
+  } = useResourceData(goalTypeHooks, {
+    seed: sampleGoalTypes,
+    params: { page: 1, limit: 100 },
+  });
+  const goalTypes = useMemo(() => rawGoalTypes.map(mapItem), [rawGoalTypes]);
+
   const [searchTerm, setSearchTerm] = useState("");
 
   // Modal states
@@ -127,7 +123,7 @@ export const PerformanceSystemSetup: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Form state for Goal Types
+  // Form state
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -136,13 +132,19 @@ export const PerformanceSystemSetup: React.FC = () => {
 
   // ─── Filtered Data ─────────────────────────────────────────────────────────
 
-  const filteredGoalTypes = goalTypes.filter(
-    (gt) =>
-      gt.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      gt.description.toLowerCase().includes(searchTerm.toLowerCase()),
+  const filteredCategories = categories.filter(
+    (item) =>
+      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.description.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
-  // ─── CRUD Handlers (identical pattern to HRMSystemSetup) ───────────────────
+  const filteredGoalTypes = goalTypes.filter(
+    (item) =>
+      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.description.toLowerCase().includes(searchTerm.toLowerCase()),
+  );
+
+  // ─── CRUD Handlers ─────────────────────────────────────────────────────────
 
   const openCreateModal = () => {
     setIsEditing(false);
@@ -151,76 +153,108 @@ export const PerformanceSystemSetup: React.FC = () => {
     setShowModal(true);
   };
 
-  const openEditModal = (goalType: GoalType) => {
+  const openEditModal = (item: CategoryItem) => {
     setIsEditing(true);
-    setEditingId(goalType.id);
+    setEditingId(item.id);
     setFormData({
-      name: goalType.name,
-      description: goalType.description,
-      isActive: goalType.isActive,
+      name: item.name,
+      description: item.description,
+      isActive: item.isActive,
     });
     setShowModal(true);
   };
 
-  const handleSave = () => {
+  const toApiStatus = (isActive: boolean): "active" | "inactive" =>
+    isActive ? "active" : "inactive";
+
+  const handleSave = async () => {
     if (!formData.name.trim()) {
-      showToast("Please enter goal type name", "info");
+      showToast("Please enter a name", "info");
       return;
     }
 
-    if (isEditing && editingId) {
-      setGoalTypes((prev) =>
-        prev.map((gt) =>
-          gt.id === editingId
-            ? {
-                ...gt,
-                name: formData.name.trim(),
-                description: formData.description.trim(),
-                isActive: formData.isActive,
-              }
-            : gt,
-        ),
+    const payload = {
+      name: formData.name.trim(),
+      description: formData.description.trim(),
+      status: toApiStatus(formData.isActive),
+    };
+
+    try {
+      if (isEditing && editingId) {
+        if (activeModule === "indicatorCategories") {
+          await updateCategory(editingId, payload as Partial<ApiIndicatorCategory>);
+        } else {
+          await updateGoalType(editingId, payload as Partial<ApiGoalType>);
+        }
+        showToast(
+          `${activeModule === "indicatorCategories" ? "Indicator category" : "Goal type"} updated successfully!`,
+          "success",
+        );
+      } else {
+        if (activeModule === "indicatorCategories") {
+          await createCategory(payload as Partial<ApiIndicatorCategory>);
+        } else {
+          await createGoalType(payload as Partial<ApiGoalType>);
+        }
+        showToast(
+          `${activeModule === "indicatorCategories" ? "Indicator category" : "Goal type"} created successfully!`,
+          "success",
+        );
+      }
+      setShowModal(false);
+      resetForm();
+    } catch {
+      showToast("Could not save. Please try again.", "error");
+    }
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete "${name}"?`)) return;
+    try {
+      if (activeModule === "indicatorCategories") {
+        await removeCategory(id);
+      } else {
+        await removeGoalType(id);
+      }
+      showToast("Deleted successfully!", "success");
+    } catch {
+      showToast("Could not delete. Please try again.", "error");
+    }
+  };
+
+  const toggleStatus = async (item: CategoryItem) => {
+    const payload = { status: toApiStatus(!item.isActive) };
+    try {
+      if (activeModule === "indicatorCategories") {
+        await updateCategory(item.id, payload as Partial<ApiIndicatorCategory>);
+      } else {
+        await updateGoalType(item.id, payload as Partial<ApiGoalType>);
+      }
+      showToast(
+        `${!item.isActive ? "Activated" : "Deactivated"} successfully!`,
+        "success",
       );
-      showToast("Goal type updated successfully!", "success");
-    } else {
-      const newGoalType: GoalType = {
-        id: Date.now().toString(),
-        name: formData.name.trim(),
-        description: formData.description.trim(),
-        isActive: formData.isActive,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setGoalTypes((prev) => [newGoalType, ...prev]);
-      showToast("Goal type created successfully!", "success");
+    } catch {
+      showToast("Could not update status.", "error");
     }
-    setShowModal(false);
-    resetForm();
-  };
-
-  const handleDelete = (id: string, name: string) => {
-    if (confirm(`Are you sure you want to delete "${name}"?`)) {
-      setGoalTypes((prev) => prev.filter((gt) => gt.id !== id));
-      showToast("Goal type deleted successfully!", "success");
-    }
-  };
-
-  const toggleStatus = (id: string, currentStatus: boolean) => {
-    setGoalTypes((prev) =>
-      prev.map((gt) =>
-        gt.id === id ? { ...gt, isActive: !currentStatus } : gt,
-      ),
-    );
-    showToast(
-      `Goal type ${!currentStatus ? "activated" : "deactivated"} successfully!`,
-      "success",
-    );
   };
 
   const resetForm = () => {
     setFormData({ name: "", description: "", isActive: true });
   };
 
-  // ─── Modal (exact copy of HRM modal structure) ────────────────────────────
+  // ─── Determine active list ─────────────────────────────────────────────────
+
+  const activeList =
+    activeModule === "indicatorCategories" ? filteredCategories : filteredGoalTypes;
+  const totalList =
+    activeModule === "indicatorCategories" ? categories : goalTypes;
+  const entityLabel =
+    activeModule === "indicatorCategories" ? "indicator category" : "goal type";
+  const entityLabelPlural =
+    activeModule === "indicatorCategories" ? "indicator categories" : "goal types";
+
+  // ─── Modal ────────────────────────────────────────────────────────────────
 
   const renderModal = () => {
     return (
@@ -231,11 +265,11 @@ export const PerformanceSystemSetup: React.FC = () => {
         <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
           <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">
-                {isEditing ? "Edit Goal Type" : "Create Goal Type"}
+              <h2 className="text-lg font-semibold text-gray-900 capitalize">
+                {isEditing ? `Edit ${entityLabel}` : `Create ${entityLabel}`}
               </h2>
               <p className="text-sm text-gray-500 mt-0.5">
-                {isEditing ? "Update information" : "Add a new goal type"}
+                {isEditing ? "Update information" : `Add a new ${entityLabel}`}
               </p>
             </div>
             <button
@@ -276,7 +310,7 @@ export const PerformanceSystemSetup: React.FC = () => {
                   setFormData({ ...formData, description: e.target.value })
                 }
                 rows={3}
-                placeholder="Describe the goal type..."
+                placeholder="Describe..."
                 className="w-full px-3 py-2 border border-gray-300 rounded-md resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -323,140 +357,142 @@ export const PerformanceSystemSetup: React.FC = () => {
     );
   };
 
-  // ─── Render Module Content (only goalTypes is fully implemented) ───────────
+  // ─── Render Module Content ─────────────────────────────────────────────────
+
+  const renderMasterTable = () => (
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="flex justify-between items-center p-4 border-b border-gray-200 bg-gray-50">
+        <h3 className="font-semibold text-gray-900 capitalize">
+          {activeModule === "indicatorCategories" ? "Indicator Categories" : "Goal Types"}
+        </h3>
+        <button
+          onClick={openCreateModal}
+          className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+        >
+          <Plus className="w-4 h-4" />
+          Add {activeModule === "indicatorCategories" ? "Category" : "Goal Type"}
+        </button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                Name
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                Description
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                Status
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {activeList.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={4}
+                  className="px-4 py-12 text-center text-gray-500"
+                >
+                  <div className="flex flex-col items-center gap-2">
+                    <Search className="w-8 h-8 text-gray-300" />
+                    <p>No {entityLabelPlural} found</p>
+                    <button
+                      onClick={openCreateModal}
+                      className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                    >
+                      Create your first {entityLabel}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              activeList.map((item) => (
+                <tr
+                  key={item.id}
+                  className="hover:bg-gray-50 transition-colors"
+                >
+                  <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
+                    {item.name}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600 max-w-md truncate">
+                    {item.description}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => toggleStatus(item)}
+                        className="flex items-center gap-1.5 group"
+                      >
+                        {item.isActive ? (
+                          <>
+                            <CheckCircle className="w-4 h-4 text-green-600" />
+                            <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+                              Active
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="w-4 h-4 text-red-500" />
+                            <span className="text-xs font-medium text-red-700 bg-red-50 px-2 py-0.5 rounded-full">
+                              Inactive
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => openEditModal(item)}
+                        className="p-1.5 text-gray-400 hover:text-blue-600 rounded-md hover:bg-blue-50 transition-colors"
+                        title="Edit"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.id, item.name)}
+                        className="p-1.5 text-gray-400 hover:text-red-600 rounded-md hover:bg-red-50 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      {activeList.length > 0 && (
+        <div className="border-t border-gray-200 px-4 py-3 bg-gray-50/40 text-xs text-gray-500 flex justify-between items-center">
+          <span>
+            Showing {activeList.length} of {totalList.length} {entityLabelPlural}
+          </span>
+          <span className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-1">
+              <CheckCircle className="w-3 h-3 text-green-600" /> Active
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <XCircle className="w-3 h-3 text-red-500" /> Inactive
+            </span>
+          </span>
+        </div>
+      )}
+    </div>
+  );
 
   const renderModuleContent = () => {
     switch (activeModule) {
+      case "indicatorCategories":
       case "goalTypes":
-        return (
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="flex justify-between items-center p-4 border-b border-gray-200 bg-gray-50">
-              <h3 className="font-semibold text-gray-900">Goal Types</h3>
-              <button
-                onClick={openCreateModal}
-                className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-              >
-                <Plus className="w-4 h-4" />
-                Add Goal Type
-              </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                      Name
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                      Description
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filteredGoalTypes.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={4}
-                        className="px-4 py-12 text-center text-gray-500"
-                      >
-                        <div className="flex flex-col items-center gap-2">
-                          <Search className="w-8 h-8 text-gray-300" />
-                          <p>No goal types found</p>
-                          <button
-                            onClick={openCreateModal}
-                            className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                          >
-                            Create your first goal type
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredGoalTypes.map((gt) => (
-                      <tr
-                        key={gt.id}
-                        className="hover:bg-gray-50 transition-colors"
-                      >
-                        <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
-                          {gt.name}
-                        </td>
-                        <td className="px-4 py-3 text-gray-600 max-w-md truncate">
-                          {gt.description}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => toggleStatus(gt.id, gt.isActive)}
-                              className="flex items-center gap-1.5 group"
-                            >
-                              {gt.isActive ? (
-                                <>
-                                  <CheckCircle className="w-4 h-4 text-green-600" />
-                                  <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
-                                    Active
-                                  </span>
-                                </>
-                              ) : (
-                                <>
-                                  <XCircle className="w-4 h-4 text-red-500" />
-                                  <span className="text-xs font-medium text-red-700 bg-red-50 px-2 py-0.5 rounded-full">
-                                    Inactive
-                                  </span>
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => openEditModal(gt)}
-                              className="p-1.5 text-gray-400 hover:text-blue-600 rounded-md hover:bg-blue-50 transition-colors"
-                              title="Edit"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(gt.id, gt.name)}
-                              className="p-1.5 text-gray-400 hover:text-red-600 rounded-md hover:bg-red-50 transition-colors"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {filteredGoalTypes.length > 0 && (
-              <div className="border-t border-gray-200 px-4 py-3 bg-gray-50/40 text-xs text-gray-500 flex justify-between items-center">
-                <span>
-                  Showing {filteredGoalTypes.length} of {goalTypes.length} goal
-                  types
-                </span>
-                <span className="flex items-center gap-3">
-                  <span className="inline-flex items-center gap-1">
-                    <CheckCircle className="w-3 h-3 text-green-600" /> Active
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <XCircle className="w-3 h-3 text-red-500" /> Inactive
-                  </span>
-                </span>
-              </div>
-            )}
-          </div>
-        );
-
-      // Placeholder for other modules (to be implemented later)
+        return renderMasterTable();
       case "kpis":
         return (
           <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-500">
@@ -471,13 +507,6 @@ export const PerformanceSystemSetup: React.FC = () => {
             <p>Review Cycles module – coming soon</p>
           </div>
         );
-      case "competencies":
-        return (
-          <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-500">
-            <Star className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-            <p>Competencies module – coming soon</p>
-          </div>
-        );
       case "feedbackTemplates":
         return (
           <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-500">
@@ -490,11 +519,11 @@ export const PerformanceSystemSetup: React.FC = () => {
     }
   };
 
-  // ─── Main Render (identical layout to HRM with Performance sidebar) ────────
+  // ─── Main Render ──────────────────────────────────────────────────────────
 
   return (
     <div className="flex-1 bg-[#FAFBFC] overflow-hidden flex flex-col">
-      {/* Breadcrumb – matches screenshot: Dashboard > Performance > System Setup > Indicator Categories */}
+      {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -515,10 +544,9 @@ export const PerformanceSystemSetup: React.FC = () => {
             <span className="text-gray-900 font-medium">System Setup</span>
             <span>›</span>
             <span className="text-gray-900 font-medium">
-              Indicator Categories
+              {activeModule === "indicatorCategories" ? "Indicator Categories" : "Goal Types"}
             </span>
           </div>
-          {/* Language selector as in screenshot */}
           <div className="flex items-center gap-1 text-sm text-gray-600 border border-gray-200 rounded-md px-2 py-1 bg-white">
             <Globe className="w-4 h-4" />
             <span>ga English</span>
@@ -527,31 +555,39 @@ export const PerformanceSystemSetup: React.FC = () => {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar Navigation – performance modules */}
+        {/* Sidebar Navigation */}
         <div className="w-64 bg-white border-r border-gray-200 overflow-y-auto flex-shrink-0">
           <div className="p-4">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">
               Performance Setup
             </h3>
+            {/* Search */}
+            {(activeModule === "indicatorCategories" || activeModule === "goalTypes") && (
+              <div className="relative mb-3">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search..."
+                  className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded-md"
+                />
+              </div>
+            )}
             <nav className="space-y-1">
               {[
+                { id: "indicatorCategories", label: "Indicator Categories", icon: Settings2 },
                 { id: "goalTypes", label: "Goal Types", icon: Target },
                 { id: "kpis", label: "KPIs", icon: BarChart3 },
-                {
-                  id: "reviewCycles",
-                  label: "Review Cycles",
-                  icon: CalendarDays,
-                },
-                { id: "competencies", label: "Competencies", icon: Star },
-                {
-                  id: "feedbackTemplates",
-                  label: "Feedback Templates",
-                  icon: FileCheck,
-                },
+                { id: "reviewCycles", label: "Review Cycles", icon: CalendarDays },
+                { id: "feedbackTemplates", label: "Feedback Templates", icon: FileCheck },
               ].map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => setActiveModule(item.id as ModuleType)}
+                  onClick={() => {
+                    setActiveModule(item.id as ModuleType);
+                    setSearchTerm("");
+                  }}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors ${
                     activeModule === item.id
                       ? "bg-blue-50 text-blue-600"

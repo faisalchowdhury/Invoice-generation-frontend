@@ -7,6 +7,12 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  trainerHooks,
+  type Trainer as ApiTrainer,
+} from "@/services/training";
+import { branchHooks, departmentHooks } from "@/services/hrm";
 import {
   Search,
   Plus,
@@ -21,26 +27,13 @@ import {
   Eye,
   User,
   Mail,
-  Briefcase,
   Building2,
   Users,
   CheckCircle,
   XCircle,
-  Globe,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Branch {
-  id: string;
-  name: string;
-}
-
-interface Department {
-  id: string;
-  name: string;
-  branchId: string;
-}
 
 interface Trainer {
   id: string;
@@ -56,29 +49,35 @@ interface Trainer {
   createdAt: string;
 }
 
-// ─── Sample Data (branches & departments – reuse from TrainingTypes) ─────────
+// ─── Sample Data (API snake_case seed) ────────────────────────────────────────
 
-const branches: Branch[] = [
-  { id: "1", name: "Main Office" },
-  { id: "2", name: "Downtown Branch" },
-  { id: "3", name: "North Branch" },
-  { id: "4", name: "South Branch" },
-  { id: "5", name: "East Branch" },
-  { id: "6", name: "West Branch" },
+const sampleTrainers: ApiTrainer[] = [
+  { id: "1", name: "Dr. Andrew Carter", contact: "+1 555-1001", email: "andrew.carter@example.com", experience: "10 years", expertise: "Artificial Intelligence", qualification: "PhD", branch_id: "5", department_id: "1" },
+  { id: "2", name: "Michelle Nelson", contact: "+1 555-1002", email: "michelle.nelson@example.com", experience: "8 years", expertise: "Risk Management", qualification: "MBA", branch_id: "4", department_id: "2" },
+  { id: "3", name: "Steven Green", contact: "+1 555-1003", email: "steven.green@example.com", experience: "12 years", expertise: "International Trade", qualification: "MSc", branch_id: "3", department_id: "3" },
+  { id: "4", name: "Kimberly Baker", contact: "+1 555-1004", email: "kimberly.baker@example.com", experience: "6 years", expertise: "Sustainability", qualification: "BSc", branch_id: "2", department_id: "4" },
+  { id: "5", name: "Jonathan Adams", contact: "+1 555-1005", email: "jonathan.adams@example.com", experience: "9 years", expertise: "Negotiation", qualification: "LLM", branch_id: "1", department_id: "5" },
 ];
 
-const departments: Department[] = [
-  { id: "1", name: "Operations", branchId: "5" },
-  { id: "2", name: "Finance & Accounting", branchId: "4" },
-  { id: "3", name: "Administration", branchId: "3" },
-  { id: "4", name: "Legal & Compliance", branchId: "2" },
-  { id: "5", name: "Sales & Marketing", branchId: "1" },
-  { id: "6", name: "Customer Service", branchId: "5" },
-  { id: "7", name: "IT", branchId: "3" },
-  { id: "8", name: "HR", branchId: "1" },
-  { id: "9", name: "Procurement", branchId: "6" },
-  { id: "10", name: "R&D", branchId: "6" },
-];
+// ─── API ↔ display mapping ─────────────────────────────────────────────────────
+
+function mapFromApi(p: any): Trainer {
+  const branch = p.branch_id ?? p.branchId;
+  const dept = p.department_id ?? p.departmentId;
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    name: p.name ?? "",
+    email: p.email ?? "",
+    phone: p.contact ?? p.phone ?? "",
+    specialization: p.expertise ?? p.specialization ?? "",
+    branchId: typeof branch === "object" ? String(branch?._id ?? branch?.id ?? "") : String(branch ?? ""),
+    branchName: typeof branch === "object" ? (branch?.branch_name ?? branch?.name ?? "") : "",
+    departmentId: typeof dept === "object" ? String(dept?._id ?? dept?.id ?? "") : String(dept ?? ""),
+    departmentName: typeof dept === "object" ? (dept?.department_name ?? dept?.name ?? "") : "",
+    status: "Active",
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
 
 const specializations = [
   "Artificial Intelligence",
@@ -93,62 +92,6 @@ const specializations = [
   "Customer Service Excellence",
 ];
 
-// Generate sample trainers (30 items to demonstrate pagination)
-const generateSampleTrainers = (): Trainer[] => {
-  const trainers: Trainer[] = [];
-  const firstNames = [
-    "John",
-    "Jane",
-    "Michael",
-    "Sarah",
-    "David",
-    "Lisa",
-    "Robert",
-    "Maria",
-    "James",
-    "Patricia",
-  ];
-  const lastNames = [
-    "Smith",
-    "Johnson",
-    "Williams",
-    "Brown",
-    "Jones",
-    "Garcia",
-    "Miller",
-    "Davis",
-    "Rodriguez",
-    "Martinez",
-  ];
-
-  for (let i = 1; i <= 30; i++) {
-    const firstName = firstNames[i % firstNames.length];
-    const lastName = lastNames[i % lastNames.length];
-    const branch = branches[i % branches.length];
-    const dept =
-      departments.find((d) => d.branchId === branch.id) || departments[0];
-    const specialization = specializations[i % specializations.length];
-    const status = i % 4 === 0 ? "Inactive" : "Active";
-
-    trainers.push({
-      id: i.toString(),
-      name: `${firstName} ${lastName}`,
-      email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com`,
-      phone: `+1 555-${1000 + i}`,
-      specialization,
-      branchId: branch.id,
-      branchName: branch.name,
-      departmentId: dept.id,
-      departmentName: dept.name,
-      status,
-      createdAt: `2024-${String((i % 12) + 1).padStart(2, "0")}-01`,
-    });
-  }
-  return trainers;
-};
-
-const sampleTrainers = generateSampleTrainers();
-
 type SortField =
   | "name"
   | "email"
@@ -158,15 +101,47 @@ type SortField =
   | "status";
 type SortDir = "asc" | "desc";
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
-
-const formatPhone = (phone: string) => phone;
-
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export const Trainers: React.FC = () => {
   const navigate = useNavigate();
-  const [trainers, setTrainers] = useState<Trainer[]>(sampleTrainers);
+
+  const {
+    items: raw,
+    create,
+    update,
+    remove,
+  } = useResourceData(trainerHooks, {
+    seed: sampleTrainers,
+    params: { page: 1, limit: 100 },
+  });
+  const trainers = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Load branch + department options
+  const branchQuery = branchHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const branchOptions = useMemo(
+    () =>
+      (branchQuery.data ?? []).map((b: any) => ({
+        id: String(b.id ?? b._id ?? ""),
+        name: b.branch_name ?? b.name ?? "",
+      })),
+    [branchQuery.data],
+  );
+  const departmentQuery = departmentHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const departmentOptions = useMemo(
+    () =>
+      (departmentQuery.data ?? []).map((d: any) => ({
+        id: String(d.id ?? d._id ?? ""),
+        name: d.department_name ?? d.name ?? "",
+        branchId: String(
+          typeof d.branch_id === "object"
+            ? (d.branch_id?._id ?? d.branch_id?.id ?? "")
+            : (d.branch_id ?? ""),
+        ),
+      })),
+    [departmentQuery.data],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -290,7 +265,7 @@ export const Trainers: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name.trim()) {
       showToast("Please enter trainer name", "info");
       return;
@@ -312,66 +287,48 @@ export const Trainers: React.FC = () => {
       return;
     }
 
-    const selectedBranch = branches.find((b) => b.id === formData.branchId);
-    const selectedDept = departments.find(
-      (d) => d.id === formData.departmentId,
-    );
+    const payload: Partial<ApiTrainer> = {
+      name: formData.name.trim(),
+      contact: formData.phone.trim(),
+      email: formData.email.trim(),
+      expertise: formData.specialization,
+      branch_id: formData.branchId,
+      department_id: formData.departmentId,
+    };
 
-    if (isEditing && selectedTrainer) {
-      setTrainers((prev) =>
-        prev.map((t) =>
-          t.id === selectedTrainer.id
-            ? {
-                ...t,
-                name: formData.name.trim(),
-                email: formData.email.trim(),
-                phone: formData.phone.trim(),
-                specialization: formData.specialization,
-                branchId: formData.branchId,
-                branchName: selectedBranch?.name || "",
-                departmentId: formData.departmentId,
-                departmentName: selectedDept?.name || "",
-                status: formData.status,
-              }
-            : t,
-        ),
-      );
-      showToast("Trainer updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newTrainer: Trainer = {
-        id: Date.now().toString(),
-        name: formData.name.trim(),
-        email: formData.email.trim(),
-        phone: formData.phone.trim(),
-        specialization: formData.specialization,
-        branchId: formData.branchId,
-        branchName: selectedBranch?.name || "",
-        departmentId: formData.departmentId,
-        departmentName: selectedDept?.name || "",
-        status: formData.status,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setTrainers((prev) => [newTrainer, ...prev]);
-      showToast("Trainer created successfully!", "success");
-      setShowCreateModal(false);
+    try {
+      if (isEditing && selectedTrainer) {
+        await update(selectedTrainer.id, payload);
+        showToast("Trainer updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Trainer created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetForm();
+    } catch {
+      showToast("Could not save trainer. Please try again.", "error");
     }
-    resetForm();
   };
 
-  const handleDelete = () => {
-    if (selectedTrainer) {
-      setTrainers((prev) => prev.filter((t) => t.id !== selectedTrainer.id));
+  const handleDelete = async () => {
+    if (!selectedTrainer) return;
+    try {
+      await remove(selectedTrainer.id);
       showToast("Trainer deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedTrainer(null);
+    } catch {
+      showToast("Could not delete trainer.", "error");
     }
+    setShowDeleteModal(false);
+    setSelectedTrainer(null);
   };
 
   // Get available departments based on selected branch
-  const availableDepartments = departments.filter(
-    (d) => d.branchId === formData.branchId,
-  );
+  const availableDepartments =
+    departmentOptions.length > 0
+      ? departmentOptions.filter((d) => d.branchId === formData.branchId)
+      : [];
 
   // ─── Sort Header Component ──────────────────────────────────────────────────
 
@@ -501,7 +458,7 @@ export const Trainers: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select branch</option>
-              {branches.map((b) => (
+              {branchOptions.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
                 </option>

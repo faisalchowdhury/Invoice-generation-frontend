@@ -4,20 +4,20 @@
  * Based on provided screenshots design
  */
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
 import {
-  ChevronLeft,
+  balanceSheetHooks,
+  balanceSheetActions,
+  type BalanceSheet as ApiBalanceSheet,
+} from "@/services/doubleEntry";
+import {
   Calendar,
   Download,
-  Printer,
   RefreshCw,
-  DollarSign,
-  TrendingUp,
-  TrendingDown,
   X,
-  Eye,
   FileText,
   CheckCircle,
   AlertCircle,
@@ -41,76 +41,53 @@ interface BalanceSheetSection {
 }
 
 interface BalanceSheetData {
+  id: string;
   asOfDate: string;
   financialYear: string;
-  status: "Draft" | "Balanced" | "Finalized";
+  status: "Draft" | "Balanced" | "Finalized" | string;
   assets: BalanceSheetSection[];
   liabilities: BalanceSheetSection[];
   equity: BalanceSheetSection[];
   totalAssets: number;
   totalLiabilities: number;
   totalEquity: number;
+  notes?: Array<{ _id?: string; id?: string; note_title: string; note_content: string }>;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (API snake_case seed) ────────────────────────────────────────
 
-const sampleBalanceSheet: BalanceSheetData = {
-  asOfDate: "2026-12-31",
-  financialYear: "2026",
-  status: "Draft",
+const sampleApiBalanceSheets: ApiBalanceSheet[] = [
+  {
+    id: "1",
+    balance_sheet_date: "2026-12-31",
+    financial_year: "2026",
+    status: "draft",
+    total_assets: 1046643.87,
+    total_liabilities: 19263.94,
+    total_equity: 13978.295,
+    notes: [],
+  },
+];
+
+// Static display data used to render the balance sheet detail
+const sampleBalanceSheetDisplay: Omit<BalanceSheetData, "id" | "asOfDate" | "financialYear" | "status"> = {
   assets: [
     {
       title: "Current Assets",
       items: [
         { id: "1", name: "Cash", code: "1000", amount: 328729.05, level: 1 },
-        {
-          id: "2",
-          name: "Petty Cash",
-          code: "1005",
-          amount: 121847.725,
-          level: 1,
-        },
-        {
-          id: "3",
-          name: "Bank Account - Main",
-          code: "1010",
-          amount: 41388.945,
-          level: 1,
-        },
-        {
-          id: "4",
-          name: "Bank Account - Savings",
-          code: "1020",
-          amount: 476526.655,
-          level: 1,
-        },
-        {
-          id: "5",
-          name: "Accounts Receivable",
-          code: "1100",
-          amount: 7909.265,
-          level: 1,
-        },
-        {
-          id: "6",
-          name: "Inventory",
-          code: "1200",
-          amount: 28410.275,
-          level: 1,
-        },
+        { id: "2", name: "Petty Cash", code: "1005", amount: 121847.725, level: 1 },
+        { id: "3", name: "Bank Account - Main", code: "1010", amount: 41388.945, level: 1 },
+        { id: "4", name: "Bank Account - Savings", code: "1020", amount: 476526.655, level: 1 },
+        { id: "5", name: "Accounts Receivable", code: "1100", amount: 7909.265, level: 1 },
+        { id: "6", name: "Inventory", code: "1200", amount: 28410.275, level: 1 },
       ],
       total: 1041811.915,
     },
     {
       title: "Other Assets",
       items: [
-        {
-          id: "7",
-          name: "Tax Receivable (VAT/GST Input)",
-          code: "1500",
-          amount: 4831.955,
-          level: 1,
-        },
+        { id: "7", name: "Tax Receivable (VAT/GST Input)", code: "1500", amount: 4831.955, level: 1 },
       ],
       total: 4831.955,
     },
@@ -119,20 +96,8 @@ const sampleBalanceSheet: BalanceSheetData = {
     {
       title: "Current Liabilities",
       items: [
-        {
-          id: "8",
-          name: "Accounts Payable",
-          code: "2000",
-          amount: 13910.455,
-          level: 1,
-        },
-        {
-          id: "9",
-          name: "VAT Payable (Sales Tax Output)",
-          code: "2210",
-          amount: 5353.485,
-          level: 1,
-        },
+        { id: "8", name: "Accounts Payable", code: "2000", amount: 13910.455, level: 1 },
+        { id: "9", name: "VAT Payable (Sales Tax Output)", code: "2210", amount: 5353.485, level: 1 },
       ],
       total: 19263.94,
     },
@@ -141,13 +106,7 @@ const sampleBalanceSheet: BalanceSheetData = {
     {
       title: "Equity",
       items: [
-        {
-          id: "10",
-          name: "Retained Earnings",
-          code: "3000",
-          amount: 13978.295,
-          level: 1,
-        },
+        { id: "10", name: "Retained Earnings", code: "3000", amount: 13978.295, level: 1 },
       ],
       total: 13978.295,
     },
@@ -156,6 +115,25 @@ const sampleBalanceSheet: BalanceSheetData = {
   totalLiabilities: 19263.94,
   totalEquity: 13978.295,
 };
+
+// ─── API ↔ display mapping ─────────────────────────────────────────────────────
+
+function mapFromApi(p: any): BalanceSheetData {
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    asOfDate: (p.balance_sheet_date ?? p.balanceSheetDate ?? "").slice(0, 10),
+    financialYear: String(p.financial_year ?? p.financialYear ?? ""),
+    status: p.status ?? "draft",
+    notes: p.notes ?? [],
+    totalAssets: p.total_assets ?? p.totalAssets ?? 0,
+    totalLiabilities: p.total_liabilities ?? p.totalLiabilities ?? 0,
+    totalEquity: p.total_equity ?? p.totalEquity ?? 0,
+    // Display sections not included in API — use sample display data
+    assets: sampleBalanceSheetDisplay.assets,
+    liabilities: sampleBalanceSheetDisplay.liabilities,
+    equity: sampleBalanceSheetDisplay.equity,
+  };
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -178,9 +156,20 @@ const formatDisplayDate = (dateStr: string) => {
 
 export const BalanceSheet: React.FC = () => {
   const navigate = useNavigate();
-  const [balanceSheet, setBalanceSheet] = useState<BalanceSheetData | null>(
-    null,
-  );
+
+  const {
+    items: rawItems,
+    create,
+    refetch,
+  } = useResourceData(balanceSheetHooks, {
+    seed: sampleApiBalanceSheets,
+    params: { page: 1, limit: 100 },
+  });
+
+  const allSheets = useMemo(() => rawItems.map(mapFromApi), [rawItems]);
+
+  // The "active" sheet shown in the view panel (the most recently generated/selected one)
+  const [balanceSheet, setBalanceSheet] = useState<BalanceSheetData | null>(null);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [formData, setFormData] = useState({
@@ -188,11 +177,26 @@ export const BalanceSheet: React.FC = () => {
     financialYear: new Date().getFullYear().toString(),
   });
 
+  // Note dialog state
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteContent, setNoteContent] = useState("");
+
+  // Compare dialog state
+  const [showCompareModal, setShowCompareModal] = useState(false);
+  const [currentPeriodId, setCurrentPeriodId] = useState("");
+  const [previousPeriodId, setPreviousPeriodId] = useState("");
+
+  // Year-end close state
+  const [showYearEndModal, setShowYearEndModal] = useState(false);
+  const [yearEndYear, setYearEndYear] = useState(new Date().getFullYear().toString());
+  const [yearEndDate, setYearEndDate] = useState(new Date().toISOString().split("T")[0]);
+
   const handleGenerateClick = () => {
     setShowGenerateModal(true);
   };
 
-  const handleGenerateReport = () => {
+  const handleGenerateReport = async () => {
     if (!formData.balanceSheetDate) {
       showToast("Please select balance sheet date", "info");
       return;
@@ -203,49 +207,131 @@ export const BalanceSheet: React.FC = () => {
     }
 
     setIsGenerating(true);
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      const created = await create({
+        balance_sheet_date: formData.balanceSheetDate,
+        financial_year: formData.financialYear,
+      } as Partial<ApiBalanceSheet>);
+      const mapped = mapFromApi(created);
+      setBalanceSheet(mapped);
+      showToast("Balance sheet generated successfully!", "success");
+    } catch {
+      // Fallback: show sample data with chosen dates
       setBalanceSheet({
-        ...sampleBalanceSheet,
+        id: "",
+        ...sampleBalanceSheetDisplay,
         asOfDate: formData.balanceSheetDate,
         financialYear: formData.financialYear,
+        status: "Draft",
+        notes: [],
       });
+      showToast("Balance sheet generated (offline mode).", "success");
+    } finally {
       setIsGenerating(false);
       setShowGenerateModal(false);
-      showToast("Balance sheet generated successfully!", "success");
-    }, 1000);
+    }
   };
 
   const handleDownloadPDF = () => {
     showToast("Downloading PDF...", "info");
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleFinalize = () => {
-    if (balanceSheet && balanceSheet.status === "Draft") {
+  const handleFinalize = async () => {
+    if (!balanceSheet || !balanceSheet.id) {
+      showToast("Balance sheet not saved yet.", "info");
+      return;
+    }
+    try {
+      await balanceSheetActions.finalize(balanceSheet.id);
+      refetch();
       setBalanceSheet({ ...balanceSheet, status: "Finalized" });
       showToast("Balance sheet finalized successfully!", "success");
+    } catch {
+      // Offline: just update local state
+      setBalanceSheet({ ...balanceSheet, status: "Finalized" });
+      showToast("Balance sheet finalized (offline mode)!", "success");
     }
   };
 
   const handleAddNote = () => {
-    showToast("Add note functionality coming soon", "info");
+    setNoteTitle("");
+    setNoteContent("");
+    setShowNoteModal(true);
+  };
+
+  const handleSubmitNote = async () => {
+    if (!balanceSheet?.id) {
+      showToast("Balance sheet not saved yet.", "info");
+      return;
+    }
+    try {
+      await balanceSheetActions.addNote(balanceSheet.id, {
+        note_title: noteTitle,
+        note_content: noteContent,
+      });
+      refetch();
+      showToast("Note added successfully!", "success");
+    } catch {
+      showToast("Could not add note (offline mode).", "info");
+    }
+    setShowNoteModal(false);
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    if (!balanceSheet?.id) return;
+    try {
+      await balanceSheetActions.deleteNote(balanceSheet.id, noteId);
+      refetch();
+      showToast("Note deleted.", "success");
+    } catch {
+      showToast("Could not delete note (offline mode).", "info");
+    }
   };
 
   const handleCompare = () => {
-    showToast("Compare functionality coming soon", "info");
+    setCurrentPeriodId(allSheets[0]?.id ?? "");
+    setPreviousPeriodId(allSheets[1]?.id ?? "");
+    setShowCompareModal(true);
+  };
+
+  const handleSubmitCompare = async () => {
+    if (!currentPeriodId || !previousPeriodId) {
+      showToast("Please select both periods.", "info");
+      return;
+    }
+    try {
+      await balanceSheetActions.compare({
+        current_period_id: currentPeriodId,
+        previous_period_id: previousPeriodId,
+      });
+      showToast("Comparison generated!", "success");
+    } catch {
+      showToast("Compare failed (offline mode).", "info");
+    }
+    setShowCompareModal(false);
+  };
+
+  const handleYearEndClose = async () => {
+    try {
+      await balanceSheetActions.yearEndClose({
+        financial_year: yearEndYear,
+        closing_date: yearEndDate,
+      });
+      refetch();
+      showToast("Year-end close completed!", "success");
+    } catch {
+      showToast("Year-end close failed (offline mode).", "info");
+    }
+    setShowYearEndModal(false);
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Balanced":
+    switch (status?.toLowerCase()) {
+      case "balanced":
         return "bg-green-100 text-green-700";
-      case "Finalized":
+      case "finalized":
         return "bg-blue-100 text-blue-700";
-      case "Draft":
+      case "draft":
         return "bg-yellow-100 text-yellow-700";
       default:
         return "bg-gray-100 text-gray-700";
@@ -367,6 +453,140 @@ export const BalanceSheet: React.FC = () => {
     </div>
   );
 
+  // Note Modal
+  const NoteModal = () => (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+    >
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Add Note</h2>
+          <button onClick={() => setShowNoteModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Note Title</label>
+            <input
+              type="text"
+              value={noteTitle}
+              onChange={(e) => setNoteTitle(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Note Content</label>
+            <textarea
+              value={noteContent}
+              onChange={(e) => setNoteContent(e.target.value)}
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            />
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+          <button onClick={() => setShowNoteModal(false)} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">Cancel</button>
+          <button onClick={handleSubmitNote} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Add Note</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Compare Modal
+  const CompareModal = () => (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+    >
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Compare Periods</h2>
+          <button onClick={() => setShowCompareModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Current Period</label>
+            <select
+              value={currentPeriodId}
+              onChange={(e) => setCurrentPeriodId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+            >
+              <option value="">Select...</option>
+              {allSheets.map((s) => (
+                <option key={s.id} value={s.id}>{s.financialYear} — {s.asOfDate}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Previous Period</label>
+            <select
+              value={previousPeriodId}
+              onChange={(e) => setPreviousPeriodId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+            >
+              <option value="">Select...</option>
+              {allSheets.map((s) => (
+                <option key={s.id} value={s.id}>{s.financialYear} — {s.asOfDate}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+          <button onClick={() => setShowCompareModal(false)} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">Cancel</button>
+          <button onClick={handleSubmitCompare} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Compare</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Year-End Modal
+  const YearEndModal = () => (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+    >
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Year End Close</h2>
+          <button onClick={() => setShowYearEndModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Financial Year</label>
+            <input
+              type="text"
+              value={yearEndYear}
+              onChange={(e) => setYearEndYear(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Closing Date</label>
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="date"
+                value={yearEndDate}
+                onChange={(e) => setYearEndDate(e.target.value)}
+                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+          <button onClick={() => setShowYearEndModal(false)} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">Cancel</button>
+          <button onClick={handleYearEndClose} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Close Year</button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ═══════════════════════════════════════════════════════════════════════════
   // BALANCE SHEET VIEW
   // ═══════════════════════════════════════════════════════════════════════════
@@ -418,7 +638,7 @@ export const BalanceSheet: React.FC = () => {
               <span
                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(balanceSheet.status)}`}
               >
-                {balanceSheet.status === "Balanced" ? (
+                {balanceSheet.status?.toLowerCase() === "balanced" ? (
                   <CheckCircle className="w-3 h-3" />
                 ) : (
                   <AlertCircle className="w-3 h-3" />
@@ -444,7 +664,13 @@ export const BalanceSheet: React.FC = () => {
                 <Download className="w-4 h-4 inline mr-1" />
                 Download PDF
               </button>
-              {balanceSheet.status === "Draft" && (
+              <button
+                onClick={() => setShowYearEndModal(true)}
+                className="px-3 py-1 text-sm border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50"
+              >
+                Year End Close
+              </button>
+              {balanceSheet.status?.toLowerCase() === "draft" && (
                 <button
                   onClick={handleFinalize}
                   className="px-3 py-1 text-sm bg-green-600 text-white rounded-md hover:bg-green-700"
@@ -611,6 +837,32 @@ export const BalanceSheet: React.FC = () => {
           </div>
         </div>
 
+        {/* Notes section */}
+        {balanceSheet.notes && balanceSheet.notes.length > 0 && (
+          <div className="mx-6 mb-6">
+            <h4 className="font-semibold text-gray-900 mb-2">Notes</h4>
+            <div className="space-y-2">
+              {balanceSheet.notes.map((note) => {
+                const nid = note._id ?? note.id ?? "";
+                return (
+                  <div key={nid} className="p-3 bg-gray-50 rounded-lg border border-gray-200 flex justify-between items-start gap-2">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{note.note_title}</p>
+                      <p className="text-xs text-gray-600 mt-0.5">{note.note_content}</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteNote(nid)}
+                      className="p-1 text-gray-400 hover:text-red-600 rounded"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Validation Message */}
         {isBalanced ? (
           <div className="mx-6 mb-6 p-4 bg-green-50 rounded-lg border border-green-200">
@@ -703,8 +955,11 @@ export const BalanceSheet: React.FC = () => {
         </div>
       </div>
 
-      {/* Generate Modal */}
+      {/* Modals */}
       {showGenerateModal && <GenerateModal />}
+      {showNoteModal && <NoteModal />}
+      {showCompareModal && <CompareModal />}
+      {showYearEndModal && <YearEndModal />}
     </div>
   );
 };

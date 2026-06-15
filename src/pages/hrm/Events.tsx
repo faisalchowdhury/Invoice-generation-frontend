@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useMemo } from "react";
+import { refLabel } from "@/services/_http";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
 import {
@@ -19,17 +20,17 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Calendar,
-  Clock,
-  MapPin,
-  Building2,
   CheckCircle,
-  AlertCircle,
   Clock as ClockIcon,
   Flag,
-  Users,
-  Palette,
 } from "lucide-react";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  eventHooks,
+  eventTypeHooks,
+  departmentHooks,
+  hrmStatusActions,
+} from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,187 +51,154 @@ interface Event {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (API-shaped seed) ───────────────────────────────────────────
 
-const sampleEvents: Event[] = [
+const sampleEventsSeed = [
   {
     id: "1",
     title: "Innovation Brainstorming Session",
-    eventType: "Holiday Party",
+    event_type_id: "Holiday Party",
     departments: ["Quality Assurance"],
-    startDate: "2026-03-13",
-    endDate: "2026-03-13",
-    startTime: "10:00",
-    endTime: "15:00",
+    start_date: "2026-03-13",
+    end_date: "2026-03-13",
+    start_time: "10:00",
+    end_time: "15:00",
     location: "Workshop Room",
     color: "#7c3aed",
     status: "Pending",
-    approvedBy: "",
+    approved_by: "",
     description:
       "Creative brainstorming session to generate innovative ideas, discuss process improvements, and explore new business opportunities.",
-    createdAt: "2026-03-10",
+    created_at: "2026-03-10",
   },
   {
     id: "2",
     title: "Client Appreciation Event",
-    eventType: "Team Building",
+    event_type_id: "Team Building",
     departments: ["Sales", "Marketing"],
-    startDate: "2026-03-08",
-    endDate: "2026-03-08",
-    startTime: "18:00",
-    endTime: "20:00",
+    start_date: "2026-03-08",
+    end_date: "2026-03-08",
+    start_time: "18:00",
+    end_time: "20:00",
     location: "Grand Ballroom",
     color: "#10b981",
     status: "Approved",
-    approvedBy: "Mark Allen",
+    approved_by: "Mark Allen",
     description: "Evening gala to appreciate long-standing clients.",
-    createdAt: "2026-03-05",
+    created_at: "2026-03-05",
   },
   {
     id: "3",
     title: "Skills Development Workshop",
-    eventType: "Onboarding",
+    event_type_id: "Onboarding",
     departments: ["Human Resources", "IT"],
-    startDate: "2026-03-03",
-    endDate: "2026-03-03",
-    startTime: "09:00",
-    endTime: "17:00",
+    start_date: "2026-03-03",
+    end_date: "2026-03-03",
+    start_time: "09:00",
+    end_time: "17:00",
     location: "Training Center",
     color: "#3b82f6",
     status: "Pending",
-    approvedBy: "",
-    description:
-      "Workshop focused on upskilling employees in new technologies.",
-    createdAt: "2026-02-28",
+    approved_by: "",
+    description: "Workshop focused on upskilling employees in new technologies.",
+    created_at: "2026-02-28",
   },
   {
     id: "4",
     title: "Quarterly All-Hands Meeting",
-    eventType: "Interview",
+    event_type_id: "Interview",
     departments: ["All Departments"],
-    startDate: "2026-02-26",
-    endDate: "2026-02-26",
-    startTime: "16:00",
-    endTime: "17:30",
+    start_date: "2026-02-26",
+    end_date: "2026-02-26",
+    start_time: "16:00",
+    end_time: "17:30",
     location: "Auditorium",
     color: "#f59e0b",
     status: "Approved",
-    approvedBy: "Matthew Clark",
+    approved_by: "Matthew Clark",
     description: "Quarterly company-wide meeting with leadership updates.",
-    createdAt: "2026-02-20",
+    created_at: "2026-02-20",
   },
   {
     id: "5",
     title: "New Product Launch Presentation",
-    eventType: "Sales Presentation",
+    event_type_id: "Sales Presentation",
     departments: ["Marketing", "Sales"],
-    startDate: "2026-02-21",
-    endDate: "2026-02-21",
-    startTime: "14:00",
-    endTime: "16:00",
+    start_date: "2026-02-21",
+    end_date: "2026-02-21",
+    start_time: "14:00",
+    end_time: "16:00",
     location: "Conference Room A",
     color: "#ef4444",
     status: "Pending",
-    approvedBy: "",
+    approved_by: "",
     description: "Presentation of new product line to stakeholders.",
-    createdAt: "2026-02-15",
+    created_at: "2026-02-15",
   },
   {
     id: "6",
     title: "Monthly Team Sync Meeting",
-    eventType: "Product Demo",
+    event_type_id: "Product Demo",
     departments: ["Engineering", "Product"],
-    startDate: "2026-02-16",
-    endDate: "2026-02-16",
-    startTime: "09:00",
-    endTime: "11:00",
+    start_date: "2026-02-16",
+    end_date: "2026-02-16",
+    start_time: "09:00",
+    end_time: "11:00",
     location: "Virtual (Zoom)",
     color: "#8b5cf6",
     status: "Approved",
-    approvedBy: "Christopher Lee",
+    approved_by: "Christopher Lee",
     description: "Monthly sync to align on product roadmap.",
-    createdAt: "2026-02-10",
+    created_at: "2026-02-10",
   },
   {
     id: "7",
     title: "Future Planning Strategy Conference",
-    eventType: "Client Meeting",
+    event_type_id: "Client Meeting",
     departments: ["Executive", "Strategy"],
-    startDate: "2026-01-13",
-    endDate: "2026-01-13",
-    startTime: "09:00",
-    endTime: "17:00",
+    start_date: "2026-01-13",
+    end_date: "2026-01-13",
+    start_time: "09:00",
+    end_time: "17:00",
     location: "Offsite Venue",
     color: "#ec4899",
     status: "Pending",
-    approvedBy: "",
+    approved_by: "",
     description: "Strategic planning for future growth.",
-    createdAt: "2026-01-05",
+    created_at: "2026-01-05",
   },
   {
     id: "8",
     title: "Year-End Performance Bonus Meeting",
-    eventType: "Board Meeting",
+    event_type_id: "Board Meeting",
     departments: ["Finance", "HR"],
-    startDate: "2026-01-07",
-    endDate: "2026-01-07",
-    startTime: "15:00",
-    endTime: "17:00",
+    start_date: "2026-01-07",
+    end_date: "2026-01-07",
+    start_time: "15:00",
+    end_time: "17:00",
     location: "Board Room",
     color: "#14b8a6",
     status: "Approved",
-    approvedBy: "James Garcia",
+    approved_by: "James Garcia",
     description: "Review of performance bonuses and compensation.",
-    createdAt: "2026-01-02",
+    created_at: "2026-01-02",
   },
   {
     id: "9",
     title: "Customer Service Excellence Training",
-    eventType: "Town Hall",
+    event_type_id: "Town Hall",
     departments: ["Customer Service", "Support"],
-    startDate: "2026-01-02",
-    endDate: "2026-01-02",
-    startTime: "09:00",
-    endTime: "17:00",
+    start_date: "2026-01-02",
+    end_date: "2026-01-02",
+    start_time: "09:00",
+    end_time: "17:00",
     location: "Training Room 2",
     color: "#06b6d4",
     status: "Approved",
-    approvedBy: "Robert Taylor",
+    approved_by: "Robert Taylor",
     description: "Training on customer service best practices.",
-    createdAt: "2025-12-28",
+    created_at: "2025-12-28",
   },
-];
-
-const eventTypes = [
-  "Holiday Party",
-  "Team Building",
-  "Onboarding",
-  "Interview",
-  "Sales Presentation",
-  "Product Demo",
-  "Client Meeting",
-  "Board Meeting",
-  "Town Hall",
-  "Workshop",
-  "Conference",
-  "Networking",
-];
-
-const departments = [
-  "Quality Assurance",
-  "Customer Service",
-  "Sales",
-  "Marketing",
-  "Human Resources",
-  "IT",
-  "All Departments",
-  "Engineering",
-  "Product",
-  "Executive",
-  "Strategy",
-  "Finance",
-  "Support",
-  "Operations",
 ];
 
 const statuses = ["Pending", "Approved", "Cancelled", "Completed"];
@@ -241,6 +209,34 @@ const timeOptions = Array.from({ length: 24 }, (_, i) => {
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function mapFromApi(p: any): Event {
+  const etRef = p.event_type_id;
+  const depts = p.departments ?? p.department ?? [];
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    title: p.title ?? "",
+    eventType:
+      typeof etRef === "object"
+        ? etRef?.name ?? String(etRef?._id ?? "")
+        : String(etRef ?? p.eventType ?? ""),
+    departments: Array.isArray(depts)
+      ? depts.map((d: any) =>
+          typeof d === "object" ? d?.department_name ?? d?.name ?? String(d?._id ?? "") : String(d),
+        )
+      : [],
+    startDate: (p.start_date ?? p.startDate ?? "").slice(0, 10),
+    endDate: (p.end_date ?? p.endDate ?? "").slice(0, 10),
+    startTime: p.start_time ?? p.startTime ?? "",
+    endTime: p.end_time ?? p.endTime ?? "",
+    location: p.location ?? "",
+    color: p.color ?? "#3b82f6",
+    status: p.status ?? "Pending",
+    approvedBy: refLabel(p.approved_by ?? p.approvedBy),
+    description: p.description ?? "",
+    createdAt: (p.created_at ?? p.createdAt ?? "").slice(0, 10),
+  };
+}
 
 const formatDate = (dateStr: string) => {
   if (!dateStr) return "-";
@@ -276,7 +272,28 @@ type SortDir = "asc" | "desc";
 
 export const Events: React.FC = () => {
   const navigate = useNavigate();
-  const [events, setEvents] = useState<Event[]>(sampleEvents);
+
+  const { items: raw, create, update, remove, refetch } = useResourceData(
+    eventHooks,
+    { seed: sampleEventsSeed as any[], params: { page: 1, limit: 100 } },
+  );
+  const events = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Load options from API
+  const etListResult = eventTypeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const etOptions: string[] = useMemo(() => {
+    const data = etListResult.data as any[] | undefined;
+    if (!data) return [];
+    return data.map((e: any) => e.name ?? String(e._id ?? e.id ?? ""));
+  }, [etListResult.data]);
+
+  const deptListResult = departmentHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const deptOptions: string[] = useMemo(() => {
+    const data = deptListResult.data as any[] | undefined;
+    if (!data) return [];
+    return data.map((e: any) => e.department_name ?? e.name ?? String(e._id ?? e.id ?? ""));
+  }, [deptListResult.data]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -425,26 +442,20 @@ export const Events: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleStatusUpdate = () => {
+  const handleStatusUpdate = async () => {
     if (selectedEvent && newStatus) {
-      setEvents((prev) =>
-        prev.map((e) =>
-          e.id === selectedEvent.id
-            ? {
-                ...e,
-                status: newStatus as any,
-                approvedBy:
-                  newStatus === "Approved" ? "Current User" : e.approvedBy,
-              }
-            : e,
-        ),
-      );
-      showToast(`Event status updated to ${newStatus}!`, "success");
-      setShowStatusModal(false);
+      try {
+        await hrmStatusActions.event(selectedEvent.id, newStatus);
+        await refetch();
+        showToast(`Event status updated to ${newStatus}!`, "success");
+        setShowStatusModal(false);
+      } catch {
+        showToast("Failed to update status", "error");
+      }
     }
   };
 
-  const handleSaveEvent = () => {
+  const handleSaveEvent = async () => {
     if (!eventFormData.title) {
       showToast("Please enter title", "info");
       return;
@@ -478,58 +489,45 @@ export const Events: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedEvent) {
-      setEvents((prev) =>
-        prev.map((e) =>
-          e.id === selectedEvent.id
-            ? {
-                ...e,
-                title: eventFormData.title,
-                eventType: eventFormData.eventType,
-                departments: eventFormData.departments,
-                startDate: eventFormData.startDate,
-                endDate: eventFormData.endDate,
-                startTime: eventFormData.startTime,
-                endTime: eventFormData.endTime,
-                location: eventFormData.location,
-                color: eventFormData.color,
-                description: eventFormData.description,
-              }
-            : e,
-        ),
-      );
-      showToast("Event updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newEvent: Event = {
-        id: Date.now().toString(),
-        title: eventFormData.title,
-        eventType: eventFormData.eventType,
-        departments: eventFormData.departments,
-        startDate: eventFormData.startDate,
-        endDate: eventFormData.endDate,
-        startTime: eventFormData.startTime,
-        endTime: eventFormData.endTime,
-        location: eventFormData.location,
-        color: eventFormData.color,
-        status: "Pending",
-        approvedBy: "",
-        description: eventFormData.description,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setEvents((prev) => [newEvent, ...prev]);
-      showToast("Event created successfully!", "success");
-      setShowCreateModal(false);
+    const toApi = {
+      title: eventFormData.title,
+      event_type_id: eventFormData.eventType,
+      departments: eventFormData.departments,
+      start_date: eventFormData.startDate,
+      end_date: eventFormData.endDate,
+      start_time: eventFormData.startTime,
+      end_time: eventFormData.endTime,
+      location: eventFormData.location,
+      color: eventFormData.color,
+      description: eventFormData.description,
+    };
+
+    try {
+      if (isEditing && selectedEvent) {
+        await update(selectedEvent.id, toApi);
+        showToast("Event updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(toApi);
+        showToast("Event created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetEventForm();
+    } catch {
+      showToast("Failed to save event", "error");
     }
-    resetEventForm();
   };
 
-  const handleDeleteEvent = () => {
+  const handleDeleteEvent = async () => {
     if (selectedEvent) {
-      setEvents((prev) => prev.filter((e) => e.id !== selectedEvent.id));
-      showToast("Event deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedEvent(null);
+      try {
+        await remove(selectedEvent.id);
+        showToast("Event deleted successfully!", "success");
+        setShowDeleteModal(false);
+        setSelectedEvent(null);
+      } catch {
+        showToast("Failed to delete event", "error");
+      }
     }
   };
 
@@ -581,6 +579,19 @@ export const Events: React.FC = () => {
       </div>
     </th>
   );
+
+  // ─── Fallback option arrays ───────────────────────────────────────────────
+
+  const displayEtOptions = etOptions.length > 0 ? etOptions : [
+    "Holiday Party", "Team Building", "Onboarding", "Interview",
+    "Sales Presentation", "Product Demo", "Client Meeting",
+    "Board Meeting", "Town Hall", "Workshop", "Conference", "Networking",
+  ];
+  const displayDeptOptions = deptOptions.length > 0 ? deptOptions : [
+    "Quality Assurance", "Customer Service", "Sales", "Marketing",
+    "Human Resources", "IT", "All Departments", "Engineering", "Product",
+    "Executive", "Strategy", "Finance", "Support", "Operations",
+  ];
 
   // ═══════════════════════════════════════════════════════════════════════════
   // MODALS
@@ -641,7 +652,7 @@ export const Events: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Event Type</option>
-              {eventTypes.map((type) => (
+              {displayEtOptions.map((type) => (
                 <option key={type} value={type}>
                   {type}
                 </option>
@@ -654,7 +665,7 @@ export const Events: React.FC = () => {
             </label>
             <div className="border border-gray-300 rounded-md p-3 max-h-32 overflow-y-auto">
               <div className="grid grid-cols-2 gap-2">
-                {departments.map((dept) => (
+                {displayDeptOptions.map((dept) => (
                   <label key={dept} className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"

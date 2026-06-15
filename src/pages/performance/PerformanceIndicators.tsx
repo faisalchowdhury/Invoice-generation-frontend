@@ -7,6 +7,12 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  indicatorHooks,
+  indicatorCategoryHooks,
+  type PerformanceIndicator as ApiPerformanceIndicator,
+} from "@/services/performance";
 import {
   Search,
   Plus,
@@ -19,11 +25,7 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Target,
   CheckCircle,
-  AlertCircle,
-  Clock,
-  TrendingUp,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -31,6 +33,7 @@ import {
 interface PerformanceIndicator {
   id: string;
   name: string;
+  categoryId: string;
   category: string;
   description: string;
   measurementUnit: string;
@@ -39,100 +42,36 @@ interface PerformanceIndicator {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (offline fallback seed, API shape) ────────────────────────────
 
-const sampleIndicators: PerformanceIndicator[] = [
-  {
-    id: "1",
-    name: "Mentorship Hours",
-    category: "Leadership & Mentoring",
-    description: "Hours dedicated to mentoring junior employees",
-    measurementUnit: "Hours",
-    targetValue: "10",
-    status: "Inactive",
-    createdAt: "2026-01-15",
-  },
-  {
-    id: "2",
-    name: "Response Rate",
-    category: "Customer Focus & Service",
-    description: "Percentage of customer inquiries responded to",
-    measurementUnit: "Percentage",
-    targetValue: "100%",
-    status: "Active",
-    createdAt: "2026-01-20",
-  },
-  {
-    id: "3",
-    name: "Customer Satisfaction",
-    category: "Customer Focus & Service",
-    description: "Average customer satisfaction rating",
-    measurementUnit: "Rating (1-5)",
-    targetValue: "4.5",
-    status: "Active",
-    createdAt: "2026-01-25",
-  },
-  {
-    id: "4",
-    name: "Resolution Time",
-    category: "Problem Solving & Critical Thinking",
-    description: "Average time to resolve customer issues",
-    measurementUnit: "Days",
-    targetValue: "<3",
-    status: "Active",
-    createdAt: "2026-02-01",
-  },
-  {
-    id: "5",
-    name: "Output Volume",
-    category: "Productivity & Efficiency",
-    description: "Number of units produced per day",
-    measurementUnit: "Units",
-    targetValue: "500",
-    status: "Active",
-    createdAt: "2026-02-05",
-  },
-  {
-    id: "6",
-    name: "Skill Certifications",
-    category: "Professional Growth & Development",
-    description: "Number of new skill certifications obtained",
-    measurementUnit: "Count",
-    targetValue: "3",
-    status: "Inactive",
-    createdAt: "2026-02-10",
-  },
-  {
-    id: "7",
-    name: "Cross-functional Projects",
-    category: "Team Collaboration",
-    description: "Number of cross-functional projects completed",
-    measurementUnit: "Count",
-    targetValue: "3",
-    status: "Inactive",
-    createdAt: "2026-02-15",
-  },
-  {
-    id: "8",
-    name: "Deadline Adherence",
-    category: "Time Management & Organization",
-    description: "Percentage of projects completed on time",
-    measurementUnit: "Percentage",
-    targetValue: "95%",
-    status: "Active",
-    createdAt: "2026-02-20",
-  },
-  {
-    id: "9",
-    name: "Work Accuracy",
-    category: "Work Quality & Accuracy",
-    description: "Percentage of work with zero errors",
-    measurementUnit: "Percentage",
-    targetValue: ">98%",
-    status: "Inactive",
-    createdAt: "2026-02-25",
-  },
+const sampleIndicators: ApiPerformanceIndicator[] = [
+  { id: "1", category_id: "cat1", name: "Mentorship Hours", description: "Hours dedicated to mentoring junior employees", measurement_unit: "Hours", target_value: "10", status: "inactive" },
+  { id: "2", category_id: "cat2", name: "Response Rate", description: "Percentage of customer inquiries responded to", measurement_unit: "Percentage", target_value: "100%", status: "active" },
+  { id: "3", category_id: "cat2", name: "Customer Satisfaction", description: "Average customer satisfaction rating", measurement_unit: "Rating (1-5)", target_value: "4.5", status: "active" },
+  { id: "4", category_id: "cat3", name: "Resolution Time", description: "Average time to resolve customer issues", measurement_unit: "Days", target_value: "<3", status: "active" },
+  { id: "5", category_id: "cat4", name: "Output Volume", description: "Number of units produced per day", measurement_unit: "Units", target_value: "500", status: "active" },
 ];
+
+// ─── API ↔ display mapping ─────────────────────────────────────────────────────
+
+function mapFromApi(p: any): PerformanceIndicator {
+  const catRaw = p.category_id ?? p.categoryId;
+  const catId = catRaw && typeof catRaw === "object" ? String(catRaw._id ?? catRaw.id ?? "") : String(catRaw ?? "");
+  const catName = catRaw && typeof catRaw === "object" ? (catRaw.name ?? "") : "";
+  const rawStatus = (p.status ?? "active") as string;
+  const status: "Active" | "Inactive" = rawStatus.toLowerCase() === "inactive" ? "Inactive" : "Active";
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    categoryId: catId,
+    category: catName,
+    name: p.name ?? "",
+    description: p.description ?? "",
+    measurementUnit: p.measurement_unit ?? p.measurementUnit ?? "",
+    targetValue: p.target_value ?? p.targetValue ?? "",
+    status,
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
 
 const categories = [
   "Leadership & Mentoring",
@@ -144,8 +83,6 @@ const categories = [
   "Time Management & Organization",
   "Work Quality & Accuracy",
 ];
-
-const statuses = ["Active", "Inactive"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -171,8 +108,25 @@ type SortDir = "asc" | "desc";
 
 export const PerformanceIndicators: React.FC = () => {
   const navigate = useNavigate();
-  const [indicators, setIndicators] =
-    useState<PerformanceIndicator[]>(sampleIndicators);
+  const {
+    items: rawIndicators,
+    create,
+    update,
+    remove,
+  } = useResourceData(indicatorHooks, { seed: sampleIndicators, params: { page: 1, limit: 100 } });
+  const indicators = useMemo(() => rawIndicators.map(mapFromApi), [rawIndicators]);
+
+  // Category options from API
+  const catQuery = indicatorCategoryHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const categoryOptions = useMemo(
+    () =>
+      (catQuery.data ?? []).map((c: any) => ({
+        id: String(c.id ?? c._id ?? ""),
+        name: c.name ?? "",
+      })),
+    [catQuery.data],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -193,6 +147,7 @@ export const PerformanceIndicators: React.FC = () => {
   // Form state
   const [indicatorFormData, setIndicatorFormData] = useState({
     name: "",
+    categoryId: "",
     category: "",
     description: "",
     measurementUnit: "",
@@ -255,6 +210,7 @@ export const PerformanceIndicators: React.FC = () => {
   const resetIndicatorForm = () => {
     setIndicatorFormData({
       name: "",
+      categoryId: "",
       category: "",
       description: "",
       measurementUnit: "",
@@ -273,6 +229,7 @@ export const PerformanceIndicators: React.FC = () => {
     setSelectedIndicator(indicator);
     setIndicatorFormData({
       name: indicator.name,
+      categoryId: indicator.categoryId,
       category: indicator.category,
       description: indicator.description,
       measurementUnit: indicator.measurementUnit,
@@ -293,12 +250,12 @@ export const PerformanceIndicators: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSaveIndicator = () => {
+  const handleSaveIndicator = async () => {
     if (!indicatorFormData.name) {
       showToast("Please enter indicator name", "info");
       return;
     }
-    if (!indicatorFormData.category) {
+    if (!indicatorFormData.categoryId && !indicatorFormData.category) {
       showToast("Please select category", "info");
       return;
     }
@@ -311,51 +268,41 @@ export const PerformanceIndicators: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedIndicator) {
-      setIndicators((prev) =>
-        prev.map((i) =>
-          i.id === selectedIndicator.id
-            ? {
-                ...i,
-                name: indicatorFormData.name,
-                category: indicatorFormData.category,
-                description: indicatorFormData.description,
-                measurementUnit: indicatorFormData.measurementUnit,
-                targetValue: indicatorFormData.targetValue,
-                status: indicatorFormData.status,
-              }
-            : i,
-        ),
-      );
-      showToast("Performance indicator updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newIndicator: PerformanceIndicator = {
-        id: Date.now().toString(),
-        name: indicatorFormData.name,
-        category: indicatorFormData.category,
-        description: indicatorFormData.description,
-        measurementUnit: indicatorFormData.measurementUnit,
-        targetValue: indicatorFormData.targetValue,
-        status: indicatorFormData.status,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setIndicators((prev) => [newIndicator, ...prev]);
-      showToast("Performance indicator created successfully!", "success");
-      setShowCreateModal(false);
+    const payload: Partial<ApiPerformanceIndicator> = {
+      category_id: indicatorFormData.categoryId || indicatorFormData.category,
+      name: indicatorFormData.name,
+      description: indicatorFormData.description,
+      measurement_unit: indicatorFormData.measurementUnit,
+      target_value: indicatorFormData.targetValue,
+      status: indicatorFormData.status.toLowerCase() as "active" | "inactive",
+    };
+
+    try {
+      if (isEditing && selectedIndicator) {
+        await update(selectedIndicator.id, payload);
+        showToast("Performance indicator updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Performance indicator created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetIndicatorForm();
+    } catch {
+      showToast("Could not save performance indicator. Please try again.", "error");
     }
-    resetIndicatorForm();
   };
 
-  const handleDeleteIndicator = () => {
-    if (selectedIndicator) {
-      setIndicators((prev) =>
-        prev.filter((i) => i.id !== selectedIndicator.id),
-      );
+  const handleDeleteIndicator = async () => {
+    if (!selectedIndicator) return;
+    try {
+      await remove(selectedIndicator.id);
       showToast("Performance indicator deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedIndicator(null);
+    } catch {
+      showToast("Could not delete performance indicator.", "error");
     }
+    setShowDeleteModal(false);
+    setSelectedIndicator(null);
   };
 
   const getStatusColor = (status: string) => {
@@ -456,21 +403,30 @@ export const PerformanceIndicators: React.FC = () => {
               Category *
             </label>
             <select
-              value={indicatorFormData.category}
-              onChange={(e) =>
+              value={indicatorFormData.categoryId}
+              onChange={(e) => {
+                const selectedId = e.target.value;
+                const opt = categoryOptions.find((c) => c.id === selectedId);
                 setIndicatorFormData({
                   ...indicatorFormData,
-                  category: e.target.value,
-                })
-              }
+                  categoryId: selectedId,
+                  category: opt?.name ?? selectedId,
+                });
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select category</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
+              {categoryOptions.length > 0
+                ? categoryOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))
+                : categories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
             </select>
           </div>
           <div>
@@ -533,7 +489,7 @@ export const PerformanceIndicators: React.FC = () => {
               onChange={(e) =>
                 setIndicatorFormData({
                   ...indicatorFormData,
-                  status: e.target.value as any,
+                  status: e.target.value as "Active" | "Inactive",
                 })
               }
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"

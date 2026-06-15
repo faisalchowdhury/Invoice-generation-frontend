@@ -19,16 +19,13 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Calendar,
   CheckCircle,
-  AlertCircle,
-  DollarSign,
-  Globe,
-  Moon,
-  Sun,
-  Download,
-  Printer,
 } from "lucide-react";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  holidayHooks,
+  holidayTypeHooks,
+} from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -172,6 +169,43 @@ const holidayTypes = [
   "Local Holiday",
 ];
 
+// ─── Seed (snake_case for API) ────────────────────────────────────────────────
+
+const sampleHolidaysSeed = sampleHolidays.map((h) => ({
+  id: h.id,
+  name: h.name,
+  start_date: h.startDate,
+  end_date: h.endDate,
+  holiday_type_id: h.holidayType,
+  description: h.description,
+  is_paid: h.isPaid,
+}));
+
+// ─── mapFromApi ───────────────────────────────────────────────────────────────
+
+function mapFromApi(p: any): Holiday {
+  const htField = p.holiday_type_id ?? p.holidayTypeId;
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    name: p.name ?? "",
+    startDate: (p.start_date ?? p.startDate ?? "").slice(0, 10),
+    endDate: (p.end_date ?? p.endDate ?? "").slice(0, 10),
+    holidayType:
+      typeof htField === "object"
+        ? htField?.name ?? ""
+        : String(htField ?? p.holidayType ?? ""),
+    isPaid: Boolean(p.is_paid ?? p.isPaid ?? false),
+    isSyncGoogleCalendar: Boolean(
+      p.is_sync_google_calendar ?? p.isSyncGoogleCalendar ?? false,
+    ),
+    isSyncOutlookCalendar: Boolean(
+      p.is_sync_outlook_calendar ?? p.isSyncOutlookCalendar ?? false,
+    ),
+    description: p.description ?? "",
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const formatDate = (dateStr: string) => {
@@ -191,7 +225,24 @@ type SortDir = "asc" | "desc";
 
 export const Holidays: React.FC = () => {
   const navigate = useNavigate();
-  const [holidays, setHolidays] = useState<Holiday[]>(sampleHolidays);
+
+  const { items: raw, create, update, remove } = useResourceData(
+    holidayHooks,
+    { seed: sampleHolidaysSeed as any, params: { page: 1, limit: 100 } },
+  );
+  const items = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Holiday type options from API
+  const htQuery = holidayTypeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const htOptions = useMemo(
+    () =>
+      (htQuery.data ?? []).map((t: any) => ({
+        id: String(t.id ?? t._id ?? ""),
+        name: t.name ?? t.holiday_type ?? "",
+      })),
+    [htQuery.data],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -235,7 +286,7 @@ export const Holidays: React.FC = () => {
   // ─── Filtered & Sorted ─────────────────────────────────────────────────────
 
   const filteredHolidays = useMemo(() => {
-    let result = [...holidays];
+    let result = [...items];
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -266,7 +317,7 @@ export const Holidays: React.FC = () => {
       return 0;
     });
     return result;
-  }, [holidays, searchQuery, paidFilter, sortField, sortDir]);
+  }, [items, searchQuery, paidFilter, sortField, sortDir]);
 
   const totalPages = Math.ceil(filteredHolidays.length / perPage);
   const paginatedHolidays = filteredHolidays.slice(
@@ -321,7 +372,7 @@ export const Holidays: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSaveHoliday = () => {
+  const handleSaveHoliday = async () => {
     if (!holidayFormData.name) {
       showToast("Please enter holiday name", "info");
       return;
@@ -343,52 +394,41 @@ export const Holidays: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedHoliday) {
-      setHolidays((prev) =>
-        prev.map((h) =>
-          h.id === selectedHoliday.id
-            ? {
-                ...h,
-                name: holidayFormData.name,
-                startDate: holidayFormData.startDate,
-                endDate: holidayFormData.endDate,
-                holidayType: holidayFormData.holidayType,
-                description: holidayFormData.description,
-                isPaid: holidayFormData.isPaid,
-                isSyncGoogleCalendar: holidayFormData.isSyncGoogleCalendar,
-                isSyncOutlookCalendar: holidayFormData.isSyncOutlookCalendar,
-              }
-            : h,
-        ),
-      );
-      showToast("Holiday updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newHoliday: Holiday = {
-        id: Date.now().toString(),
-        name: holidayFormData.name,
-        startDate: holidayFormData.startDate,
-        endDate: holidayFormData.endDate,
-        holidayType: holidayFormData.holidayType,
-        isPaid: holidayFormData.isPaid,
-        isSyncGoogleCalendar: holidayFormData.isSyncGoogleCalendar,
-        isSyncOutlookCalendar: holidayFormData.isSyncOutlookCalendar,
-        description: holidayFormData.description,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setHolidays((prev) => [newHoliday, ...prev]);
-      showToast("Holiday created successfully!", "success");
-      setShowCreateModal(false);
+    const payload = {
+      name: holidayFormData.name,
+      start_date: holidayFormData.startDate,
+      end_date: holidayFormData.endDate,
+      holiday_type_id: holidayFormData.holidayType,
+      description: holidayFormData.description,
+      is_paid: holidayFormData.isPaid,
+    };
+
+    try {
+      if (isEditing && selectedHoliday) {
+        await update(selectedHoliday.id, payload);
+        showToast("Holiday updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Holiday created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetHolidayForm();
+    } catch {
+      showToast("Operation failed.", "error");
     }
-    resetHolidayForm();
   };
 
-  const handleDeleteHoliday = () => {
+  const handleDeleteHoliday = async () => {
     if (selectedHoliday) {
-      setHolidays((prev) => prev.filter((h) => h.id !== selectedHoliday.id));
-      showToast("Holiday deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedHoliday(null);
+      try {
+        await remove(selectedHoliday.id);
+        showToast("Holiday deleted successfully!", "success");
+        setShowDeleteModal(false);
+        setSelectedHoliday(null);
+      } catch {
+        showToast("Delete failed.", "error");
+      }
     }
   };
 
@@ -517,11 +557,17 @@ export const Holidays: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Holiday Type</option>
-              {holidayTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
+              {htOptions.length > 0
+                ? htOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.name}
+                    </option>
+                  ))
+                : holidayTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
             </select>
           </div>
           <div>

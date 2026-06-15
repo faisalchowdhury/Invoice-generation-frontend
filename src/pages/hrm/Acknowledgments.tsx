@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useMemo } from "react";
+import { refLabel } from "@/services/_http";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
 import {
@@ -19,15 +20,18 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Calendar,
   User,
   FileText,
   CheckCircle,
-  AlertCircle,
   Clock,
-  Send,
-  UserCheck,
 } from "lucide-react";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  acknowledgmentHooks,
+  employeeHooks,
+  documentHooks,
+  hrmStatusActions,
+} from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,133 +46,102 @@ interface Acknowledgment {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (API-shaped seed) ───────────────────────────────────────────
 
-const sampleAcknowledgments: Acknowledgment[] = [
+const sampleAcknowledgmentsSeed = [
   {
     id: "1",
-    employee: "Mark Allen",
-    document: "Business Continuity Plan",
-    status: "Acknowledged",
-    acknowledgedAt: "2026-01-13",
-    assignedBy: "John Smith",
-    acknowledgmentNote:
+    employee_id: "Mark Allen",
+    document_id: "Business Continuity Plan",
+    acknowledgment_note:
       "Business continuity plan is thorough and provides comprehensive disaster recovery procedures for operational resilience.",
-    createdAt: "2026-01-10",
+    status: "Acknowledged",
   },
   {
     id: "2",
-    employee: "Anthony Walker",
-    document: "Customer Service Standards",
+    employee_id: "Anthony Walker",
+    document_id: "Customer Service Standards",
+    acknowledgment_note: "Customer service standards are clear and actionable.",
     status: "Acknowledged",
-    acknowledgedAt: "2026-01-08",
-    assignedBy: "Mark Allen",
-    acknowledgmentNote: "Customer service standards are clear and actionable.",
-    createdAt: "2026-01-05",
   },
   {
     id: "3",
-    employee: "Matthew Clark",
-    document: "Environmental Sustainability Plan",
+    employee_id: "Matthew Clark",
+    document_id: "Environmental Sustainability Plan",
+    acknowledgment_note: "",
     status: "Pending",
-    acknowledgedAt: "",
-    assignedBy: "Anthony Walker",
-    acknowledgmentNote: "",
-    createdAt: "2026-01-02",
   },
   {
     id: "4",
-    employee: "Daniel Thompson",
-    document: "Innovation Initiative Guidelines",
-    status: "Acknowledged",
-    acknowledgedAt: "2025-12-31",
-    assignedBy: "Matthew Clark",
-    acknowledgmentNote:
+    employee_id: "Daniel Thompson",
+    document_id: "Innovation Initiative Guidelines",
+    acknowledgment_note:
       "Innovation guidelines provide clear framework for project submissions.",
-    createdAt: "2025-12-28",
+    status: "Acknowledged",
   },
   {
     id: "5",
-    employee: "Christopher Lee",
-    document: "Vendor Management Policy",
+    employee_id: "Christopher Lee",
+    document_id: "Vendor Management Policy",
+    acknowledgment_note: "",
     status: "Pending",
-    acknowledgedAt: "",
-    assignedBy: "Daniel Thompson",
-    acknowledgmentNote: "",
-    createdAt: "2025-12-25",
   },
   {
     id: "6",
-    employee: "James Garcia",
-    document: "Retirement Plan Guide",
+    employee_id: "James Garcia",
+    document_id: "Retirement Plan Guide",
+    acknowledgment_note: "Retirement plan options are well explained.",
     status: "Acknowledged",
-    acknowledgedAt: "2025-12-20",
-    assignedBy: "Christopher Lee",
-    acknowledgmentNote: "Retirement plan options are well explained.",
-    createdAt: "2025-12-17",
   },
   {
     id: "7",
-    employee: "Robert Taylor",
-    document: "Flexible Work Schedule",
-    status: "Acknowledged",
-    acknowledgedAt: "2025-12-15",
-    assignedBy: "James Garcia",
-    acknowledgmentNote:
+    employee_id: "Robert Taylor",
+    document_id: "Flexible Work Schedule",
+    acknowledgment_note:
       "Flexible work schedule policy accommodates work-life balance.",
-    createdAt: "2025-12-12",
+    status: "Acknowledged",
   },
   {
     id: "8",
-    employee: "David Wilson",
-    document: "Data Protection Guidelines",
-    status: "Acknowledged",
-    acknowledgedAt: "2025-12-09",
-    assignedBy: "Robert Taylor",
-    acknowledgmentNote:
+    employee_id: "David Wilson",
+    document_id: "Data Protection Guidelines",
+    acknowledgment_note:
       "Data protection guidelines are comprehensive and up to date.",
-    createdAt: "2025-12-06",
+    status: "Acknowledged",
   },
   {
     id: "9",
-    employee: "Michael Brown",
-    document: "Professional Development Fund",
+    employee_id: "Michael Brown",
+    document_id: "Professional Development Fund",
+    acknowledgment_note: "",
     status: "Pending",
-    acknowledgedAt: "",
-    assignedBy: "David Wilson",
-    acknowledgmentNote: "",
-    createdAt: "2025-12-03",
   },
-];
-
-const employees = [
-  "Mark Allen",
-  "Anthony Walker",
-  "Matthew Clark",
-  "Daniel Thompson",
-  "Christopher Lee",
-  "James Garcia",
-  "Robert Taylor",
-  "David Wilson",
-  "Michael Brown",
-  "John Smith",
-];
-
-const documents = [
-  "Business Continuity Plan",
-  "Customer Service Standards",
-  "Environmental Sustainability Plan",
-  "Innovation Initiative Guidelines",
-  "Vendor Management Policy",
-  "Retirement Plan Guide",
-  "Flexible Work Schedule",
-  "Data Protection Guidelines",
-  "Professional Development Fund",
 ];
 
 const statuses = ["Acknowledged", "Pending"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function mapFromApi(p: any): Acknowledgment {
+  const empRef = p.employee_id;
+  const docRef = p.document_id;
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    employee:
+      typeof empRef === "object"
+        ? empRef?.name ?? empRef?.first_name ?? String(empRef?._id ?? "")
+        : String(empRef ?? p.employee ?? ""),
+    document:
+      typeof docRef === "object"
+        ? docRef?.title ?? docRef?.name ?? String(docRef?._id ?? "")
+        : String(docRef ?? p.document ?? ""),
+    status: p.status ?? "Pending",
+    acknowledgedAt: (p.acknowledged_at ?? p.acknowledgedAt ?? "").slice(0, 10),
+    assignedBy: refLabel(p.assigned_by ?? p.assignedBy),
+    acknowledgmentNote: p.acknowledgment_note ?? p.acknowledgmentNote ?? "",
+    createdAt: (p.created_at ?? p.createdAt ?? "").slice(0, 10),
+  };
+}
 
 const formatDate = (dateStr: string) => {
   if (!dateStr) return "-";
@@ -192,9 +165,28 @@ type SortDir = "asc" | "desc";
 
 export const Acknowledgments: React.FC = () => {
   const navigate = useNavigate();
-  const [acknowledgments, setAcknowledgments] = useState<Acknowledgment[]>(
-    sampleAcknowledgments,
+
+  const { items: raw, create, update, remove, refetch } = useResourceData(
+    acknowledgmentHooks,
+    { seed: sampleAcknowledgmentsSeed as any[], params: { page: 1, limit: 100 } },
   );
+  const acknowledgments = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Load options from API
+  const empListResult = employeeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const empOptions: string[] = useMemo(() => {
+    const data = empListResult.data as any[] | undefined;
+    if (!data) return [];
+    return data.map((e: any) => e.name ?? e.first_name ?? String(e._id ?? e.id ?? ""));
+  }, [empListResult.data]);
+
+  const docListResult = documentHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const docOptions: string[] = useMemo(() => {
+    const data = docListResult.data as any[] | undefined;
+    if (!data) return [];
+    return data.map((e: any) => e.title ?? e.name ?? String(e._id ?? e.id ?? ""));
+  }, [docListResult.data]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -306,22 +298,17 @@ export const Acknowledgments: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleMarkAsAcknowledged = (id: string) => {
-    setAcknowledgments((prev) =>
-      prev.map((a) =>
-        a.id === id && a.status === "Pending"
-          ? {
-              ...a,
-              status: "Acknowledged",
-              acknowledgedAt: new Date().toISOString().split("T")[0],
-            }
-          : a,
-      ),
-    );
-    showToast("Marked as acknowledged successfully!", "success");
+  const handleMarkAsAcknowledged = async (id: string) => {
+    try {
+      await hrmStatusActions.acknowledgment(id, "Acknowledged");
+      await refetch();
+      showToast("Marked as acknowledged successfully!", "success");
+    } catch {
+      showToast("Failed to update status", "error");
+    }
   };
 
-  const handleSaveAcknowledgment = () => {
+  const handleSaveAcknowledgment = async () => {
     if (!acknowledgmentFormData.employee) {
       showToast("Please select an employee", "info");
       return;
@@ -331,47 +318,38 @@ export const Acknowledgments: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedAcknowledgment) {
-      setAcknowledgments((prev) =>
-        prev.map((a) =>
-          a.id === selectedAcknowledgment.id
-            ? {
-                ...a,
-                employee: acknowledgmentFormData.employee,
-                document: acknowledgmentFormData.document,
-                acknowledgmentNote: acknowledgmentFormData.acknowledgmentNote,
-              }
-            : a,
-        ),
-      );
-      showToast("Acknowledgment updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newAcknowledgment: Acknowledgment = {
-        id: Date.now().toString(),
-        employee: acknowledgmentFormData.employee,
-        document: acknowledgmentFormData.document,
-        status: "Pending",
-        acknowledgedAt: "",
-        assignedBy: "Current User",
-        acknowledgmentNote: acknowledgmentFormData.acknowledgmentNote,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setAcknowledgments((prev) => [newAcknowledgment, ...prev]);
-      showToast("Acknowledgment created successfully!", "success");
-      setShowCreateModal(false);
+    const toApi = {
+      employee_id: acknowledgmentFormData.employee,
+      document_id: acknowledgmentFormData.document,
+      acknowledgment_note: acknowledgmentFormData.acknowledgmentNote,
+    };
+
+    try {
+      if (isEditing && selectedAcknowledgment) {
+        await update(selectedAcknowledgment.id, toApi);
+        showToast("Acknowledgment updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(toApi);
+        showToast("Acknowledgment created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetAcknowledgmentForm();
+    } catch {
+      showToast("Failed to save acknowledgment", "error");
     }
-    resetAcknowledgmentForm();
   };
 
-  const handleDeleteAcknowledgment = () => {
+  const handleDeleteAcknowledgment = async () => {
     if (selectedAcknowledgment) {
-      setAcknowledgments((prev) =>
-        prev.filter((a) => a.id !== selectedAcknowledgment.id),
-      );
-      showToast("Acknowledgment deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedAcknowledgment(null);
+      try {
+        await remove(selectedAcknowledgment.id);
+        showToast("Acknowledgment deleted successfully!", "success");
+        setShowDeleteModal(false);
+        setSelectedAcknowledgment(null);
+      } catch {
+        showToast("Failed to delete acknowledgment", "error");
+      }
     }
   };
 
@@ -415,6 +393,20 @@ export const Acknowledgments: React.FC = () => {
       </div>
     </th>
   );
+
+  // ─── Fallback option arrays ───────────────────────────────────────────────
+
+  const displayEmpOptions = empOptions.length > 0 ? empOptions : [
+    "Mark Allen", "Anthony Walker", "Matthew Clark", "Daniel Thompson",
+    "Christopher Lee", "James Garcia", "Robert Taylor", "David Wilson",
+    "Michael Brown", "John Smith",
+  ];
+  const displayDocOptions = docOptions.length > 0 ? docOptions : [
+    "Business Continuity Plan", "Customer Service Standards",
+    "Environmental Sustainability Plan", "Innovation Initiative Guidelines",
+    "Vendor Management Policy", "Retirement Plan Guide", "Flexible Work Schedule",
+    "Data Protection Guidelines", "Professional Development Fund",
+  ];
 
   // ═══════════════════════════════════════════════════════════════════════════
   // MODALS
@@ -464,7 +456,7 @@ export const Acknowledgments: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Employee</option>
-              {employees.map((emp) => (
+              {displayEmpOptions.map((emp) => (
                 <option key={emp} value={emp}>
                   {emp}
                 </option>
@@ -486,7 +478,7 @@ export const Acknowledgments: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Document</option>
-              {documents.map((doc) => (
+              {displayDocOptions.map((doc) => (
                 <option key={doc} value={doc}>
                   {doc}
                 </option>

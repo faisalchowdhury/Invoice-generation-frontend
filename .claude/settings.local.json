@@ -25,7 +25,11 @@
       "PowerShell(npx tsc --noEmit -p tsconfig.json 2>&1)",
       "Bash(curl -s -m 15 -i \"https://sayed2001.sobhoy.com/api/v1/budget-planner/budget-periods?page=1&limit=2\")",
       "Bash(echo \"EXIT $?\")",
-      "Bash(tee /tmp/tsc_baseline.txt)"
+      "Bash(tee /tmp/tsc_baseline.txt)",
+      "Bash(npx vite *)",
+      "Bash(grep -rnE \"\\(reviewer|employee|approvedBy|assignedTo|createdBy|cycle\\):\\\\s*p\\\\.[a-zA-Z_]+\\\\s*\\\\?\\\\?\" src/pages/performance src/pages/training)",
+      "Bash(grep -rl \"services/_http\" src/pages/hrm)",
+      "Bash(node -e ' *)"
     ]
   }
 }

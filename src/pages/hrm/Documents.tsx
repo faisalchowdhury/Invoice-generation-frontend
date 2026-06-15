@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useMemo } from "react";
+import { refLabel } from "@/services/_http";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
 import {
@@ -19,18 +20,20 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Calendar,
-  User,
   FileText,
   Upload,
   CheckCircle,
-  AlertCircle,
   Clock,
-  Download,
   File,
   Image,
   FileArchive,
 } from "lucide-react";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  documentHooks,
+  documentCategoryHooks,
+  hrmStatusActions,
+} from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,166 +52,108 @@ interface Document {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (API-shaped seed) ───────────────────────────────────────────
 
-const sampleDocuments: Document[] = [
+const sampleDocumentsSeed = [
   {
     id: "1",
     title: "Business Continuity Plan",
-    documentCategory: "Legal Documents",
-    description:
-      "Comprehensive business continuity and disaster recovery plan.",
-    effectiveDate: "2026-01-13",
-    uploadedBy: "Michael Brown",
-    approvedBy: "John Smith",
+    document_category_id: "Legal Documents",
+    description: "Comprehensive business continuity and disaster recovery plan.",
+    effective_date: "2026-01-13",
     status: "Approved",
-    documentUrl: "",
-    fileName: "business_continuity.pdf",
-    fileType: "pdf",
-    createdAt: "2026-01-13",
   },
   {
     id: "2",
     title: "Customer Service Standards",
-    documentCategory: "Professional Licenses",
+    document_category_id: "Professional Licenses",
     description: "Standards and guidelines for customer service excellence.",
-    effectiveDate: "2026-01-07",
-    uploadedBy: "John Smith",
-    approvedBy: "David Wilson",
+    effective_date: "2026-01-07",
     status: "Approved",
-    documentUrl: "",
-    fileName: "customer_service.pdf",
-    fileType: "pdf",
-    createdAt: "2026-01-07",
   },
   {
     id: "3",
     title: "Environmental Sustainability Plan",
-    documentCategory: "Legal Documents",
+    document_category_id: "Legal Documents",
     description:
       "Corporate environmental responsibility initiatives including waste reduction, energy conservation, and sustainable business practices.",
-    effectiveDate: "",
-    uploadedBy: "James Garcia",
-    approvedBy: "",
+    effective_date: "",
     status: "Pending",
-    documentUrl: "",
-    fileName: "sustainability_plan.pdf",
-    fileType: "pdf",
-    createdAt: "2025-12-29",
   },
   {
     id: "4",
     title: "Innovation Initiative Guidelines",
-    documentCategory: "Training Certificates",
+    document_category_id: "Training Certificates",
     description: "Guidelines for innovation projects and initiatives.",
-    effectiveDate: "2025-12-29",
-    uploadedBy: "Robert Taylor",
-    approvedBy: "John Smith",
+    effective_date: "2025-12-29",
     status: "Approved",
-    documentUrl: "",
-    fileName: "innovation_guidelines.pdf",
-    fileType: "pdf",
-    createdAt: "2025-12-29",
   },
   {
     id: "5",
     title: "Vendor Management Policy",
-    documentCategory: "Contract Documents",
+    document_category_id: "Contract Documents",
     description: "Policies and procedures for vendor management.",
-    effectiveDate: "",
-    uploadedBy: "David Wilson",
-    approvedBy: "",
+    effective_date: "",
     status: "Rejected",
-    documentUrl: "",
-    fileName: "vendor_policy.pdf",
-    fileType: "pdf",
-    createdAt: "2025-12-22",
   },
   {
     id: "6",
     title: "Retirement Plan Guide",
-    documentCategory: "Financial Documents",
+    document_category_id: "Financial Documents",
     description: "Guide to employee retirement plans and benefits.",
-    effectiveDate: "2025-12-18",
-    uploadedBy: "Michael Brown",
-    approvedBy: "Michael Brown",
+    effective_date: "2025-12-18",
     status: "Approved",
-    documentUrl: "",
-    fileName: "retirement_guide.pdf",
-    fileType: "pdf",
-    createdAt: "2025-12-18",
   },
   {
     id: "7",
     title: "Flexible Work Schedule",
-    documentCategory: "Employment Records",
+    document_category_id: "Employment Records",
     description: "Policy for flexible work arrangements.",
-    effectiveDate: "",
-    uploadedBy: "John Smith",
-    approvedBy: "",
+    effective_date: "",
     status: "Pending",
-    documentUrl: "",
-    fileName: "flexible_work.pdf",
-    fileType: "pdf",
-    createdAt: "2025-12-15",
   },
   {
     id: "8",
     title: "Data Protection Guidelines",
-    documentCategory: "Professional Licenses",
+    document_category_id: "Professional Licenses",
     description: "Guidelines for data protection and privacy.",
-    effectiveDate: "2025-12-09",
-    uploadedBy: "David Wilson",
-    approvedBy: "Michael Brown",
+    effective_date: "2025-12-09",
     status: "Approved",
-    documentUrl: "",
-    fileName: "data_protection.pdf",
-    fileType: "pdf",
-    createdAt: "2025-12-09",
   },
   {
     id: "9",
     title: "Professional Development Fund",
-    documentCategory: "Financial Documents",
+    document_category_id: "Financial Documents",
     description: "Policy for professional development funding.",
-    effectiveDate: "",
-    uploadedBy: "Michael Brown",
-    approvedBy: "",
+    effective_date: "",
     status: "Rejected",
-    documentUrl: "",
-    fileName: "dev_fund.pdf",
-    fileType: "pdf",
-    createdAt: "2025-12-02",
   },
-];
-
-const documentCategories = [
-  "Legal Documents",
-  "Professional Licenses",
-  "Training Certificates",
-  "Contract Documents",
-  "Financial Documents",
-  "Employment Records",
-  "Policy Documents",
-  "Compliance Documents",
-  "HR Documents",
-];
-
-const employees = [
-  "Michael Brown",
-  "John Smith",
-  "James Garcia",
-  "Robert Taylor",
-  "David Wilson",
-  "Anthony Walker",
-  "Matthew Clark",
-  "Daniel Thompson",
-  "Christopher Lee",
 ];
 
 const statuses = ["Pending", "Approved", "Rejected"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function mapFromApi(p: any): Document {
+  const dcRef = p.document_category_id;
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    title: p.title ?? "",
+    documentCategory:
+      typeof dcRef === "object"
+        ? dcRef?.name ?? String(dcRef?._id ?? "")
+        : String(dcRef ?? p.documentCategory ?? p.document_category ?? ""),
+    description: p.description ?? "",
+    effectiveDate: (p.effective_date ?? p.effectiveDate ?? "").slice(0, 10),
+    uploadedBy: p.uploaded_by ?? p.uploadedBy ?? "",
+    approvedBy: refLabel(p.approved_by ?? p.approvedBy),
+    status: p.status ?? "Pending",
+    documentUrl: p.document_url ?? p.documentUrl ?? "",
+    fileName: p.file_name ?? p.fileName ?? "",
+    fileType: p.file_type ?? p.fileType ?? "",
+    createdAt: (p.created_at ?? p.createdAt ?? "").slice(0, 10),
+  };
+}
 
 const formatDate = (dateStr: string) => {
   if (!dateStr) return "-";
@@ -233,7 +178,21 @@ type SortDir = "asc" | "desc";
 
 export const Documents: React.FC = () => {
   const navigate = useNavigate();
-  const [documents, setDocuments] = useState<Document[]>(sampleDocuments);
+
+  const { items: raw, create, update, remove, refetch } = useResourceData(
+    documentHooks,
+    { seed: sampleDocumentsSeed as any[], params: { page: 1, limit: 100 } },
+  );
+  const documents = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Load options from API
+  const dcListResult = documentCategoryHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const dcOptions: string[] = useMemo(() => {
+    const data = dcListResult.data as any[] | undefined;
+    if (!data) return [];
+    return data.map((e: any) => e.name ?? String(e._id ?? e.id ?? ""));
+  }, [dcListResult.data]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -342,50 +301,44 @@ export const Documents: React.FC = () => {
     setShowCreateModal(true);
   };
 
-  const openEditModal = (document: Document) => {
-    setSelectedDocument(document);
+  const openEditModal = (doc: Document) => {
+    setSelectedDocument(doc);
     setDocumentFormData({
-      title: document.title,
-      documentCategory: document.documentCategory,
-      description: document.description,
-      effectiveDate: document.effectiveDate,
+      title: doc.title,
+      documentCategory: doc.documentCategory,
+      description: doc.description,
+      effectiveDate: doc.effectiveDate,
       document: null,
-      fileName: document.fileName,
+      fileName: doc.fileName,
     });
     setIsEditing(true);
     setShowEditModal(true);
   };
 
-  const openViewModal = (document: Document) => {
-    setSelectedDocument(document);
+  const openViewModal = (doc: Document) => {
+    setSelectedDocument(doc);
     setShowViewModal(true);
   };
 
-  const openDeleteModal = (document: Document) => {
-    setSelectedDocument(document);
+  const openDeleteModal = (doc: Document) => {
+    setSelectedDocument(doc);
     setShowDeleteModal(true);
   };
 
-  const handleStatusUpdate = (
+  const handleStatusUpdate = async (
     id: string,
     newStatus: "Approved" | "Rejected",
   ) => {
-    setDocuments((prev) =>
-      prev.map((d) =>
-        d.id === id
-          ? {
-              ...d,
-              status: newStatus,
-              approvedBy:
-                newStatus === "Approved" ? d.approvedBy || "HR Manager" : "",
-            }
-          : d,
-      ),
-    );
-    showToast(`Document ${newStatus.toLowerCase()} successfully!`, "success");
+    try {
+      await hrmStatusActions.document(id, newStatus);
+      await refetch();
+      showToast(`Document ${newStatus.toLowerCase()} successfully!`, "success");
+    } catch {
+      showToast("Failed to update status", "error");
+    }
   };
 
-  const handleSaveDocument = () => {
+  const handleSaveDocument = async () => {
     if (!documentFormData.title) {
       showToast("Please enter document title", "info");
       return;
@@ -399,51 +352,42 @@ export const Documents: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedDocument) {
-      setDocuments((prev) =>
-        prev.map((d) =>
-          d.id === selectedDocument.id
-            ? {
-                ...d,
-                title: documentFormData.title,
-                documentCategory: documentFormData.documentCategory,
-                description: documentFormData.description,
-                effectiveDate: documentFormData.effectiveDate,
-                fileName: documentFormData.fileName || d.fileName,
-              }
-            : d,
-        ),
-      );
-      showToast("Document updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newDocument: Document = {
-        id: Date.now().toString(),
-        title: documentFormData.title,
-        documentCategory: documentFormData.documentCategory,
-        description: documentFormData.description,
-        effectiveDate: documentFormData.effectiveDate,
-        uploadedBy: "Current User",
-        approvedBy: "",
-        status: "Pending",
-        documentUrl: "",
-        fileName: documentFormData.fileName || "document.pdf",
-        fileType: "pdf",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setDocuments((prev) => [newDocument, ...prev]);
-      showToast("Document created successfully!", "success");
-      setShowCreateModal(false);
+    const toApi: Record<string, any> = {
+      title: documentFormData.title,
+      document_category_id: documentFormData.documentCategory,
+      description: documentFormData.description,
+      effective_date: documentFormData.effectiveDate,
+    };
+    if (documentFormData.document) {
+      toApi.document = documentFormData.document;
     }
-    resetDocumentForm();
+
+    try {
+      if (isEditing && selectedDocument) {
+        await update(selectedDocument.id, toApi);
+        showToast("Document updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(toApi);
+        showToast("Document created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetDocumentForm();
+    } catch {
+      showToast("Failed to save document", "error");
+    }
   };
 
-  const handleDeleteDocument = () => {
+  const handleDeleteDocument = async () => {
     if (selectedDocument) {
-      setDocuments((prev) => prev.filter((d) => d.id !== selectedDocument.id));
-      showToast("Document deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedDocument(null);
+      try {
+        await remove(selectedDocument.id);
+        showToast("Document deleted successfully!", "success");
+        setShowDeleteModal(false);
+        setSelectedDocument(null);
+      } catch {
+        showToast("Failed to delete document", "error");
+      }
     }
   };
 
@@ -505,6 +449,14 @@ export const Documents: React.FC = () => {
       </div>
     </th>
   );
+
+  // ─── Fallback option arrays ───────────────────────────────────────────────
+
+  const displayDcOptions = dcOptions.length > 0 ? dcOptions : [
+    "Legal Documents", "Professional Licenses", "Training Certificates",
+    "Contract Documents", "Financial Documents", "Employment Records",
+    "Policy Documents", "Compliance Documents", "HR Documents",
+  ];
 
   // ═══════════════════════════════════════════════════════════════════════════
   // MODALS
@@ -569,7 +521,7 @@ export const Documents: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Document Category</option>
-              {documentCategories.map((cat) => (
+              {displayDcOptions.map((cat) => (
                 <option key={cat} value={cat}>
                   {cat}
                 </option>

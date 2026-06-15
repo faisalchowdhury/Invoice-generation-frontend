@@ -7,6 +7,13 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  employeeGoalHooks,
+  goalTypeHooks,
+  type EmployeeGoal as ApiEmployeeGoal,
+} from "@/services/performance";
+import { employeeHooks } from "@/services/hrm";
 import {
   Search,
   Plus,
@@ -19,21 +26,20 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Target,
   CheckCircle,
   AlertCircle,
   Clock,
   TrendingUp,
   User,
-  Calendar,
-  Flag,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface EmployeeGoal {
   id: string;
+  employeeId: string;
   employee: string;
+  goalTypeId: string;
   goalType: string;
   title: string;
   description: string;
@@ -45,131 +51,53 @@ interface EmployeeGoal {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (offline fallback seed, API shape) ────────────────────────────
 
-const sampleGoals: EmployeeGoal[] = [
-  {
-    id: "1",
-    employee: "Daniel Thompson",
-    goalType: "Strategic Objectives",
-    title: "Implement New CRM System",
-    description:
-      "Deploy and configure new customer relationship management system",
-    target: 108226,
-    progress: 90,
-    startDate: "2025-09-17",
-    endDate: "2026-03-20",
-    status: "In Progress",
-    createdAt: "2025-09-10",
-  },
-  {
-    id: "2",
-    employee: "James Garcia",
-    goalType: "Leadership Growth",
-    title: "Create Employee Handbook",
-    description: "Develop comprehensive employee handbook and policies",
-    target: 80,
-    progress: 62,
-    startDate: "2025-09-22",
-    endDate: "2026-01-13",
-    status: "Overdue",
-    createdAt: "2025-09-15",
-  },
-  {
-    id: "3",
-    employee: "James Garcia",
-    goalType: "Innovation & Creativity",
-    title: "Optimize Database Performance",
-    description: "Improve database query performance by 30%",
-    target: 97,
-    progress: 63,
-    startDate: "2025-08-18",
-    endDate: "2026-04-21",
-    status: "In Progress",
-    createdAt: "2025-08-10",
-  },
-  {
-    id: "4",
-    employee: "Michael Brown",
-    goalType: "Customer Excellence",
-    title: "Achieve 100% Compliance Rate",
-    description:
-      "Ensure all customer service processes meet compliance standards",
-    target: 54,
-    progress: 100,
-    startDate: "2025-12-18",
-    endDate: "2026-01-15",
-    status: "Completed",
-    createdAt: "2025-12-10",
-  },
-  {
-    id: "5",
-    employee: "Mark Allen",
-    goalType: "Innovation & Creativity",
-    title: "Conduct Annual Team Building Event",
-    description: "Organize and execute team building activities",
-    target: 90,
-    progress: 0,
-    startDate: "2026-02-17",
-    endDate: "2026-11-19",
-    status: "Not Started",
-    createdAt: "2026-02-10",
-  },
-  {
-    id: "6",
-    employee: "Christopher Lee",
-    goalType: "Strategic Objectives",
-    title: "Establish Strategic Partnership",
-    description: "Form partnership with key industry player",
-    target: 66,
-    progress: 53,
-    startDate: "2025-11-28",
-    endDate: "2026-01-16",
-    status: "Overdue",
-    createdAt: "2025-11-20",
-  },
-  {
-    id: "7",
-    employee: "Daniel Thompson",
-    goalType: "Customer Excellence",
-    title: "Develop Mobile Application",
-    description: "Create mobile app for customer engagement",
-    target: 331465,
-    progress: 65,
-    startDate: "2025-11-15",
-    endDate: "2026-01-13",
-    status: "Overdue",
-    createdAt: "2025-11-10",
-  },
-  {
-    id: "8",
-    employee: "Mark Allen",
-    goalType: "Market Development",
-    title: "Expand Client Portfolio by 15 Accounts",
-    description: "Acquire 15 new enterprise clients",
-    target: 47,
-    progress: 0,
-    startDate: "2026-03-06",
-    endDate: "2026-08-30",
-    status: "Not Started",
-    createdAt: "2026-03-01",
-  },
-  {
-    id: "9",
-    employee: "James Garcia",
-    goalType: "Leadership Growth",
-    title: "Launch Marketing Campaign",
-    description: "Execute multi-channel marketing campaign",
-    target: 84,
-    progress: 100,
-    startDate: "2025-10-16",
-    endDate: "2026-01-25",
-    status: "Completed",
-    createdAt: "2025-10-10",
-  },
+const sampleGoals: ApiEmployeeGoal[] = [
+  { id: "1", employee_id: "emp1", goal_type_id: "gt1", title: "Implement New CRM System", description: "Deploy and configure new customer relationship management system", start_date: "2025-09-17", end_date: "2026-03-20", target: "108226", progress: 90, status: "in_progress" },
+  { id: "2", employee_id: "emp2", goal_type_id: "gt2", title: "Create Employee Handbook", description: "Develop comprehensive employee handbook and policies", start_date: "2025-09-22", end_date: "2026-01-13", target: "80", progress: 62, status: "overdue" },
+  { id: "3", employee_id: "emp2", goal_type_id: "gt3", title: "Optimize Database Performance", description: "Improve database query performance by 30%", start_date: "2025-08-18", end_date: "2026-04-21", target: "97", progress: 63, status: "in_progress" },
+  { id: "4", employee_id: "emp3", goal_type_id: "gt4", title: "Achieve 100% Compliance Rate", description: "Ensure all customer service processes meet compliance standards", start_date: "2025-12-18", end_date: "2026-01-15", target: "54", progress: 100, status: "completed" },
+  { id: "5", employee_id: "emp4", goal_type_id: "gt3", title: "Conduct Annual Team Building Event", description: "Organize and execute team building activities", start_date: "2026-02-17", end_date: "2026-11-19", target: "90", progress: 0, status: "not_started" },
 ];
 
-const employees = [
+// ─── API ↔ display mapping ─────────────────────────────────────────────────────
+
+function mapStatus(raw: string): EmployeeGoal["status"] {
+  const s = (raw ?? "not_started").toLowerCase();
+  if (s === "in_progress") return "In Progress";
+  if (s === "completed") return "Completed";
+  if (s === "overdue") return "Overdue";
+  return "Not Started";
+}
+
+function mapFromApi(p: any): EmployeeGoal {
+  const empRaw = p.employee_id ?? p.employeeId;
+  const empId = empRaw && typeof empRaw === "object" ? String(empRaw._id ?? empRaw.id ?? "") : String(empRaw ?? "");
+  const empName = empRaw && typeof empRaw === "object" ? (empRaw.name ?? empRaw.user_id?.name ?? "") : "";
+
+  const gtRaw = p.goal_type_id ?? p.goalTypeId;
+  const gtId = gtRaw && typeof gtRaw === "object" ? String(gtRaw._id ?? gtRaw.id ?? "") : String(gtRaw ?? "");
+  const gtName = gtRaw && typeof gtRaw === "object" ? (gtRaw.name ?? "") : "";
+
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    employeeId: empId,
+    employee: empName,
+    goalTypeId: gtId,
+    goalType: gtName,
+    title: p.title ?? "",
+    description: p.description ?? "",
+    target: Number(p.target ?? 0),
+    progress: Number(p.progress ?? 0),
+    startDate: (p.start_date ?? p.startDate ?? "").slice(0, 10),
+    endDate: (p.end_date ?? p.endDate ?? "").slice(0, 10),
+    status: mapStatus(p.status ?? "not_started"),
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
+
+const staticEmployees = [
   "Daniel Thompson",
   "James Garcia",
   "Michael Brown",
@@ -180,7 +108,7 @@ const employees = [
   "Matthew Clark",
 ];
 
-const goalTypes = [
+const staticGoalTypes = [
   "Strategic Objectives",
   "Leadership Growth",
   "Innovation & Creativity",
@@ -223,7 +151,39 @@ type SortDir = "asc" | "desc";
 
 export const EmployeeGoals: React.FC = () => {
   const navigate = useNavigate();
-  const [goals, setGoals] = useState<EmployeeGoal[]>(sampleGoals);
+  const {
+    items: rawGoals,
+    create,
+    update,
+    remove,
+  } = useResourceData(employeeGoalHooks, { seed: sampleGoals, params: { page: 1, limit: 100 } });
+  const goals = useMemo(() => rawGoals.map(mapFromApi), [rawGoals]);
+
+  // Dropdown options from API
+  const gtQuery = goalTypeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const goalTypeOptions = useMemo(
+    () =>
+      (gtQuery.data ?? []).map((g: any) => ({
+        id: String(g.id ?? g._id ?? ""),
+        name: g.name ?? "",
+      })),
+    [gtQuery.data],
+  );
+
+  const empQuery = employeeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const employeeOptions = useMemo(
+    () =>
+      (empQuery.data ?? []).map((e: any) => ({
+        id: String(e.id ?? e._id ?? ""),
+        name:
+          (typeof e.user_id === "object" ? e.user_id?.name : null) ??
+          e.employee_id ??
+          e.name ??
+          "",
+      })),
+    [empQuery.data],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -242,7 +202,9 @@ export const EmployeeGoals: React.FC = () => {
 
   // Form state
   const [goalFormData, setGoalFormData] = useState({
+    employeeId: "",
     employee: "",
+    goalTypeId: "",
     goalType: "",
     title: "",
     description: "",
@@ -316,7 +278,9 @@ export const EmployeeGoals: React.FC = () => {
 
   const resetGoalForm = () => {
     setGoalFormData({
+      employeeId: "",
       employee: "",
+      goalTypeId: "",
       goalType: "",
       title: "",
       description: "",
@@ -337,7 +301,9 @@ export const EmployeeGoals: React.FC = () => {
   const openEditModal = (goal: EmployeeGoal) => {
     setSelectedGoal(goal);
     setGoalFormData({
+      employeeId: goal.employeeId,
       employee: goal.employee,
+      goalTypeId: goal.goalTypeId,
       goalType: goal.goalType,
       title: goal.title,
       description: goal.description,
@@ -361,17 +327,19 @@ export const EmployeeGoals: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const calculateProgress = (target: number, current: number): number => {
-    if (target === 0) return 0;
-    return Math.round((current / target) * 100);
+  const statusToApi = (s: string): ApiEmployeeGoal["status"] => {
+    if (s === "In Progress") return "in_progress";
+    if (s === "Completed") return "completed";
+    if (s === "Overdue") return "overdue";
+    return "not_started";
   };
 
-  const handleSaveGoal = () => {
-    if (!goalFormData.employee) {
+  const handleSaveGoal = async () => {
+    if (!goalFormData.employeeId && !goalFormData.employee) {
       showToast("Please select an employee", "info");
       return;
     }
-    if (!goalFormData.goalType) {
+    if (!goalFormData.goalTypeId && !goalFormData.goalType) {
       showToast("Please select goal type", "info");
       return;
     }
@@ -392,60 +360,44 @@ export const EmployeeGoals: React.FC = () => {
       return;
     }
 
-    const progress = calculateProgress(
-      goalFormData.target,
-      goalFormData.progress,
-    );
+    const payload: Partial<ApiEmployeeGoal> = {
+      employee_id: goalFormData.employeeId || goalFormData.employee,
+      goal_type_id: goalFormData.goalTypeId || goalFormData.goalType,
+      title: goalFormData.title,
+      description: goalFormData.description,
+      start_date: goalFormData.startDate,
+      end_date: goalFormData.endDate,
+      target: String(goalFormData.target),
+      progress: goalFormData.progress,
+      status: statusToApi(goalFormData.status),
+    };
 
-    if (isEditing && selectedGoal) {
-      setGoals((prev) =>
-        prev.map((g) =>
-          g.id === selectedGoal.id
-            ? {
-                ...g,
-                employee: goalFormData.employee,
-                goalType: goalFormData.goalType,
-                title: goalFormData.title,
-                description: goalFormData.description,
-                target: goalFormData.target,
-                progress: progress,
-                startDate: goalFormData.startDate,
-                endDate: goalFormData.endDate,
-                status: goalFormData.status,
-              }
-            : g,
-        ),
-      );
-      showToast("Goal updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newGoal: EmployeeGoal = {
-        id: Date.now().toString(),
-        employee: goalFormData.employee,
-        goalType: goalFormData.goalType,
-        title: goalFormData.title,
-        description: goalFormData.description,
-        target: goalFormData.target,
-        progress: progress,
-        startDate: goalFormData.startDate,
-        endDate: goalFormData.endDate,
-        status: goalFormData.status,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setGoals((prev) => [newGoal, ...prev]);
-      showToast("Goal created successfully!", "success");
-      setShowCreateModal(false);
+    try {
+      if (isEditing && selectedGoal) {
+        await update(selectedGoal.id, payload);
+        showToast("Goal updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Goal created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetGoalForm();
+    } catch {
+      showToast("Could not save goal. Please try again.", "error");
     }
-    resetGoalForm();
   };
 
-  const handleDeleteGoal = () => {
-    if (selectedGoal) {
-      setGoals((prev) => prev.filter((g) => g.id !== selectedGoal.id));
+  const handleDeleteGoal = async () => {
+    if (!selectedGoal) return;
+    try {
+      await remove(selectedGoal.id);
       showToast("Goal deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedGoal(null);
+    } catch {
+      showToast("Could not delete goal.", "error");
     }
+    setShowDeleteModal(false);
+    setSelectedGoal(null);
   };
 
   const getStatusColor = (status: string) => {
@@ -535,18 +487,30 @@ export const EmployeeGoals: React.FC = () => {
               Employee *
             </label>
             <select
-              value={goalFormData.employee}
-              onChange={(e) =>
-                setGoalFormData({ ...goalFormData, employee: e.target.value })
-              }
+              value={goalFormData.employeeId}
+              onChange={(e) => {
+                const selectedId = e.target.value;
+                const opt = employeeOptions.find((em) => em.id === selectedId);
+                setGoalFormData({
+                  ...goalFormData,
+                  employeeId: selectedId,
+                  employee: opt?.name ?? selectedId,
+                });
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select employee</option>
-              {employees.map((emp) => (
-                <option key={emp} value={emp}>
-                  {emp}
-                </option>
-              ))}
+              {employeeOptions.length > 0
+                ? employeeOptions.map((em) => (
+                    <option key={em.id} value={em.id}>
+                      {em.name}
+                    </option>
+                  ))
+                : staticEmployees.map((emp) => (
+                    <option key={emp} value={emp}>
+                      {emp}
+                    </option>
+                  ))}
             </select>
           </div>
           <div>
@@ -554,18 +518,30 @@ export const EmployeeGoals: React.FC = () => {
               Goal Type *
             </label>
             <select
-              value={goalFormData.goalType}
-              onChange={(e) =>
-                setGoalFormData({ ...goalFormData, goalType: e.target.value })
-              }
+              value={goalFormData.goalTypeId}
+              onChange={(e) => {
+                const selectedId = e.target.value;
+                const opt = goalTypeOptions.find((g) => g.id === selectedId);
+                setGoalFormData({
+                  ...goalFormData,
+                  goalTypeId: selectedId,
+                  goalType: opt?.name ?? selectedId,
+                });
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select goal type</option>
-              {goalTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
+              {goalTypeOptions.length > 0
+                ? goalTypeOptions.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))
+                : staticGoalTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
             </select>
           </div>
           <div>
@@ -1115,7 +1091,7 @@ export const EmployeeGoals: React.FC = () => {
                     colSpan={9}
                     className="px-4 py-12 text-center text-gray-500"
                   >
-                    No employee goals found.缓解{" "}
+                    No employee goals found.
                   </td>
                 </tr>
               )}

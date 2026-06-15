@@ -19,15 +19,17 @@ import {
   ArrowUpDown,
   X,
   Eye,
-  Calendar,
   Award,
   User,
   FileText,
   Upload,
-  Download,
-  CheckCircle,
-  AlertCircle,
 } from "lucide-react";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  awardHooks,
+  awardTypeHooks,
+  employeeHooks,
+} from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -171,6 +173,39 @@ const awardTypes = [
   "Team Player Award",
 ];
 
+// ─── Seed (snake_case for API) ────────────────────────────────────────────────
+
+const sampleAwardsSeed = sampleAwards.map((a) => ({
+  id: a.id,
+  employee_id: a.employee,
+  award_type_id: a.awardType,
+  award_date: a.awardDate,
+  description: a.description,
+}));
+
+// ─── mapFromApi ───────────────────────────────────────────────────────────────
+
+function mapFromApi(p: any): Award {
+  const empField = p.employee_id ?? p.employeeId;
+  const atField = p.award_type_id ?? p.awardTypeId;
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    employee:
+      typeof empField === "object"
+        ? empField?.name ?? ""
+        : String(empField ?? p.employee ?? ""),
+    awardType:
+      typeof atField === "object"
+        ? atField?.name ?? ""
+        : String(atField ?? p.awardType ?? ""),
+    awardDate: (p.award_date ?? p.awardDate ?? "").slice(0, 10),
+    description: p.description ?? "",
+    certificate: p.certificate ?? "",
+    certificateUrl: p.certificate_url ?? p.certificateUrl ?? "",
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const formatDate = (dateStr: string) => {
@@ -190,7 +225,38 @@ type SortDir = "asc" | "desc";
 
 export const Awards: React.FC = () => {
   const navigate = useNavigate();
-  const [awards, setAwards] = useState<Award[]>(sampleAwards);
+
+  const { items: raw, create, update, remove } = useResourceData(
+    awardHooks,
+    { seed: sampleAwardsSeed as any, params: { page: 1, limit: 100 } },
+  );
+  const items = useMemo(() => raw.map(mapFromApi), [raw]);
+
+  // Employee options from API
+  const empQuery = employeeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const empOptions = useMemo(
+    () =>
+      (empQuery.data ?? []).map((e: any) => ({
+        id: String(e.id ?? e._id ?? ""),
+        name:
+          typeof e.user_id === "object"
+            ? e.user_id?.name ?? ""
+            : e.name ?? e.employee_name ?? "",
+      })),
+    [empQuery.data],
+  );
+
+  // Award type options from API
+  const atQuery = awardTypeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const atOptions = useMemo(
+    () =>
+      (atQuery.data ?? []).map((t: any) => ({
+        id: String(t.id ?? t._id ?? ""),
+        name: t.name ?? t.award_type ?? "",
+      })),
+    [atQuery.data],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -232,7 +298,7 @@ export const Awards: React.FC = () => {
   // ─── Filtered & Sorted ─────────────────────────────────────────────────────
 
   const filteredAwards = useMemo(() => {
-    let result = [...awards];
+    let result = [...items];
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -258,7 +324,7 @@ export const Awards: React.FC = () => {
       return 0;
     });
     return result;
-  }, [awards, searchQuery, awardTypeFilter, sortField, sortDir]);
+  }, [items, searchQuery, awardTypeFilter, sortField, sortDir]);
 
   const totalPages = Math.ceil(filteredAwards.length / perPage);
   const paginatedAwards = filteredAwards.slice(
@@ -319,7 +385,7 @@ export const Awards: React.FC = () => {
     }
   };
 
-  const handleSaveAward = () => {
+  const handleSaveAward = async () => {
     if (!awardFormData.employee) {
       showToast("Please select an employee", "info");
       return;
@@ -337,47 +403,39 @@ export const Awards: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedAward) {
-      setAwards((prev) =>
-        prev.map((a) =>
-          a.id === selectedAward.id
-            ? {
-                ...a,
-                employee: awardFormData.employee,
-                awardType: awardFormData.awardType,
-                awardDate: awardFormData.awardDate,
-                description: awardFormData.description,
-                certificate: awardFormData.certificateName || a.certificate,
-              }
-            : a,
-        ),
-      );
-      showToast("Award updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newAward: Award = {
-        id: Date.now().toString(),
-        employee: awardFormData.employee,
-        awardType: awardFormData.awardType,
-        awardDate: awardFormData.awardDate,
-        description: awardFormData.description,
-        certificate: awardFormData.certificateName || "",
-        certificateUrl: "",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setAwards((prev) => [newAward, ...prev]);
-      showToast("Award created successfully!", "success");
-      setShowCreateModal(false);
+    const payload = {
+      employee_id: awardFormData.employee,
+      award_type_id: awardFormData.awardType,
+      award_date: awardFormData.awardDate,
+      description: awardFormData.description,
+    };
+
+    try {
+      if (isEditing && selectedAward) {
+        await update(selectedAward.id, payload);
+        showToast("Award updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(payload);
+        showToast("Award created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetAwardForm();
+    } catch {
+      showToast("Operation failed.", "error");
     }
-    resetAwardForm();
   };
 
-  const handleDeleteAward = () => {
+  const handleDeleteAward = async () => {
     if (selectedAward) {
-      setAwards((prev) => prev.filter((a) => a.id !== selectedAward.id));
-      showToast("Award deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedAward(null);
+      try {
+        await remove(selectedAward.id);
+        showToast("Award deleted successfully!", "success");
+        setShowDeleteModal(false);
+        setSelectedAward(null);
+      } catch {
+        showToast("Delete failed.", "error");
+      }
     }
   };
 
@@ -410,9 +468,9 @@ export const Awards: React.FC = () => {
 
   // ─── Get unique award types for filter
   const uniqueAwardTypes = useMemo(() => {
-    const types = [...new Set(awards.map((a) => a.awardType))];
+    const types = [...new Set(items.map((a) => a.awardType))];
     return ["All", ...types];
-  }, [awards]);
+  }, [items]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // MODALS
@@ -457,11 +515,17 @@ export const Awards: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Employee</option>
-              {employees.map((emp) => (
-                <option key={emp} value={emp}>
-                  {emp}
-                </option>
-              ))}
+              {empOptions.length > 0
+                ? empOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.name}
+                    </option>
+                  ))
+                : employees.map((emp) => (
+                    <option key={emp} value={emp}>
+                      {emp}
+                    </option>
+                  ))}
             </select>
           </div>
           <div>
@@ -479,11 +543,17 @@ export const Awards: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
             >
               <option value="">Select Award Type</option>
-              {awardTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
+              {atOptions.length > 0
+                ? atOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.name}
+                    </option>
+                  ))
+                : awardTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
             </select>
           </div>
           <div>

@@ -4,9 +4,11 @@
  * Based on provided screenshots design
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import { employeeHooks, employeeApi, type Employee as ApiEmployee } from "@/services/hrm";
 import {
   Search,
   Plus,
@@ -20,10 +22,6 @@ import {
   X,
   Eye,
   DollarSign,
-  Calendar,
-  Upload,
-  CheckCircle,
-  AlertCircle,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -67,269 +65,93 @@ interface Employee {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (API snake_case shape seed) ──────────────────────────────────
 
-const sampleEmployees: Employee[] = [
-  {
-    id: "1",
-    employeeId: "EMP20260001",
-    userId: "user_001",
-    userName: "John Smith",
-    branch: "Sales Office",
-    department: "Customer Service",
-    designation: "Senior Consultant",
-    employmentType: "Part Time",
-    dateOfJoining: "2023-05-10",
-    shift: "Morning",
-    firstName: "John",
-    lastName: "Smith",
-    email: "john.smith@company.com",
-    phone: "+1234567890",
-    dateOfBirth: "1990-01-15",
-    gender: "Male",
-    maritalStatus: "Married",
-    addressLine1: "123 Main Street",
-    addressLine2: "",
-    city: "New York",
-    state: "NY",
-    country: "USA",
-    zipCode: "10001",
-    emergencyContactName: "Jane Smith",
-    emergencyContactNumber: "+1987654321",
-    emergencyContactRelation: "Spouse",
-    bankName: "Chase Bank",
-    accountNumber: "****1234",
-    accountHolderName: "John Smith",
-    ifscCode: "CHASUS33",
-    basicSalary: 5000,
-    hoursPerDay: 6,
-    daysPerWeek: 5,
-    ratePerHour: 41.67,
-    status: "Active",
-    createdAt: "2023-05-10",
-  },
-  {
-    id: "2",
-    employeeId: "EMP20260002",
-    userId: "user_002",
-    userName: "Michael Brown",
-    branch: "Regional Office",
-    department: "Finance & Accounting",
-    designation: "Assistant Manager",
-    employmentType: "Temporary",
-    dateOfJoining: "2023-03-21",
-    shift: "Morning",
-    firstName: "Michael",
-    lastName: "Brown",
-    email: "michael.brown@company.com",
-    phone: "+1234567891",
-    dateOfBirth: "1985-06-20",
-    gender: "Male",
-    maritalStatus: "Married",
-    addressLine1: "456 Oak Avenue",
-    addressLine2: "",
-    city: "Los Angeles",
-    state: "CA",
-    country: "USA",
-    zipCode: "90001",
-    emergencyContactName: "Sarah Brown",
-    emergencyContactNumber: "+1987654322",
-    emergencyContactRelation: "Spouse",
-    bankName: "Bank of America",
-    accountNumber: "****5678",
-    accountHolderName: "Michael Brown",
-    ifscCode: "BOFAUS3N",
-    basicSalary: 6500,
-    hoursPerDay: 8,
-    daysPerWeek: 5,
-    ratePerHour: 40.63,
-    status: "Active",
-    createdAt: "2023-03-21",
-  },
-  {
-    id: "3",
-    employeeId: "EMP20260003",
-    userId: "user_003",
-    userName: "David Wilson",
-    branch: "Regional Office",
-    department: "Human Resources",
-    designation: "Officer",
-    employmentType: "Full Time",
-    dateOfJoining: "2023-02-10",
-    shift: "Morning",
-    firstName: "David",
-    lastName: "Wilson",
-    email: "david.wilson@company.com",
-    phone: "+1234567892",
-    dateOfBirth: "1992-08-12",
-    gender: "Male",
-    maritalStatus: "Single",
-    addressLine1: "789 Pine Street",
-    addressLine2: "",
-    city: "Chicago",
-    state: "IL",
-    country: "USA",
-    zipCode: "60601",
-    emergencyContactName: "Emily Wilson",
-    emergencyContactNumber: "+1987654323",
-    emergencyContactRelation: "Sister",
-    bankName: "Wells Fargo",
-    accountNumber: "****9012",
-    accountHolderName: "David Wilson",
-    ifscCode: "WFBIUS6S",
-    basicSalary: 4500,
-    hoursPerDay: 8,
-    daysPerWeek: 5,
-    ratePerHour: 28.13,
-    status: "Active",
-    createdAt: "2023-02-10",
-  },
-  {
-    id: "4",
-    employeeId: "EMP20260004",
-    userId: "user_004",
-    userName: "Robert Taylor",
-    branch: "North Branch",
-    department: "Procurement",
-    designation: "Analyst",
-    employmentType: "Part Time",
-    dateOfJoining: "2024-09-15",
-    shift: "Evening",
-    firstName: "Robert",
-    lastName: "Taylor",
-    email: "robert.taylor@company.com",
-    phone: "+1234567893",
-    dateOfBirth: "1988-03-25",
-    gender: "Male",
-    maritalStatus: "Married",
-    addressLine1: "321 Elm Road",
-    addressLine2: "",
-    city: "Houston",
-    state: "TX",
-    country: "USA",
-    zipCode: "77001",
-    emergencyContactName: "Lisa Taylor",
-    emergencyContactNumber: "+1987654324",
-    emergencyContactRelation: "Spouse",
-    bankName: "Citibank",
-    accountNumber: "****3456",
-    accountHolderName: "Robert Taylor",
-    ifscCode: "CITIUS33",
-    basicSalary: 4000,
-    hoursPerDay: 5,
-    daysPerWeek: 4,
-    ratePerHour: 50.0,
-    status: "Active",
-    createdAt: "2024-09-15",
-  },
-  {
-    id: "5",
-    employeeId: "EMP20260005",
-    userId: "user_005",
-    userName: "James Garcia",
-    branch: "Customer Service Center",
-    department: "Legal & Compliance",
-    designation: "Officer",
-    employmentType: "Contract",
-    dateOfJoining: "2025-01-13",
-    shift: "Morning",
-    firstName: "James",
-    lastName: "Garcia",
-    email: "james.garcia@company.com",
-    phone: "+1234567894",
-    dateOfBirth: "1995-11-08",
-    gender: "Male",
-    maritalStatus: "Single",
-    addressLine1: "654 Cedar Lane",
-    addressLine2: "",
-    city: "Phoenix",
-    state: "AZ",
-    country: "USA",
-    zipCode: "85001",
-    emergencyContactName: "Maria Garcia",
-    emergencyContactNumber: "+1987654325",
-    emergencyContactRelation: "Mother",
-    bankName: "TD Bank",
-    accountNumber: "****7890",
-    accountHolderName: "James Garcia",
-    ifscCode: "TDOMCATTTOR",
-    basicSalary: 5500,
-    hoursPerDay: 8,
-    daysPerWeek: 5,
-    ratePerHour: 34.38,
-    status: "Active",
-    createdAt: "2025-01-13",
-  },
+const sampleEmployees: ApiEmployee[] = [
+  { id: "1", employee_id: "EMP20260001", user_id: { _id: "user_001", name: "John Smith" }, branch_id: { _id: "b1", branch_name: "Sales Office" }, department_id: { _id: "d1", department_name: "Customer Service" }, designation_id: { _id: "des1", designation_name: "Senior Consultant" }, shift_id: { _id: "s1", shift_name: "Morning" }, date_of_joining: "2023-05-10", basic_salary: 5000, status: "Active", createdAt: "2023-05-10" },
+  { id: "2", employee_id: "EMP20260002", user_id: { _id: "user_002", name: "Michael Brown" }, branch_id: { _id: "b2", branch_name: "Regional Office" }, department_id: { _id: "d2", department_name: "Finance & Accounting" }, designation_id: { _id: "des2", designation_name: "Assistant Manager" }, shift_id: { _id: "s1", shift_name: "Morning" }, date_of_joining: "2023-03-21", basic_salary: 6500, status: "Active", createdAt: "2023-03-21" },
+  { id: "3", employee_id: "EMP20260003", user_id: { _id: "user_003", name: "David Wilson" }, branch_id: { _id: "b2", branch_name: "Regional Office" }, department_id: { _id: "d3", department_name: "Human Resources" }, designation_id: { _id: "des3", designation_name: "Officer" }, shift_id: { _id: "s1", shift_name: "Morning" }, date_of_joining: "2023-02-10", basic_salary: 4500, status: "Active", createdAt: "2023-02-10" },
 ];
 
-const branches = [
-  "Regional Office",
-  "Sales Office",
-  "North Branch",
-  "South Branch",
-  "Downtown Branch",
-  "Customer Service Center",
-];
-const departments: Record<string, string[]> = {
-  "Regional Office": [
-    "Finance & Accounting",
-    "Human Resources",
-    "Administration",
-    "IT",
-  ],
+// ─── API ↔ display mapping ─────────────────────────────────────────────────────
+
+function unwrapRef(ref: any, nameKey: string): string {
+  if (!ref) return "";
+  if (typeof ref === "object") return ref[nameKey] ?? ref.name ?? "";
+  return String(ref);
+}
+
+function mapFromApi(p: any): Employee {
+  const userRef = p.user_id;
+  const userName = typeof userRef === "object" && userRef ? (userRef.name ?? "") : String(userRef ?? "");
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    employeeId: p.employee_id ?? p.employeeId ?? "",
+    userId: typeof userRef === "object" && userRef ? (userRef._id ?? "") : String(userRef ?? ""),
+    userName,
+    branch: unwrapRef(p.branch_id, "branch_name"),
+    department: unwrapRef(p.department_id, "department_name"),
+    designation: unwrapRef(p.designation_id, "designation_name"),
+    employmentType: (p.employment_type ?? p.employmentType ?? "Full Time") as Employee["employmentType"],
+    dateOfJoining: (p.date_of_joining ?? p.dateOfJoining ?? "").slice(0, 10),
+    shift: unwrapRef(p.shift_id, "shift_name"),
+    firstName: p.first_name ?? p.firstName ?? userName.split(" ")[0] ?? "",
+    lastName: p.last_name ?? p.lastName ?? userName.split(" ").slice(1).join(" ") ?? "",
+    email: p.email ?? "",
+    phone: p.phone ?? "",
+    dateOfBirth: (p.date_of_birth ?? p.dateOfBirth ?? "").slice(0, 10),
+    gender: (p.gender ?? "Male") as Employee["gender"],
+    maritalStatus: (p.marital_status ?? p.maritalStatus ?? "Single") as Employee["maritalStatus"],
+    addressLine1: p.address_line1 ?? p.addressLine1 ?? "",
+    addressLine2: p.address_line2 ?? p.addressLine2 ?? "",
+    city: p.city ?? "",
+    state: p.state ?? "",
+    country: p.country ?? "",
+    zipCode: p.zip_code ?? p.zipCode ?? "",
+    emergencyContactName: p.emergency_contact_name ?? p.emergencyContactName ?? "",
+    emergencyContactNumber: p.emergency_contact_number ?? p.emergencyContactNumber ?? "",
+    emergencyContactRelation: p.emergency_contact_relation ?? p.emergencyContactRelation ?? "",
+    bankName: p.bank_name ?? p.bankName ?? "",
+    accountNumber: p.account_number ?? p.accountNumber ?? "",
+    accountHolderName: p.account_holder_name ?? p.accountHolderName ?? "",
+    ifscCode: p.ifsc_code ?? p.ifscCode ?? "",
+    basicSalary: Number(p.basic_salary ?? p.basicSalary ?? 0),
+    hoursPerDay: Number(p.hours_per_day ?? p.hoursPerDay ?? 8),
+    daysPerWeek: Number(p.days_per_week ?? p.daysPerWeek ?? 5),
+    ratePerHour: Number(p.rate_per_hour ?? p.ratePerHour ?? 0),
+    status: (p.status ?? "Active") as Employee["status"],
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
+
+// ─── Static fallback option lists ─────────────────────────────────────────────
+
+const staticBranches = ["Regional Office", "Sales Office", "North Branch", "South Branch", "Downtown Branch", "Customer Service Center"];
+const staticDepartments: Record<string, string[]> = {
+  "Regional Office": ["Finance & Accounting", "Human Resources", "Administration", "IT"],
   "Sales Office": ["Sales", "Marketing", "Customer Service"],
   "North Branch": ["Operations", "Procurement", "Logistics"],
   "South Branch": ["Finance & Accounting", "Sales", "Support"],
   "Downtown Branch": ["Quality Assurance", "Legal & Compliance", "Facilities"],
-  "Customer Service Center": [
-    "Customer Support",
-    "Technical Support",
-    "Legal & Compliance",
-  ],
+  "Customer Service Center": ["Customer Support", "Technical Support", "Legal & Compliance"],
 };
-const designations: Record<string, string[]> = {
-  "Finance & Accounting": [
-    "Accountant",
-    "Senior Accountant",
-    "Finance Manager",
-    "Director",
-    "Assistant Manager",
-    "Team Lead",
-  ],
-  "Human Resources": [
-    "HR Officer",
-    "HR Manager",
-    "Recruiter",
-    "Training Coordinator",
-  ],
-  Sales: [
-    "Sales Executive",
-    "Senior Sales Executive",
-    "Sales Manager",
-    "Director",
-  ],
+const staticDesignations: Record<string, string[]> = {
+  "Finance & Accounting": ["Accountant", "Senior Accountant", "Finance Manager", "Director", "Assistant Manager", "Team Lead"],
+  "Human Resources": ["HR Officer", "HR Manager", "Recruiter", "Training Coordinator"],
+  Sales: ["Sales Executive", "Senior Sales Executive", "Sales Manager", "Director"],
   Marketing: ["Marketing Executive", "Marketing Manager", "Brand Manager"],
-  "Customer Service": [
-    "Support Associate",
-    "Senior Consultant",
-    "Team Lead",
-    "Manager",
-  ],
+  "Customer Service": ["Support Associate", "Senior Consultant", "Team Lead", "Manager"],
   Operations: ["Operations Analyst", "Operations Manager", "Coordinator"],
   Procurement: ["Procurement Officer", "Analyst", "Manager"],
   Logistics: ["Logistics Coordinator", "Supply Chain Analyst", "Manager"],
   IT: ["IT Support", "System Administrator", "Developer", "IT Manager"],
   "Quality Assurance": ["QA Analyst", "Senior QA", "QA Manager", "Executive"],
   "Legal & Compliance": ["Legal Officer", "Compliance Officer", "Manager"],
-  "Technical Support": [
-    "Support Engineer",
-    "Senior Support Engineer",
-    "Team Lead",
-  ],
+  "Technical Support": ["Support Engineer", "Senior Support Engineer", "Team Lead"],
 };
 
 const employmentTypes = ["Full Time", "Part Time", "Contract", "Temporary"];
-const shifts = ["Morning", "Evening", "Night", "Rotational"];
+const staticShifts = ["Morning", "Evening", "Night", "Rotational"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -352,7 +174,40 @@ type SortDir = "asc" | "desc";
 
 export const Employees: React.FC = () => {
   const navigate = useNavigate();
-  const [employees, setEmployees] = useState<Employee[]>(sampleEmployees);
+  const { items: rawEmployees, create, update, remove } = useResourceData(employeeHooks, { seed: sampleEmployees, params: { page: 1, limit: 100 } });
+  const employees = useMemo(() => rawEmployees.map(mapFromApi), [rawEmployees]);
+
+  // Live option lists from API, fall back to static arrays
+  const [branchOptions, setBranchOptions] = useState<{ id: string; name: string }[]>([]);
+  const [departmentOptions, setDepartmentOptions] = useState<{ id: string; name: string; branchId: string }[]>([]);
+  const [designationOptions, setDesignationOptions] = useState<{ id: string; name: string; departmentId: string }[]>([]);
+  const [shiftOptions, setShiftOptions] = useState<{ id: string; name: string }[]>([]);
+  const [userOptions, setUserOptions] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    employeeApi.lookups().then((res: any) => {
+      const data = res?.data ?? res ?? {};
+      if (Array.isArray(data.branches)) setBranchOptions(data.branches.map((b: any) => ({ id: String(b._id ?? b.id ?? ""), name: b.branch_name ?? b.name ?? "" })));
+      if (Array.isArray(data.departments)) setDepartmentOptions(data.departments.map((d: any) => ({ id: String(d._id ?? d.id ?? ""), name: d.department_name ?? d.name ?? "", branchId: String(d.branch_id?._id ?? d.branch_id ?? "") })));
+      if (Array.isArray(data.designations)) setDesignationOptions(data.designations.map((d: any) => ({ id: String(d._id ?? d.id ?? ""), name: d.designation_name ?? d.name ?? "", departmentId: String(d.department_id?._id ?? d.department_id ?? "") })));
+      if (Array.isArray(data.shifts)) setShiftOptions(data.shifts.map((s: any) => ({ id: String(s._id ?? s.id ?? ""), name: s.shift_name ?? s.name ?? "" })));
+    }).catch(() => {/* fall back to static */});
+    employeeApi.eligibleUsers().then((res: any) => {
+      const list = Array.isArray(res) ? res : (res?.data ?? []);
+      setUserOptions(list.map((u: any) => ({ id: String(u._id ?? u.id ?? ""), name: u.name ?? u.username ?? "" })));
+    }).catch(() => {});
+  }, []);
+
+  // Helper: resolve option lists, falling back to statics
+  const branches = branchOptions.length > 0 ? branchOptions.map(b => b.name) : staticBranches;
+  const departments: Record<string, string[]> = branchOptions.length > 0 && departmentOptions.length > 0
+    ? Object.fromEntries(branchOptions.map(b => [b.name, departmentOptions.filter(d => d.branchId === b.id).map(d => d.name)]))
+    : staticDepartments;
+  const designations: Record<string, string[]> = departmentOptions.length > 0 && designationOptions.length > 0
+    ? Object.fromEntries(departmentOptions.map(d => [d.name, designationOptions.filter(des => des.departmentId === d.id).map(des => des.name)]))
+    : staticDesignations;
+  const shifts = shiftOptions.length > 0 ? shiftOptions.map(s => s.name) : staticShifts;
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -554,7 +409,7 @@ export const Employees: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSaveEmployee = () => {
+  const handleSaveEmployee = async () => {
     if (!formData.firstName || !formData.lastName) {
       showToast("Please fill in personal information", "info");
       setCurrentStep(0);
@@ -581,103 +436,46 @@ export const Employees: React.FC = () => {
       return;
     }
 
-    const employeeId = `EMP${new Date().getFullYear()}${String(employees.length + 1).padStart(5, "0")}`;
+    // Resolve IDs from option lists (fall back to name strings if not found)
+    const branchObj = branchOptions.find(b => b.name === formData.branch);
+    const deptObj = departmentOptions.find(d => d.name === formData.department);
+    const desObj = designationOptions.find(d => d.name === formData.designation);
+    const shiftObj = shiftOptions.find(s => s.name === formData.shift);
+    const userObj = userOptions.find(u => u.name === formData.userName);
 
-    if (isEditing && selectedEmployee) {
-      setEmployees((prev) =>
-        prev.map((e) =>
-          e.id === selectedEmployee.id
-            ? {
-                ...e,
-                firstName: formData.firstName,
-                lastName: formData.lastName,
-                email: formData.email,
-                phone: formData.phone,
-                dateOfBirth: formData.dateOfBirth,
-                gender: formData.gender,
-                maritalStatus: formData.maritalStatus,
-                userName: formData.userName,
-                branch: formData.branch,
-                department: formData.department,
-                designation: formData.designation,
-                employmentType: formData.employmentType,
-                dateOfJoining: formData.dateOfJoining,
-                shift: formData.shift,
-                addressLine1: formData.addressLine1,
-                addressLine2: formData.addressLine2,
-                city: formData.city,
-                state: formData.state,
-                country: formData.country,
-                zipCode: formData.zipCode,
-                emergencyContactName: formData.emergencyContactName,
-                emergencyContactNumber: formData.emergencyContactNumber,
-                emergencyContactRelation: formData.emergencyContactRelation,
-                bankName: formData.bankName,
-                accountNumber: formData.accountNumber,
-                accountHolderName: formData.accountHolderName,
-                ifscCode: formData.ifscCode,
-                basicSalary: formData.basicSalary,
-                hoursPerDay: formData.hoursPerDay,
-                daysPerWeek: formData.daysPerWeek,
-                ratePerHour: formData.ratePerHour,
-                status: formData.status,
-              }
-            : e,
-        ),
-      );
-      showToast("Employee updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newEmployee: Employee = {
-        id: Date.now().toString(),
-        employeeId: employeeId,
-        userId: `user_${String(employees.length + 1).padStart(3, "0")}`,
-        userName: `${formData.firstName} ${formData.lastName}`,
-        branch: formData.branch,
-        department: formData.department,
-        designation: formData.designation,
-        employmentType: formData.employmentType,
-        dateOfJoining:
-          formData.dateOfJoining || new Date().toISOString().split("T")[0],
-        shift: formData.shift,
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        email: formData.email,
-        phone: formData.phone,
-        dateOfBirth: formData.dateOfBirth,
-        gender: formData.gender,
-        maritalStatus: formData.maritalStatus,
-        addressLine1: formData.addressLine1,
-        addressLine2: formData.addressLine2,
-        city: formData.city,
-        state: formData.state,
-        country: formData.country,
-        zipCode: formData.zipCode,
-        emergencyContactName: formData.emergencyContactName,
-        emergencyContactNumber: formData.emergencyContactNumber,
-        emergencyContactRelation: formData.emergencyContactRelation,
-        bankName: formData.bankName,
-        accountNumber: formData.accountNumber,
-        accountHolderName: formData.accountHolderName,
-        ifscCode: formData.ifscCode,
-        basicSalary: formData.basicSalary,
-        hoursPerDay: formData.hoursPerDay,
-        daysPerWeek: formData.daysPerWeek,
-        ratePerHour: formData.ratePerHour,
-        status: formData.status,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setEmployees((prev) => [newEmployee, ...prev]);
-      showToast("Employee created successfully!", "success");
-      setShowCreateModal(false);
+    try {
+      if (isEditing && selectedEmployee) {
+        await update(selectedEmployee.id, { basic_salary: formData.basicSalary });
+        showToast("Employee updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        const toApi = {
+          user_id: userObj?.id ?? formData.userId,
+          branch_id: branchObj?.id ?? formData.branch,
+          department_id: deptObj?.id ?? formData.department,
+          designation_id: desObj?.id ?? formData.designation,
+          shift_id: shiftObj?.id ?? formData.shift,
+          date_of_joining: formData.dateOfJoining || new Date().toISOString().split("T")[0],
+          basic_salary: formData.basicSalary,
+        };
+        await create(toApi);
+        showToast("Employee created successfully!", "success");
+        setShowCreateModal(false);
+      }
+    } catch {
+      showToast("Operation failed. Please try again.", "error");
     }
     resetForm();
   };
 
-  const handleDeleteEmployee = () => {
+  const handleDeleteEmployee = async () => {
     if (selectedEmployee) {
-      setEmployees((prev) => prev.filter((e) => e.id !== selectedEmployee.id));
-      showToast("Employee deleted successfully!", "success");
+      try {
+        await remove(selectedEmployee.id);
+        showToast("Employee deleted successfully!", "success");
+      } catch {
+        showToast("Delete failed. Please try again.", "error");
+      }
       setShowDeleteModal(false);
       setSelectedEmployee(null);
     }
