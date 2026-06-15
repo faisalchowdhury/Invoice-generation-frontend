@@ -154,11 +154,14 @@ export const ProfitLoss: React.FC = () => {
   const handleGenerateReport = () => { load(); };
 
   const handleDownloadPDF = () => {
-    showToast("Downloading PDF...", "info");
+    window.open(
+      doubleEntryReports.profitLossPrint({ from_date: fromDate, to_date: toDate }),
+      "_blank",
+    );
   };
 
   const handlePrint = () => {
-    window.print();
+    handleDownloadPDF();
   };
 
   const getNetProfitColor = (netProfit: number) => {

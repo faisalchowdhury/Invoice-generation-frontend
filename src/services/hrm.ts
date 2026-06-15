@@ -264,6 +264,9 @@ export const acknowledgmentHooks = createResourceHooks("hrm-acknowledgments", ac
 export const hrmStatusActions = {
   promotion: statusAction("promotions"),
   resignation: statusAction("resignations"),
+  /** Alternate resignation status route: PUT /resignations/:id/status/:status */
+  resignationStatusPath: (id: string, status: string) =>
+    putJson(`${BASE}/resignations/${id}/status/${status}`),
   termination: statusAction("terminations"),
   complaint: statusAction("complaints"),
   employeeTransfer: statusAction("employee-transfers"),
@@ -279,4 +282,31 @@ export const hrmExtras = {
   dashboard: () => getOne(`${BASE}/dashboard`),
   dashboardEventCalendar: () => getOne(`${BASE}/dashboard/event-calendar`),
   eventCalendar: () => getList(`${BASE}/events/event-calendar`),
+};
+
+/** Staff mobile app endpoints (same backend, staff token). */
+export const mobileApi = {
+  home: () => getOne(`${BASE}/mobile/home`),
+  events: (body: { from_date: string; to_date: string }) =>
+    postJson(`${BASE}/mobile/events`, body),
+  holidaysList: () => getList(`${BASE}/mobile/holidays-list`),
+  attendanceHistory: (body: { from_date: string; to_date: string }) =>
+    postJson(`${BASE}/mobile/attendance-history`, body),
+  clockInOut: () => postJson(`${BASE}/mobile/clock-in-out`),
+  leaves: () => getList(`${BASE}/mobile/leaves`),
+  leaveRequest: (body: {
+    leave_type_id: string;
+    start_date: string;
+    end_date: string;
+    reason: string;
+  }) => postJson(`${BASE}/mobile/leave-request`, body),
+  leaveTypes: () => getList(`${BASE}/mobile/leave-types`),
+};
+
+/** Form lookup helpers used by workflow screens. */
+export const hrmLookupApi = {
+  warningBies: (userId: string) => getList(`${BASE}/users/${userId}/warning-bies`),
+  warningTypesForUser: (userId: string) => getList(`${BASE}/users/${userId}/warning-types`),
+  eventTypeApprovedBies: (eventTypeId: string) =>
+    getList(`${BASE}/event-types/${eventTypeId}/approved-bies`),
 };

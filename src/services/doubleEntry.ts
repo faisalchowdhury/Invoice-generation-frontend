@@ -7,7 +7,7 @@
 
 import { createResourceHooks } from "@/hooks/useResource";
 import type { Entity } from "@/lib/api/types";
-import { getList, getOne, postJson, deleteJson, makeResource } from "./_http";
+import { getList, getOne, postJson, deleteJson, makeResource, buildQuery } from "./_http";
 
 const BASE = "/double-entry";
 
@@ -55,6 +55,13 @@ export const balanceSheetActions = {
   compare: (body: { current_period_id: string; previous_period_id: string }) =>
     postJson(`${BASE}/balance-sheets/compare`, body),
   comparisons: () => getList(`${BASE}/balance-sheets/comparisons`),
+  showComparison: (comparisonId: string) =>
+    getOne(`${BASE}/balance-sheets/comparison/${comparisonId}`),
+  comparisonPrintUrl: (currentId: string, previousId: string) =>
+    `${BASE}/balance-sheets/comparison/print${buildQuery({
+      current_id: currentId,
+      previous_id: previousId,
+    })}`,
   yearEndClose: (body: { financial_year: string; closing_date: string }) =>
     postJson(`${BASE}/balance-sheets/year-end-close`, body),
   printUrl: (id: string) => `${BASE}/balance-sheets/${id}/print`,
@@ -65,14 +72,40 @@ export const balanceSheetActions = {
 export const doubleEntryReports = {
   index: () => getOne(`${BASE}/reports`),
   trialBalance: (p: DateRange) => getOne(`${BASE}/trial-balance`, p),
+  trialBalancePrint: (p: DateRange) =>
+    `${BASE}/trial-balance/print${buildQuery({ from_date: p.from_date, to_date: p.to_date })}`,
   profitLoss: (p: DateRange) => getOne(`${BASE}/profit-loss`, p),
+  profitLossPrint: (p: DateRange) =>
+    `${BASE}/profit-loss/print${buildQuery({ from_date: p.from_date, to_date: p.to_date })}`,
   ledgerSummary: (p: DateRange) => getOne(`${BASE}/ledger-summary`, p),
+  ledgerSummaryPrint: (p: DateRange) =>
+    `${BASE}/ledger-summary/print${buildQuery({ from_date: p.from_date, to_date: p.to_date })}`,
   generalLedger: (p: DateRange) => getOne(`${BASE}/reports/general-ledger`, p),
+  generalLedgerPrint: (p: DateRange) =>
+    `${BASE}/reports/general-ledger/print${buildQuery({
+      account_id: p.account_id,
+      from_date: p.from_date,
+      to_date: p.to_date,
+    })}`,
   accountStatement: (p: DateRange) => getOne(`${BASE}/reports/account-statement`, p),
+  accountStatementPrint: (p: DateRange) =>
+    `${BASE}/reports/account-statement/print${buildQuery({ account_id: p.account_id })}`,
   journalEntry: (p: DateRange) => getOne(`${BASE}/reports/journal-entry`, p),
+  journalEntryPrint: (p: DateRange) =>
+    `${BASE}/reports/journal-entry/print${buildQuery({
+      from_date: p.from_date,
+      to_date: p.to_date,
+      status: p.status,
+    })}`,
   accountBalance: (p: DateRange) => getOne(`${BASE}/reports/account-balance`, p),
+  accountBalancePrint: (p: DateRange) =>
+    `${BASE}/reports/account-balance/print${buildQuery({ as_of_date: p.as_of_date })}`,
   cashFlow: (p: DateRange) => getOne(`${BASE}/reports/cash-flow`, p),
+  cashFlowPrint: (p: DateRange) =>
+    `${BASE}/reports/cash-flow/print${buildQuery({ from_date: p.from_date, to_date: p.to_date })}`,
   expenseReport: (p: DateRange) => getOne(`${BASE}/reports/expense-report`, p),
+  expenseReportPrint: (p: DateRange) =>
+    `${BASE}/reports/expense-report/print${buildQuery({ from_date: p.from_date, to_date: p.to_date })}`,
 };
 
 // ─── Shared: Chart of Accounts (used by reports + budget allocations) ───────

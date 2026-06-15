@@ -311,12 +311,15 @@ export const Payroll: React.FC = () => {
     if (!generateForm.paymentDate) { showToast("Please select payment date", "info"); return; }
     setIsGenerating(true);
     try {
-      await createPayroll({
+      const created = await createPayroll({
         title: generateForm.payPeriod,
         payroll_frequency: "monthly",
         pay_period_start: generateForm.paymentDate,
         pay_period_end: generateForm.paymentDate,
       } as any);
+      if (created?.id) {
+        await payrollApi.run(String(created.id));
+      }
       // Also generate local records for display
       const newPayrollRecords: PayrollRecord[] = employees.map((emp) => ({
         id: Date.now().toString() + emp.id,

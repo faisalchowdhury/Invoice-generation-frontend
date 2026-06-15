@@ -312,7 +312,23 @@ export const DoubleEntryReports: React.FC = () => {
     showToast("Filters cleared", "info");
   };
 
-  const handleDownloadPDF = () => { showToast("Downloading PDF...", "info"); };
+  const handleDownloadPDF = () => {
+    const params = {
+      from_date: fromDate,
+      to_date: toDate,
+      as_of_date: toDate,
+      status: statusFilter !== "All" ? statusFilter.toLowerCase() : undefined,
+    };
+    const printByReport: Record<ReportType, string> = {
+      journalEntry: doubleEntryReports.journalEntryPrint(params),
+      generalLedger: doubleEntryReports.generalLedgerPrint(params),
+      accountStatement: doubleEntryReports.accountStatementPrint(params),
+      accountBalance: doubleEntryReports.accountBalancePrint(params),
+      cashFlow: doubleEntryReports.cashFlowPrint(params),
+      expenseReport: doubleEntryReports.expenseReportPrint(params),
+    };
+    window.open(printByReport[activeReport], "_blank");
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {

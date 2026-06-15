@@ -26,7 +26,7 @@ import {
   Sun,
 } from "lucide-react";
 import { useResourceData } from "@/hooks/useResourceData";
-import { attendanceHooks, employeeHooks, type Attendance as ApiAttendance } from "@/services/hrm";
+import { attendanceHooks, employeeHooks, attendanceApi, type Attendance as ApiAttendance } from "@/services/hrm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -144,7 +144,7 @@ function mapFromApiAttendance(p: any): AttendanceRow {
 
 export const Attendances: React.FC = () => {
   const navigate = useNavigate();
-  const { items: rawAttendances, create, update, remove } = useResourceData(attendanceHooks, {
+  const { items: rawAttendances, create, update, remove, refetch } = useResourceData(attendanceHooks, {
     seed: sampleAttendancesSeed,
     params: { page: 1, limit: 100 },
   });
@@ -254,6 +254,16 @@ export const Attendances: React.FC = () => {
     resetAttendanceForm();
     setIsEditing(false);
     setShowCreateModal(true);
+  };
+
+  const handleClockInOut = async () => {
+    try {
+      await attendanceApi.clockInOut();
+      showToast("Clock in/out recorded!", "success");
+      refetch();
+    } catch {
+      showToast("Clock action failed.", "error");
+    }
   };
 
   const openEditModal = (attendance: AttendanceRow) => {
@@ -718,12 +728,21 @@ export const Attendances: React.FC = () => {
           <h2 className="text-lg font-semibold text-gray-900">
             Manage Attendances
           </h2>
-          <button
-            onClick={openCreateModal}
-            className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center hover:bg-blue-700"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleClockInOut}
+              className="px-3 py-2 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+            >
+              <Clock className="w-4 h-4" />
+              Clock In/Out
+            </button>
+            <button
+              onClick={openCreateModal}
+              className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center hover:bg-blue-700"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3">

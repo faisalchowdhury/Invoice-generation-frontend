@@ -233,7 +233,11 @@ export const BalanceSheet: React.FC = () => {
   };
 
   const handleDownloadPDF = () => {
-    showToast("Downloading PDF...", "info");
+    if (!balanceSheet?.id) {
+      showToast("Balance sheet not saved yet.", "info");
+      return;
+    }
+    window.open(balanceSheetActions.printUrl(balanceSheet.id), "_blank");
   };
 
   const handleFinalize = async () => {

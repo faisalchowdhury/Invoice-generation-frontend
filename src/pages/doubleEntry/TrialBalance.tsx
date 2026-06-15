@@ -126,11 +126,14 @@ export const TrialBalance: React.FC = () => {
   const handleGenerateReport = () => { load(); };
 
   const handleDownloadPDF = () => {
-    showToast("Downloading PDF...", "info");
+    window.open(
+      doubleEntryReports.trialBalancePrint({ from_date: fromDate, to_date: toDate }),
+      "_blank",
+    );
   };
 
   const handlePrint = () => {
-    window.print();
+    handleDownloadPDF();
   };
 
   // ═══════════════════════════════════════════════════════════════════════════

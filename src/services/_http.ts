@@ -139,6 +139,17 @@ export async function deleteJson<T = any>(url: string): Promise<T> {
   return toObject<T>(res.data);
 }
 
+/** Build a query string from optional params (skips null/undefined/empty). */
+export function buildQuery(params?: Record<string, unknown>): string {
+  if (!params) return "";
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== "") sp.set(k, String(v));
+  }
+  const s = sp.toString();
+  return s ? `?${s}` : "";
+}
+
 export interface ResourcePaths {
   /** GET list URL, e.g. "/hrm/setup/branches" or "/performance/indicators/all" */
   list: string;

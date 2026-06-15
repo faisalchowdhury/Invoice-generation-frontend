@@ -491,6 +491,16 @@ export const TrainingList: React.FC = () => {
     setSelectedTask(null);
   };
 
+  const handleCompleteTask = async (task: { id: string }) => {
+    try {
+      await trainingTasksApi.complete(task.id);
+      showToast("Task marked complete!", "success");
+      if (selectedTraining) await loadTasks(selectedTraining.id);
+    } catch {
+      showToast("Could not complete task.", "error");
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Scheduled":
@@ -1217,6 +1227,15 @@ export const TrainingList: React.FC = () => {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
+                            {task.status !== "Completed" && (
+                              <button
+                                onClick={() => handleCompleteTask(task)}
+                                className="p-1.5 text-gray-400 hover:text-blue-600 rounded hover:bg-blue-50"
+                                title="Mark complete"
+                              >
+                                <CheckCircle className="w-4 h-4" />
+                              </button>
+                            )}
                             <button
                               onClick={() => openEditTaskModal(task)}
                               className="p-1.5 text-gray-400 hover:text-green-600 rounded hover:bg-green-50"
