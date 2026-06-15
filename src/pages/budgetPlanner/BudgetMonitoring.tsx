@@ -7,6 +7,11 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  budgetMonitoringHooks,
+  type BudgetMonitoringRow,
+} from "@/services/budgetPlanner";
 import {
   Search,
   Filter,
@@ -14,10 +19,8 @@ import {
   ChevronRight,
   ChevronDown,
   ArrowUpDown,
-  DollarSign,
   TrendingUp,
   TrendingDown,
-  PieChart,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -143,13 +146,41 @@ type SortField =
   | "variancePercent";
 type SortDir = "asc" | "desc";
 
+// ─── API ↔ display mapping (read-only; tolerant of snake/camel + seed) ─────────
+
+const refName = (v: any): string =>
+  v && typeof v === "object" ? v.budget_name ?? v.name ?? "" : typeof v === "string" ? v : "";
+
+function mapFromApi(m: any): BudgetMonitoring {
+  const allocated = Number(m.allocated ?? m.allocated_amount ?? 0);
+  const spent = Number(m.spent ?? m.spent_amount ?? 0);
+  const remaining = Number(m.remaining ?? m.remaining_amount ?? allocated - spent);
+  return {
+    id: String(m.id ?? m._id ?? ""),
+    budget: refName(m.budget ?? m.budget_id),
+    date: (m.date ?? m.period ?? m.as_of_date ?? m.createdAt ?? "").slice(0, 10),
+    allocated,
+    spent,
+    remaining,
+    variancePercent: Number(
+      m.variancePercent ?? m.utilization_percentage ?? m.variance_percentage ?? 0,
+    ),
+    createdAt: (m.createdAt ?? m.created_at ?? "").slice(0, 10),
+  };
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export const BudgetMonitoring: React.FC = () => {
   const navigate = useNavigate();
-  const [budgetMonitorings, setBudgetMonitorings] = useState<
-    BudgetMonitoring[]
-  >(sampleBudgetMonitoring);
+  const { items: rawMonitorings } = useResourceData(budgetMonitoringHooks, {
+    seed: sampleBudgetMonitoring as unknown as BudgetMonitoringRow[],
+    params: { page: 1, limit: 100 },
+  });
+  const budgetMonitorings = useMemo(
+    () => rawMonitorings.map(mapFromApi),
+    [rawMonitorings],
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);

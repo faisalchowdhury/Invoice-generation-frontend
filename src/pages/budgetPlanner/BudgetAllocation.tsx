@@ -4,9 +4,16 @@
  * Based on provided screenshots design
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  budgetAllocationHooks,
+  budgetHooks,
+  type BudgetAllocation as ApiBudgetAllocation,
+} from "@/services/budgetPlanner";
+import { fetchChartOfAccounts, type ChartAccount } from "@/services/doubleEntry";
 import {
   Search,
   Plus,
@@ -19,14 +26,14 @@ import {
   ArrowUpDown,
   X,
   DollarSign,
-  TrendingUp,
-  TrendingDown,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface BudgetAllocation {
   id: string;
+  budgetId: string;
+  accountId: string;
   budget: string;
   account: string;
   allocatedAmount: number;
@@ -35,55 +42,37 @@ interface BudgetAllocation {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (offline fallback seed, API shape) ────────────────────────────
 
-const sampleBudgetAllocations: BudgetAllocation[] = [
-  {
-    id: "1",
-    budget: "Marketing Budget",
-    account: "Cash",
-    allocatedAmount: 20000.0,
-    spentAmount: 5000.0,
-    remainingAmount: 15000.0,
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "2",
-    budget: "Marketing Budget",
-    account: "Petty Cash",
-    allocatedAmount: 15000.0,
-    spentAmount: 2500.0,
-    remainingAmount: 12500.0,
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "3",
-    budget: "Marketing Budget",
-    account: "Bank Account - Main",
-    allocatedAmount: 10000.0,
-    spentAmount: 0.0,
-    remainingAmount: 10000.0,
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "4",
-    budget: "Marketing Budget",
-    account: "Bank Account - Savings",
-    allocatedAmount: 8000.0,
-    spentAmount: 1200.0,
-    remainingAmount: 6800.0,
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "5",
-    budget: "Marketing Budget",
-    account: "Bank Account - Payroll",
-    allocatedAmount: 12000.0,
-    spentAmount: 3500.0,
-    remainingAmount: 8500.0,
-    createdAt: "2024-01-01",
-  },
+const sampleBudgetAllocations: ApiBudgetAllocation[] = [
+  { id: "1", budget_id: { _id: "b1", budget_name: "Marketing Budget" }, account_id: { _id: "a1", name: "Cash" }, allocated_amount: 20000, spent_amount: 5000, createdAt: "2024-01-01" },
+  { id: "2", budget_id: { _id: "b1", budget_name: "Marketing Budget" }, account_id: { _id: "a2", name: "Petty Cash" }, allocated_amount: 15000, spent_amount: 2500, createdAt: "2024-01-01" },
+  { id: "3", budget_id: { _id: "b1", budget_name: "Marketing Budget" }, account_id: { _id: "a3", name: "Bank Account - Main" }, allocated_amount: 10000, spent_amount: 0, createdAt: "2024-01-01" },
+  { id: "4", budget_id: { _id: "b1", budget_name: "Marketing Budget" }, account_id: { _id: "a4", name: "Bank Account - Savings" }, allocated_amount: 8000, spent_amount: 1200, createdAt: "2024-01-01" },
+  { id: "5", budget_id: { _id: "b1", budget_name: "Marketing Budget" }, account_id: { _id: "a5", name: "Bank Account - Payroll" }, allocated_amount: 12000, spent_amount: 3500, createdAt: "2024-01-01" },
 ];
+
+const refId = (v: any): string =>
+  v && typeof v === "object" ? String(v._id ?? v.id ?? "") : String(v ?? "");
+const refName = (v: any): string =>
+  v && typeof v === "object" ? v.budget_name ?? v.name ?? v.account_name ?? "" : "";
+
+function mapFromApi(a: any): BudgetAllocation {
+  const allocated = Number(a.allocated_amount ?? a.allocatedAmount ?? 0);
+  const spent = Number(a.spent_amount ?? a.spentAmount ?? 0);
+  const remaining = Number(a.remaining_amount ?? a.remainingAmount ?? allocated - spent);
+  return {
+    id: String(a.id ?? a._id ?? ""),
+    budgetId: refId(a.budget_id ?? a.budgetId),
+    accountId: refId(a.account_id ?? a.accountId),
+    budget: refName(a.budget_id ?? a.budgetId) || (typeof a.budget === "string" ? a.budget : ""),
+    account: refName(a.account_id ?? a.accountId) || (typeof a.account === "string" ? a.account : ""),
+    allocatedAmount: allocated,
+    spentAmount: spent,
+    remainingAmount: remaining,
+    createdAt: (a.createdAt ?? a.created_at ?? "").slice(0, 10),
+  };
+}
 
 const budgets = [
   "Marketing Budget",
@@ -124,9 +113,49 @@ type SortDir = "asc" | "desc";
 
 export const BudgetAllocations: React.FC = () => {
   const navigate = useNavigate();
-  const [budgetAllocations, setBudgetAllocations] = useState<
-    BudgetAllocation[]
-  >(sampleBudgetAllocations);
+  const {
+    items: rawAllocations,
+    create,
+    update,
+    remove,
+  } = useResourceData(budgetAllocationHooks, {
+    seed: sampleBudgetAllocations,
+    params: { page: 1, limit: 100 },
+  });
+  const budgetAllocations = useMemo(
+    () => rawAllocations.map(mapFromApi),
+    [rawAllocations],
+  );
+
+  // Budget + account options for the form selects (fall back to static lists).
+  const budgetQuery = budgetHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
+  const budgetOptions = useMemo(
+    () =>
+      (budgetQuery.data ?? []).map((b: any) => ({
+        id: String(b.id ?? b._id ?? ""),
+        name: b.budget_name ?? b.budgetName ?? "",
+      })),
+    [budgetQuery.data],
+  );
+  const [accountOptions, setAccountOptions] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    let active = true;
+    fetchChartOfAccounts()
+      .then((rows: ChartAccount[]) => {
+        if (active)
+          setAccountOptions(
+            rows.map((r) => ({
+              id: String(r.id ?? ""),
+              name: r.name ?? r.account_name ?? r.account_code ?? "",
+            })),
+          );
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -145,8 +174,8 @@ export const BudgetAllocations: React.FC = () => {
 
   // Form state
   const [allocationFormData, setAllocationFormData] = useState({
-    budget: "",
-    account: "",
+    budgetId: "",
+    accountId: "",
     allocatedAmount: 0,
   });
 
@@ -212,8 +241,8 @@ export const BudgetAllocations: React.FC = () => {
 
   const resetAllocationForm = () => {
     setAllocationFormData({
-      budget: "",
-      account: "",
+      budgetId: "",
+      accountId: "",
       allocatedAmount: 0,
     });
   };
@@ -227,8 +256,8 @@ export const BudgetAllocations: React.FC = () => {
   const openEditModal = (allocation: BudgetAllocation) => {
     setSelectedAllocation(allocation);
     setAllocationFormData({
-      budget: allocation.budget,
-      account: allocation.account,
+      budgetId: allocation.budgetId,
+      accountId: allocation.accountId,
       allocatedAmount: allocation.allocatedAmount,
     });
     setIsEditing(true);
@@ -240,12 +269,12 @@ export const BudgetAllocations: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSaveAllocation = () => {
-    if (!allocationFormData.budget) {
+  const handleSaveAllocation = async () => {
+    if (!allocationFormData.budgetId) {
       showToast("Please select a budget", "info");
       return;
     }
-    if (!allocationFormData.account) {
+    if (!allocationFormData.accountId) {
       showToast("Please select an account", "info");
       return;
     }
@@ -254,69 +283,51 @@ export const BudgetAllocations: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedAllocation) {
-      // Calculate new spent amount and remaining amount
-      const oldAllocated = selectedAllocation.allocatedAmount;
-      const newAllocated = allocationFormData.allocatedAmount;
-      const spentAmount = selectedAllocation.spentAmount;
-      const remainingAmount = newAllocated - spentAmount;
+    const payload = {
+      budget_id: allocationFormData.budgetId,
+      account_id: allocationFormData.accountId,
+      allocated_amount: allocationFormData.allocatedAmount,
+    } as Partial<ApiBudgetAllocation>;
 
-      setBudgetAllocations((prev) =>
-        prev.map((a) =>
-          a.id === selectedAllocation.id
-            ? {
-                ...a,
-                budget: allocationFormData.budget,
-                account: allocationFormData.account,
-                allocatedAmount: allocationFormData.allocatedAmount,
-                remainingAmount: remainingAmount,
-              }
-            : a,
-        ),
-      );
-      showToast("Budget allocation updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      // Check for duplicate (same budget and account)
-      if (
-        budgetAllocations.some(
-          (a) =>
-            a.budget === allocationFormData.budget &&
-            a.account === allocationFormData.account,
-        )
-      ) {
-        showToast(
-          "Allocation for this budget and account already exists",
-          "error",
-        );
-        return;
+    try {
+      if (isEditing && selectedAllocation) {
+        await update(selectedAllocation.id, payload);
+        showToast("Budget allocation updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        if (
+          budgetAllocations.some(
+            (a) =>
+              a.budgetId === allocationFormData.budgetId &&
+              a.accountId === allocationFormData.accountId,
+          )
+        ) {
+          showToast(
+            "Allocation for this budget and account already exists",
+            "error",
+          );
+          return;
+        }
+        await create(payload);
+        showToast("Budget allocation created successfully!", "success");
+        setShowCreateModal(false);
       }
-
-      const newAllocation: BudgetAllocation = {
-        id: Date.now().toString(),
-        budget: allocationFormData.budget,
-        account: allocationFormData.account,
-        allocatedAmount: allocationFormData.allocatedAmount,
-        spentAmount: 0,
-        remainingAmount: allocationFormData.allocatedAmount,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setBudgetAllocations((prev) => [newAllocation, ...prev]);
-      showToast("Budget allocation created successfully!", "success");
-      setShowCreateModal(false);
+      resetAllocationForm();
+    } catch {
+      showToast("Could not save allocation. Please try again.", "error");
     }
-    resetAllocationForm();
   };
 
-  const handleDeleteAllocation = () => {
-    if (selectedAllocation) {
-      setBudgetAllocations((prev) =>
-        prev.filter((a) => a.id !== selectedAllocation.id),
-      );
+  const handleDeleteAllocation = async () => {
+    if (!selectedAllocation) return;
+    try {
+      await remove(selectedAllocation.id);
       showToast("Budget allocation deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedAllocation(null);
+    } catch {
+      showToast("Could not delete allocation.", "error");
     }
+    setShowDeleteModal(false);
+    setSelectedAllocation(null);
   };
 
   // ─── Sort Header ────────────────────────────────────────────────────────────
@@ -380,21 +391,27 @@ export const BudgetAllocations: React.FC = () => {
                 Budget <span className="text-red-500">*</span>
               </label>
               <select
-                value={allocationFormData.budget}
+                value={allocationFormData.budgetId}
                 onChange={(e) =>
                   setAllocationFormData({
                     ...allocationFormData,
-                    budget: e.target.value,
+                    budgetId: e.target.value,
                   })
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
               >
                 <option value="">Select Budget</option>
-                {budgets.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
-                ))}
+                {budgetOptions.length > 0
+                  ? budgetOptions.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))
+                  : budgets.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
               </select>
             </div>
             <div>
@@ -402,21 +419,27 @@ export const BudgetAllocations: React.FC = () => {
                 Account <span className="text-red-500">*</span>
               </label>
               <select
-                value={allocationFormData.account}
+                value={allocationFormData.accountId}
                 onChange={(e) =>
                   setAllocationFormData({
                     ...allocationFormData,
-                    account: e.target.value,
+                    accountId: e.target.value,
                   })
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
               >
                 <option value="">Select Account</option>
-                {accounts.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))}
+                {accountOptions.length > 0
+                  ? accountOptions.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))
+                  : accounts.map((a) => (
+                      <option key={a} value={a}>
+                        {a}
+                      </option>
+                    ))}
               </select>
             </div>
             <div>

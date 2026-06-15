@@ -1,12 +1,19 @@
 /**
- * File: src/pages/budget/Budget.tsx
- * Complete Budget Management page with list view, create/edit modal, and delete confirmation
- * Based on provided screenshots design
+ * File: src/pages/budgetPlanner/Budget.tsx
+ * Complete Budget Management page – wired to REST API via useResourceData.
  */
 
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  budgetHooks,
+  budgetActions,
+  budgetPeriodHooks,
+  type Budget as ApiBudget,
+  type BudgetPeriod as ApiBudgetPeriod,
+} from "@/services/budgetPlanner";
 import {
   Search,
   Plus,
@@ -21,18 +28,16 @@ import {
   CheckCircle,
   XCircle,
   DollarSign,
-  Calendar,
-  Building2,
-  Tag,
 } from "lucide-react";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Display types ────────────────────────────────────────────────────────────
 
 interface Budget {
   id: string;
   budgetName: string;
   period: string;
-  type: "Operational" | "Capital";
+  periodId: string;
+  type: "Operational" | "Capital" | "Cash Flow";
   amount: number;
   status: "Draft" | "Active" | "Closed" | "Approved";
   approvedBy: string;
@@ -40,78 +45,56 @@ interface Budget {
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Seed data (API snake_case shape) ─────────────────────────────────────────
 
-const sampleBudgets: Budget[] = [
-  {
-    id: "1",
-    budgetName: "Marketing Budget",
-    period: "Q1 2024 Budget",
-    type: "Operational",
-    amount: 50000.0,
-    status: "Closed",
-    approvedBy: "Matthew Clark",
-    description: "Marketing expenses for Q1 2024",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "2",
-    budgetName: "IT Infrastructure",
-    period: "Q1 2024 Budget",
-    type: "Operational",
-    amount: 75000.0,
-    status: "Closed",
-    approvedBy: "Christopher Lee",
-    description: "IT infrastructure upgrades",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "3",
-    budgetName: "HR Operations",
-    period: "Q1 2024 Budget",
-    type: "Operational",
-    amount: 30000.0,
-    status: "Closed",
-    approvedBy: "ABC Corporation",
-    description: "HR operational expenses",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "4",
-    budgetName: "Office Supplies",
-    period: "Q1 2024 Budget",
-    type: "Operational",
-    amount: 15000.0,
-    status: "Closed",
-    approvedBy: "Advanced Materials",
-    description: "Office supplies and stationery",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "5",
-    budgetName: "Research & Development",
-    period: "Q1 2024 Budget",
-    type: "Capital",
-    amount: 100000.0,
-    status: "Closed",
-    approvedBy: "Emily Davis",
-    description: "R&D projects and initiatives",
-    createdAt: "2024-01-01",
-  },
+const sampleBudgets: ApiBudget[] = [
+  { id: "1", budget_name: "Marketing Budget", period_id: "1", budget_type: "operational", status: "closed", createdAt: "2024-01-01" },
+  { id: "2", budget_name: "IT Infrastructure", period_id: "1", budget_type: "operational", status: "closed", createdAt: "2024-01-01" },
+  { id: "3", budget_name: "HR Operations", period_id: "1", budget_type: "operational", status: "closed", createdAt: "2024-01-01" },
+  { id: "4", budget_name: "Office Supplies", period_id: "1", budget_type: "operational", status: "closed", createdAt: "2024-01-01" },
+  { id: "5", budget_name: "Research & Development", period_id: "1", budget_type: "capital", status: "closed", createdAt: "2024-01-01" },
 ];
 
-const periods = [
-  "Q1 2024 Budget",
-  "Q2 2024 Budget",
-  "Q3 2024 Budget",
-  "Q4 2024 Budget",
-  "Annual Budget 2024",
-  "Q1 2025 Budget",
-  "Q2 2025 Budget",
-];
+// ─── Mapping ──────────────────────────────────────────────────────────────────
 
-const budgetTypes = ["Operational", "Capital"];
-const statuses = ["Draft", "Active", "Approved", "Closed"];
+const titleCase = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+const budgetTypeLabel = (t: string): "Operational" | "Capital" | "Cash Flow" => {
+  if (t === "capital") return "Capital";
+  if (t === "cash_flow") return "Cash Flow";
+  return "Operational";
+};
+
+function mapFromApi(p: any): Budget {
+  const periodRef = p.period_id ?? p.periodId;
+  const periodName =
+    typeof periodRef === "object" && periodRef
+      ? (periodRef.period_name ?? periodRef.name ?? "")
+      : "";
+  const periodId =
+    typeof periodRef === "object" && periodRef
+      ? String(periodRef._id ?? periodRef.id ?? "")
+      : String(periodRef ?? "");
+
+  const rawType: string = p.budget_type ?? p.budgetType ?? "operational";
+  const typeLower = rawType.toLowerCase();
+
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    budgetName: p.budget_name ?? p.budgetName ?? "",
+    period: periodName,
+    periodId,
+    type: budgetTypeLabel(typeLower),
+    amount: Number(p.amount ?? 0),
+    status: titleCase(p.status ?? "draft") as Budget["status"],
+    approvedBy: (() => {
+      const a = p.approved_by ?? p.approvedBy;
+      return typeof a === "object" && a ? (a.name ?? "") : (a ?? "");
+    })(),
+    description: p.description ?? "",
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -120,20 +103,27 @@ const fmtCurrency = (val: number) => {
   return `${formatted}$`;
 };
 
-type SortField =
-  | "budgetName"
-  | "period"
-  | "type"
-  | "amount"
-  | "status"
-  | "approvedBy";
+type SortField = "budgetName" | "period" | "type" | "amount" | "status" | "approvedBy";
 type SortDir = "asc" | "desc";
 
-// ─── Main Component ──────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export const Budget: React.FC = () => {
   const navigate = useNavigate();
-  const [budgets, setBudgets] = useState<Budget[]>(sampleBudgets);
+
+  const { items: rawBudgets, create, update, remove, refetch } = useResourceData(
+    budgetHooks,
+    { seed: sampleBudgets, params: { page: 1, limit: 100 } },
+  );
+  const budgets = useMemo(() => rawBudgets.map(mapFromApi), [rawBudgets]);
+
+  // Period options via API
+  const periodList = budgetPeriodHooks.useList({ page: 1, limit: 100 });
+  const periodOptions: ApiBudgetPeriod[] = useMemo(
+    () => periodList.data ?? [],
+    [periodList.data],
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -153,11 +143,9 @@ export const Budget: React.FC = () => {
   // Form state
   const [budgetFormData, setBudgetFormData] = useState({
     budgetName: "",
-    period: "",
-    type: "Operational" as "Operational" | "Capital",
+    periodId: "",
+    type: "operational" as "operational" | "capital" | "cash_flow",
     amount: 0,
-    status: "Draft" as "Draft" | "Active" | "Approved" | "Closed",
-    approvedBy: "",
     description: "",
   });
 
@@ -225,11 +213,9 @@ export const Budget: React.FC = () => {
   const resetBudgetForm = () => {
     setBudgetFormData({
       budgetName: "",
-      period: "",
-      type: "Operational",
+      periodId: "",
+      type: "operational",
       amount: 0,
-      status: "Draft",
-      approvedBy: "",
       description: "",
     });
   };
@@ -244,11 +230,13 @@ export const Budget: React.FC = () => {
     setSelectedBudget(budget);
     setBudgetFormData({
       budgetName: budget.budgetName,
-      period: budget.period,
-      type: budget.type,
+      periodId: budget.periodId,
+      type: (() => {
+        if (budget.type === "Capital") return "capital";
+        if (budget.type === "Cash Flow") return "cash_flow";
+        return "operational";
+      })(),
       amount: budget.amount,
-      status: budget.status,
-      approvedBy: budget.approvedBy,
       description: budget.description,
     });
     setIsEditing(true);
@@ -260,123 +248,102 @@ export const Budget: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSaveBudget = () => {
+  const handleSaveBudget = async () => {
     if (!budgetFormData.budgetName) {
       showToast("Please enter budget name", "info");
       return;
     }
-    if (!budgetFormData.period) {
+    if (!budgetFormData.periodId) {
       showToast("Please select a period", "info");
       return;
     }
-    if (budgetFormData.amount <= 0) {
-      showToast("Please enter a valid amount", "info");
-      return;
-    }
 
-    if (isEditing && selectedBudget) {
-      setBudgets((prev) =>
-        prev.map((b) =>
-          b.id === selectedBudget.id
-            ? {
-                ...b,
-                budgetName: budgetFormData.budgetName,
-                period: budgetFormData.period,
-                type: budgetFormData.type,
-                amount: budgetFormData.amount,
-                status: budgetFormData.status,
-                approvedBy: budgetFormData.approvedBy || "System",
-                description: budgetFormData.description,
-              }
-            : b,
-        ),
-      );
-      showToast("Budget updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newBudget: Budget = {
-        id: Date.now().toString(),
-        budgetName: budgetFormData.budgetName,
-        period: budgetFormData.period,
-        type: budgetFormData.type,
-        amount: budgetFormData.amount,
-        status: budgetFormData.status,
-        approvedBy: budgetFormData.approvedBy || "System",
-        description: budgetFormData.description,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setBudgets((prev) => [newBudget, ...prev]);
-      showToast("Budget created successfully!", "success");
-      setShowCreateModal(false);
+    const toApi: Partial<ApiBudget> = {
+      budget_name: budgetFormData.budgetName,
+      period_id: budgetFormData.periodId,
+      budget_type: budgetFormData.type,
+    };
+
+    try {
+      if (isEditing && selectedBudget) {
+        await update(selectedBudget.id, { budget_name: budgetFormData.budgetName, budget_type: budgetFormData.type } as Partial<ApiBudget>);
+        showToast("Budget updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        await create(toApi);
+        showToast("Budget created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetBudgetForm();
+    } catch {
+      showToast("Could not save budget. Please try again.", "error");
     }
-    resetBudgetForm();
   };
 
-  const handleDeleteBudget = () => {
-    if (selectedBudget) {
-      setBudgets((prev) => prev.filter((b) => b.id !== selectedBudget.id));
+  const handleDeleteBudget = async () => {
+    if (!selectedBudget) return;
+    try {
+      await remove(selectedBudget.id);
       showToast("Budget deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedBudget(null);
+    } catch {
+      showToast("Could not delete budget.", "error");
+    }
+    setShowDeleteModal(false);
+    setSelectedBudget(null);
+  };
+
+  const runLifecycle = async (
+    budget: Budget,
+    action: "approve" | "active" | "close",
+  ) => {
+    try {
+      await budgetActions[action](budget.id);
+      refetch();
+      showToast(`Budget ${action === "active" ? "activated" : action + "d"}!`, "success");
+    } catch {
+      showToast("Action failed. Please try again.", "error");
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "Active":
-        return "bg-green-100 text-green-700";
-      case "Approved":
-        return "bg-blue-100 text-blue-700";
-      case "Closed":
-        return "bg-gray-100 text-gray-700";
-      case "Draft":
-        return "bg-yellow-100 text-yellow-700";
-      default:
-        return "bg-gray-100 text-gray-700";
+      case "Active": return "bg-green-100 text-green-700";
+      case "Approved": return "bg-blue-100 text-blue-700";
+      case "Closed": return "bg-gray-100 text-gray-700";
+      case "Draft": return "bg-yellow-100 text-yellow-700";
+      default: return "bg-gray-100 text-gray-700";
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "Active":
-        return <CheckCircle className="w-3 h-3" />;
-      case "Approved":
-        return <CheckCircle className="w-3 h-3" />;
-      case "Closed":
-        return <XCircle className="w-3 h-3" />;
-      case "Draft":
-        return <AlertCircle className="w-3 h-3" />;
-      default:
-        return null;
+      case "Active": return <CheckCircle className="w-3 h-3" />;
+      case "Approved": return <CheckCircle className="w-3 h-3" />;
+      case "Closed": return <XCircle className="w-3 h-3" />;
+      case "Draft": return <AlertCircle className="w-3 h-3" />;
+      default: return null;
     }
   };
 
   const getTypeColor = (type: string) => {
     switch (type) {
-      case "Operational":
-        return "bg-purple-100 text-purple-700";
-      case "Capital":
-        return "bg-orange-100 text-orange-700";
-      default:
-        return "bg-gray-100 text-gray-700";
+      case "Operational": return "bg-purple-100 text-purple-700";
+      case "Capital": return "bg-orange-100 text-orange-700";
+      case "Cash Flow": return "bg-teal-100 text-teal-700";
+      default: return "bg-gray-100 text-gray-700";
     }
   };
 
   // ─── Sort Header ────────────────────────────────────────────────────────────
 
-  const SortHeader: React.FC<{ field: SortField; label: string }> = ({
-    field,
-    label,
-  }) => (
+  const SortHeader: React.FC<{ field: SortField; label: string }> = ({ field, label }) => (
     <th
       className="px-4 py-3 text-left text-xs font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-50 whitespace-nowrap"
       onClick={() => handleSort(field)}
     >
       <div className="flex items-center gap-1">
         {label}
-        <ArrowUpDown
-          className={`w-3 h-3 ${sortField === field ? "text-gray-900" : "text-gray-400"}`}
-        />
+        <ArrowUpDown className={`w-3 h-3 ${sortField === field ? "text-gray-900" : "text-gray-400"}`} />
       </div>
     </th>
   );
@@ -401,11 +368,7 @@ export const Budget: React.FC = () => {
             </p>
           </div>
           <button
-            onClick={() => {
-              setShowCreateModal(false);
-              setShowEditModal(false);
-              resetBudgetForm();
-            }}
+            onClick={() => { setShowCreateModal(false); setShowEditModal(false); resetBudgetForm(); }}
             className="p-2 hover:bg-gray-100 rounded-lg"
           >
             <X className="w-5 h-5 text-gray-500" />
@@ -421,12 +384,7 @@ export const Budget: React.FC = () => {
               <input
                 type="text"
                 value={budgetFormData.budgetName}
-                onChange={(e) =>
-                  setBudgetFormData({
-                    ...budgetFormData,
-                    budgetName: e.target.value,
-                  })
-                }
+                onChange={(e) => setBudgetFormData({ ...budgetFormData, budgetName: e.target.value })}
                 placeholder="Enter Budget Name"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               />
@@ -436,48 +394,47 @@ export const Budget: React.FC = () => {
                 Period <span className="text-red-500">*</span>
               </label>
               <select
-                value={budgetFormData.period}
-                onChange={(e) =>
-                  setBudgetFormData({
-                    ...budgetFormData,
-                    period: e.target.value,
-                  })
-                }
+                value={budgetFormData.periodId}
+                onChange={(e) => setBudgetFormData({ ...budgetFormData, periodId: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
               >
                 <option value="">Select Period</option>
-                {periods.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
+                {periodOptions.length > 0
+                  ? periodOptions.map((p) => {
+                      const pid = String(p.id ?? "");
+                      return (
+                        <option key={pid} value={pid}>
+                          {p.period_name}
+                        </option>
+                      );
+                    })
+                  : [
+                      "Q1 2024 Budget",
+                      "Q2 2024 Budget",
+                      "Q3 2024 Budget",
+                      "Q4 2024 Budget",
+                      "Annual Budget 2024",
+                    ].map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Type
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
               <select
                 value={budgetFormData.type}
-                onChange={(e) =>
-                  setBudgetFormData({
-                    ...budgetFormData,
-                    type: e.target.value as any,
-                  })
-                }
+                onChange={(e) => setBudgetFormData({ ...budgetFormData, type: e.target.value as any })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
               >
-                {budgetTypes.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
+                <option value="operational">Operational</option>
+                <option value="capital">Capital</option>
+                <option value="cash_flow">Cash Flow</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Amount <span className="text-red-500">*</span>
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -485,66 +442,16 @@ export const Budget: React.FC = () => {
                   min={0}
                   step={0.01}
                   value={budgetFormData.amount || ""}
-                  onChange={(e) =>
-                    setBudgetFormData({
-                      ...budgetFormData,
-                      amount: parseFloat(e.target.value) || 0,
-                    })
-                  }
+                  onChange={(e) => setBudgetFormData({ ...budgetFormData, amount: parseFloat(e.target.value) || 0 })}
                   className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
-              </label>
-              <select
-                value={budgetFormData.status}
-                onChange={(e) =>
-                  setBudgetFormData({
-                    ...budgetFormData,
-                    status: e.target.value as any,
-                  })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-              >
-                {statuses.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Approved By
-              </label>
-              <input
-                type="text"
-                value={budgetFormData.approvedBy}
-                onChange={(e) =>
-                  setBudgetFormData({
-                    ...budgetFormData,
-                    approvedBy: e.target.value,
-                  })
-                }
-                placeholder="Enter approver name"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Description
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
               <textarea
                 value={budgetFormData.description}
-                onChange={(e) =>
-                  setBudgetFormData({
-                    ...budgetFormData,
-                    description: e.target.value,
-                  })
-                }
+                onChange={(e) => setBudgetFormData({ ...budgetFormData, description: e.target.value })}
                 rows={3}
                 placeholder="Enter description"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-y"
@@ -555,11 +462,7 @@ export const Budget: React.FC = () => {
 
         <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex justify-end gap-3">
           <button
-            onClick={() => {
-              setShowCreateModal(false);
-              setShowEditModal(false);
-              resetBudgetForm();
-            }}
+            onClick={() => { setShowCreateModal(false); setShowEditModal(false); resetBudgetForm(); }}
             className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
           >
             Cancel
@@ -585,9 +488,7 @@ export const Budget: React.FC = () => {
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
             <Trash2 className="w-8 h-8 text-red-600" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">
-            Delete Budget
-          </h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Budget</h3>
           <p className="text-gray-500 mb-6">
             Are you sure you want to delete{" "}
             <span className="font-semibold">{selectedBudget?.budgetName}</span>?
@@ -621,19 +522,9 @@ export const Budget: React.FC = () => {
       {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-2">
         <div className="flex items-center gap-2 text-sm text-gray-500">
-          <button
-            onClick={() => navigate("/")}
-            className="hover:text-gray-700"
-          >
-            Dashboard
-          </button>
+          <button onClick={() => navigate("/")} className="hover:text-gray-700">Dashboard</button>
           <span>›</span>
-          <button
-            onClick={() => navigate("/budget-planner")}
-            className="hover:text-gray-700"
-          >
-            Budget Planner
-          </button>
+          <button onClick={() => navigate("/budget-planner")} className="hover:text-gray-700">Budget Planner</button>
           <span>›</span>
           <span className="text-gray-900 font-medium">Budget</span>
         </div>
@@ -663,10 +554,7 @@ export const Budget: React.FC = () => {
                 type="text"
                 placeholder="Search Budgets..."
                 value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setCurrentPage(1);
-                }}
+                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                 className="w-full sm:w-80 pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
               />
             </div>
@@ -681,10 +569,7 @@ export const Budget: React.FC = () => {
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
             <select
               value={perPage}
-              onChange={(e) => {
-                setPerPage(Number(e.target.value));
-                setCurrentPage(1);
-              }}
+              onChange={(e) => { setPerPage(Number(e.target.value)); setCurrentPage(1); }}
               className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white"
             >
               <option value={5}>5 per page</option>
@@ -705,36 +590,24 @@ export const Budget: React.FC = () => {
               {showFilters && (
                 <div className="absolute right-0 top-10 w-56 bg-white rounded-md shadow-lg border border-gray-200 py-2 z-50">
                   <div className="px-3 pb-2 mb-1 border-b border-gray-100">
-                    <span className="text-xs font-medium text-gray-500">
-                      Status
-                    </span>
+                    <span className="text-xs font-medium text-gray-500">Status</span>
                   </div>
-                  {["All", "Draft", "Active", "Approved", "Closed"].map(
-                    (st) => (
-                      <button
-                        key={st}
-                        onClick={() => {
-                          setStatusFilter(st);
-                          setCurrentPage(1);
-                        }}
-                        className={`w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 ${statusFilter === st ? "text-blue-600 font-medium bg-blue-50" : "text-gray-700"}`}
-                      >
-                        {st}
-                      </button>
-                    ),
-                  )}
+                  {["All", "Draft", "Active", "Approved", "Closed"].map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => { setStatusFilter(st); setCurrentPage(1); }}
+                      className={`w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 ${statusFilter === st ? "text-blue-600 font-medium bg-blue-50" : "text-gray-700"}`}
+                    >
+                      {st}
+                    </button>
+                  ))}
                   <div className="px-3 pb-2 mt-2 mb-1 border-b border-gray-100">
-                    <span className="text-xs font-medium text-gray-500">
-                      Type
-                    </span>
+                    <span className="text-xs font-medium text-gray-500">Type</span>
                   </div>
-                  {["All", "Operational", "Capital"].map((tp) => (
+                  {["All", "Operational", "Capital", "Cash Flow"].map((tp) => (
                     <button
                       key={tp}
-                      onClick={() => {
-                        setTypeFilter(tp);
-                        setCurrentPage(1);
-                      }}
+                      onClick={() => { setTypeFilter(tp); setCurrentPage(1); }}
                       className={`w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 ${typeFilter === tp ? "text-blue-600 font-medium bg-blue-50" : "text-gray-700"}`}
                     >
                       {tp}
@@ -742,12 +615,7 @@ export const Budget: React.FC = () => {
                   ))}
                   <div className="px-3 pt-2">
                     <button
-                      onClick={() => {
-                        setStatusFilter("All");
-                        setTypeFilter("All");
-                        setCurrentPage(1);
-                        setShowFilters(false);
-                      }}
+                      onClick={() => { setStatusFilter("All"); setTypeFilter("All"); setCurrentPage(1); setShowFilters(false); }}
                       className="w-full px-3 py-1.5 text-center text-sm text-blue-600 hover:bg-blue-50 rounded"
                     >
                       Reset Filters
@@ -772,41 +640,56 @@ export const Budget: React.FC = () => {
                 <SortHeader field="amount" label="Amount" />
                 <SortHeader field="status" label="Status" />
                 <SortHeader field="approvedBy" label="Approved By" />
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">
-                  Actions
-                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
               {paginatedBudgets.map((budget) => (
                 <tr key={budget.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">
-                    {budget.budgetName}
-                  </td>
+                  <td className="px-4 py-3 font-medium text-gray-900">{budget.budgetName}</td>
                   <td className="px-4 py-3 text-gray-600">{budget.period}</td>
                   <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getTypeColor(budget.type)}`}
-                    >
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getTypeColor(budget.type)}`}>
                       {budget.type}
                     </span>
                   </td>
-                  <td className="px-4 py-3 font-medium text-gray-900">
-                    {fmtCurrency(budget.amount)}
-                  </td>
+                  <td className="px-4 py-3 font-medium text-gray-900">{fmtCurrency(budget.amount)}</td>
                   <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(budget.status)}`}
-                    >
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(budget.status)}`}>
                       {getStatusIcon(budget.status)}
                       {budget.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {budget.approvedBy}
-                  </td>
+                  <td className="px-4 py-3 text-gray-600">{budget.approvedBy}</td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
+                      {budget.status === "Draft" && (
+                        <button
+                          onClick={() => runLifecycle(budget, "approve")}
+                          className="px-2 py-1 text-xs text-blue-600 rounded hover:bg-blue-50"
+                          title="Approve"
+                        >
+                          Approve
+                        </button>
+                      )}
+                      {budget.status === "Approved" && (
+                        <button
+                          onClick={() => runLifecycle(budget, "active")}
+                          className="px-2 py-1 text-xs text-green-600 rounded hover:bg-green-50"
+                          title="Activate"
+                        >
+                          Activate
+                        </button>
+                      )}
+                      {budget.status === "Active" && (
+                        <button
+                          onClick={() => runLifecycle(budget, "close")}
+                          className="px-2 py-1 text-xs text-red-600 rounded hover:bg-red-50"
+                          title="Close"
+                        >
+                          Close
+                        </button>
+                      )}
                       <button
                         onClick={() => openEditModal(budget)}
                         className="p-1.5 text-gray-400 hover:text-green-600 rounded hover:bg-green-50"
@@ -827,10 +710,7 @@ export const Budget: React.FC = () => {
               ))}
               {paginatedBudgets.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={7}
-                    className="px-4 py-12 text-center text-gray-500"
-                  >
+                  <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
                     No budgets found.
                   </td>
                 </tr>
@@ -902,19 +782,10 @@ export const Budget: React.FC = () => {
   );
 };
 
-// Add missing AlertCircle component
+// Inline AlertCircle (avoids extra import)
 const AlertCircle = ({ className }: { className?: string }) => (
-  <svg
-    className={className}
-    fill="none"
-    stroke="currentColor"
-    viewBox="0 0 24 24"
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-    />
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>
 );

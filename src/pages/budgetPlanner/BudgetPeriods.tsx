@@ -7,6 +7,12 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../utils/toast";
+import { useResourceData } from "@/hooks/useResourceData";
+import {
+  budgetPeriodHooks,
+  budgetPeriodActions,
+  type BudgetPeriod as ApiBudgetPeriod,
+} from "@/services/budgetPlanner";
 import {
   Search,
   Plus,
@@ -21,8 +27,6 @@ import {
   CheckCircle,
   XCircle,
   Calendar,
-  Building2,
-  DollarSign,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -33,65 +37,39 @@ interface BudgetPeriod {
   financialYear: string;
   startDate: string;
   endDate: string;
-  status: "Active" | "Inactive" | "Closed";
+  status: string;
   approvedBy: string;
   createdAt: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+// ─── Sample Data (offline fallback seed, API shape) ────────────────────────────
 
-const sampleBudgetPeriods: BudgetPeriod[] = [
-  {
-    id: "1",
-    periodName: "Q1 2024 Budget",
-    financialYear: "2024",
-    startDate: "2024-01-01",
-    endDate: "2024-03-31",
-    status: "Active",
-    approvedBy: "Express Suppliers",
-    createdAt: "2024-01-01",
-  },
-  {
-    id: "2",
-    periodName: "Q2 2024 Budget",
-    financialYear: "2024",
-    startDate: "2024-04-01",
-    endDate: "2024-06-30",
-    status: "Active",
-    approvedBy: "ABC Corporation",
-    createdAt: "2024-04-01",
-  },
-  {
-    id: "3",
-    periodName: "Q3 2024 Budget",
-    financialYear: "2024",
-    startDate: "2024-07-01",
-    endDate: "2024-09-30",
-    status: "Active",
-    approvedBy: "Robert Taylor",
-    createdAt: "2024-07-01",
-  },
-  {
-    id: "4",
-    periodName: "Q4 2024 Budget",
-    financialYear: "2024",
-    startDate: "2024-10-01",
-    endDate: "2024-12-31",
-    status: "Active",
-    approvedBy: "ABC Corporation",
-    createdAt: "2024-10-01",
-  },
-  {
-    id: "5",
-    periodName: "Annual Budget 2024",
-    financialYear: "2024",
-    startDate: "2024-01-01",
-    endDate: "2024-12-31",
-    status: "Active",
-    approvedBy: "Anthony Walker",
-    createdAt: "2024-01-01",
-  },
+const sampleBudgetPeriods: ApiBudgetPeriod[] = [
+  { id: "1", period_name: "Q1 2024 Budget", financial_year: "2024", start_date: "2024-01-01", end_date: "2024-03-31", status: "active", approved_by: "Express Suppliers", createdAt: "2024-01-01" },
+  { id: "2", period_name: "Q2 2024 Budget", financial_year: "2024", start_date: "2024-04-01", end_date: "2024-06-30", status: "approved", approved_by: "ABC Corporation", createdAt: "2024-04-01" },
+  { id: "3", period_name: "Q3 2024 Budget", financial_year: "2024", start_date: "2024-07-01", end_date: "2024-09-30", status: "draft", approved_by: "Robert Taylor", createdAt: "2024-07-01" },
+  { id: "4", period_name: "Q4 2024 Budget", financial_year: "2024", start_date: "2024-10-01", end_date: "2024-12-31", status: "closed", approved_by: "ABC Corporation", createdAt: "2024-10-01" },
+  { id: "5", period_name: "Annual Budget 2024", financial_year: "2024", start_date: "2024-01-01", end_date: "2024-12-31", status: "active", approved_by: "Anthony Walker", createdAt: "2024-01-01" },
 ];
+
+// ─── API ↔ display mapping ─────────────────────────────────────────────────────
+
+const titleCase = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+/** Tolerant of both snake_case (server) and camelCase (seed) records. */
+function mapFromApi(p: any): BudgetPeriod {
+  const approver = p.approved_by ?? p.approvedBy;
+  return {
+    id: String(p.id ?? p._id ?? ""),
+    periodName: p.period_name ?? p.periodName ?? "",
+    financialYear: String(p.financial_year ?? p.financialYear ?? ""),
+    startDate: (p.start_date ?? p.startDate ?? "").slice(0, 10),
+    endDate: (p.end_date ?? p.endDate ?? "").slice(0, 10),
+    status: titleCase(p.status ?? "draft"),
+    approvedBy: typeof approver === "object" && approver ? approver.name ?? "" : approver ?? "",
+    createdAt: (p.createdAt ?? p.created_at ?? "").slice(0, 10),
+  };
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -108,8 +86,14 @@ type SortDir = "asc" | "desc";
 
 export const BudgetPeriods: React.FC = () => {
   const navigate = useNavigate();
-  const [budgetPeriods, setBudgetPeriods] =
-    useState<BudgetPeriod[]>(sampleBudgetPeriods);
+  const {
+    items: rawPeriods,
+    create,
+    update,
+    remove,
+    refetch,
+  } = useResourceData(budgetPeriodHooks, { seed: sampleBudgetPeriods, params: { page: 1, limit: 100 } });
+  const budgetPeriods = useMemo(() => rawPeriods.map(mapFromApi), [rawPeriods]);
   const [searchQuery, setSearchQuery] = useState("");
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -132,7 +116,7 @@ export const BudgetPeriods: React.FC = () => {
     financialYear: new Date().getFullYear().toString(),
     startDate: "",
     endDate: "",
-    status: "Active" as "Active" | "Inactive" | "Closed",
+    status: "draft",
     approvedBy: "",
   });
 
@@ -194,7 +178,7 @@ export const BudgetPeriods: React.FC = () => {
       financialYear: new Date().getFullYear().toString(),
       startDate: "",
       endDate: "",
-      status: "Active",
+      status: "draft",
       approvedBy: "",
     });
   };
@@ -212,7 +196,7 @@ export const BudgetPeriods: React.FC = () => {
       financialYear: budgetPeriod.financialYear,
       startDate: budgetPeriod.startDate,
       endDate: budgetPeriod.endDate,
-      status: budgetPeriod.status,
+      status: budgetPeriod.status.toLowerCase(),
       approvedBy: budgetPeriod.approvedBy,
     });
     setIsEditing(true);
@@ -224,7 +208,7 @@ export const BudgetPeriods: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSaveBudgetPeriod = () => {
+  const handleSaveBudgetPeriod = async () => {
     if (!budgetPeriodFormData.periodName) {
       showToast("Please enter period name", "info");
       return;
@@ -246,50 +230,55 @@ export const BudgetPeriods: React.FC = () => {
       return;
     }
 
-    if (isEditing && selectedBudgetPeriod) {
-      setBudgetPeriods((prev) =>
-        prev.map((b) =>
-          b.id === selectedBudgetPeriod.id
-            ? {
-                ...b,
-                periodName: budgetPeriodFormData.periodName,
-                financialYear: budgetPeriodFormData.financialYear,
-                startDate: budgetPeriodFormData.startDate,
-                endDate: budgetPeriodFormData.endDate,
-                status: budgetPeriodFormData.status,
-                approvedBy: budgetPeriodFormData.approvedBy,
-              }
-            : b,
-        ),
-      );
-      showToast("Budget period updated successfully!", "success");
-      setShowEditModal(false);
-    } else {
-      const newBudgetPeriod: BudgetPeriod = {
-        id: Date.now().toString(),
-        periodName: budgetPeriodFormData.periodName,
-        financialYear: budgetPeriodFormData.financialYear,
-        startDate: budgetPeriodFormData.startDate,
-        endDate: budgetPeriodFormData.endDate,
-        status: budgetPeriodFormData.status,
-        approvedBy: budgetPeriodFormData.approvedBy || "System",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setBudgetPeriods((prev) => [newBudgetPeriod, ...prev]);
-      showToast("Budget period created successfully!", "success");
-      setShowCreateModal(false);
+    const payload = {
+      period_name: budgetPeriodFormData.periodName,
+      financial_year: budgetPeriodFormData.financialYear,
+      start_date: budgetPeriodFormData.startDate,
+      end_date: budgetPeriodFormData.endDate,
+      status: budgetPeriodFormData.status,
+    };
+
+    try {
+      if (isEditing && selectedBudgetPeriod) {
+        await update(selectedBudgetPeriod.id, payload as Partial<ApiBudgetPeriod>);
+        showToast("Budget period updated successfully!", "success");
+        setShowEditModal(false);
+      } else {
+        // create endpoint ignores status (new periods start as draft)
+        const { status: _omit, ...createPayload } = payload;
+        void _omit;
+        await create(createPayload as Partial<ApiBudgetPeriod>);
+        showToast("Budget period created successfully!", "success");
+        setShowCreateModal(false);
+      }
+      resetBudgetPeriodForm();
+    } catch {
+      showToast("Could not save budget period. Please try again.", "error");
     }
-    resetBudgetPeriodForm();
   };
 
-  const handleDeleteBudgetPeriod = () => {
-    if (selectedBudgetPeriod) {
-      setBudgetPeriods((prev) =>
-        prev.filter((b) => b.id !== selectedBudgetPeriod.id),
-      );
+  const handleDeleteBudgetPeriod = async () => {
+    if (!selectedBudgetPeriod) return;
+    try {
+      await remove(selectedBudgetPeriod.id);
       showToast("Budget period deleted successfully!", "success");
-      setShowDeleteModal(false);
-      setSelectedBudgetPeriod(null);
+    } catch {
+      showToast("Could not delete budget period.", "error");
+    }
+    setShowDeleteModal(false);
+    setSelectedBudgetPeriod(null);
+  };
+
+  const runLifecycle = async (
+    period: BudgetPeriod,
+    action: "approve" | "active" | "close",
+  ) => {
+    try {
+      await budgetPeriodActions[action](period.id);
+      refetch();
+      showToast(`Budget period ${action === "active" ? "activated" : action + "d"}!`, "success");
+    } catch {
+      showToast("Action failed. Please try again.", "error");
     }
   };
 
@@ -297,7 +286,9 @@ export const BudgetPeriods: React.FC = () => {
     switch (status) {
       case "Active":
         return "bg-green-100 text-green-700";
-      case "Inactive":
+      case "Approved":
+        return "bg-blue-100 text-blue-700";
+      case "Draft":
         return "bg-yellow-100 text-yellow-700";
       case "Closed":
         return "bg-red-100 text-red-700";
@@ -309,8 +300,9 @@ export const BudgetPeriods: React.FC = () => {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "Active":
+      case "Approved":
         return <CheckCircle className="w-3 h-3" />;
-      case "Inactive":
+      case "Draft":
         return <AlertCircle className="w-3 h-3" />;
       case "Closed":
         return <XCircle className="w-3 h-3" />;
@@ -459,9 +451,10 @@ export const BudgetPeriods: React.FC = () => {
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
               >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="Closed">Closed</option>
+                <option value="draft">Draft</option>
+                <option value="approved">Approved</option>
+                <option value="active">Active</option>
+                <option value="closed">Closed</option>
               </select>
             </div>
             <div>
@@ -644,7 +637,7 @@ export const BudgetPeriods: React.FC = () => {
                       Status
                     </span>
                   </div>
-                  {["All", "Active", "Inactive", "Closed"].map((st) => (
+                  {["All", "Draft", "Approved", "Active", "Closed"].map((st) => (
                     <button
                       key={st}
                       onClick={() => {
@@ -708,7 +701,34 @@ export const BudgetPeriods: React.FC = () => {
                     {budgetPeriod.approvedBy}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
+                      {budgetPeriod.status === "Draft" && (
+                        <button
+                          onClick={() => runLifecycle(budgetPeriod, "approve")}
+                          className="px-2 py-1 text-xs text-blue-600 rounded hover:bg-blue-50"
+                          title="Approve"
+                        >
+                          Approve
+                        </button>
+                      )}
+                      {budgetPeriod.status === "Approved" && (
+                        <button
+                          onClick={() => runLifecycle(budgetPeriod, "active")}
+                          className="px-2 py-1 text-xs text-green-600 rounded hover:bg-green-50"
+                          title="Activate"
+                        >
+                          Activate
+                        </button>
+                      )}
+                      {budgetPeriod.status === "Active" && (
+                        <button
+                          onClick={() => runLifecycle(budgetPeriod, "close")}
+                          className="px-2 py-1 text-xs text-red-600 rounded hover:bg-red-50"
+                          title="Close"
+                        >
+                          Close
+                        </button>
+                      )}
                       <button
                         onClick={() => openEditModal(budgetPeriod)}
                         className="p-1.5 text-gray-400 hover:text-green-600 rounded hover:bg-green-50"
