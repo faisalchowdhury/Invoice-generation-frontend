@@ -29,13 +29,16 @@ import {
   Download,
   Plus,
   X,
-  CheckCircle,
   Clock,
   AlertCircle,
   Send,
   Globe,
   Save,
   Loader2,
+  RefreshCw,
+  Ban,
+  CreditCard,
+  DollarSign,
 } from "lucide-react";
 import { api } from "../lib/api/client";
 import { ApiError } from "../lib/api/ApiError";
@@ -182,7 +185,16 @@ const languages = [
   { code: "fr", name: "French", flag: "🇫🇷" },
 ];
 
-const STATUS_OPTIONS = ["Draft", "Sent", "Accepted", "Partial", "Rejected"];
+const STATUS_OPTIONS = [
+  "Draft",
+  "Partial",
+  "Paid",
+  "Overdue",
+  "Recurring",
+  "Void",
+  "CreditNotesApplied",
+  "Open",
+];
 
 export const SalesProposals: React.FC = () => {
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -212,6 +224,10 @@ export const SalesProposals: React.FC = () => {
   const [showDelete, setShowDelete] = useState(false);
   const [toDelete, setToDelete] = useState<Proposal | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Inline status update (from a list row)
+  const [statusMenuFor, setStatusMenuFor] = useState<string | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
 
   // Option sources
   const [customers, setCustomers] = useState<ApiCustomer[]>([]);
@@ -255,12 +271,20 @@ export const SalesProposals: React.FC = () => {
   }, [products]);
 
   // ─── Data loading ──────────────────────────────────────────────────────────
-  const loadProposals = useCallback(async () => {
+  // GET /proposal/all?page=&limit=&searchTerm=&status=
+  // `searchTerm` → free-text search (customer name, email, etc.).
+  // `status`     → exact status enum value (omitted for "All").
+  const loadProposals = useCallback(async (search = "", status = "") => {
     setLoading(true);
     setLoadError(null);
     try {
       const data = await api.get<ApiProposal[]>("/proposal/all", {
-        params: { page: 1, limit: 1000 },
+        params: {
+          page: 1,
+          limit: 1000,
+          ...(search.trim() ? { searchTerm: search.trim() } : {}),
+          ...(status ? { status } : {}),
+        },
       });
       setProposals(Array.isArray(data) ? data.map(mapApiProposal) : []);
     } catch (err) {
@@ -296,10 +320,22 @@ export const SalesProposals: React.FC = () => {
     }
   }, []);
 
+  // Load the option sources (customers/warehouses/products) once.
   useEffect(() => {
-    loadProposals();
     loadOptions();
-  }, [loadProposals, loadOptions]);
+  }, [loadOptions]);
+
+  // The status value sent to the backend `status` param ("" means no filter).
+  const activeStatus = statusFilter !== "All" ? statusFilter : "";
+
+  // Debounce and refetch from the server whenever the search box or the status
+  // filter changes. Fires on mount to load the initial list.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      loadProposals(searchTerm, activeStatus);
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [searchTerm, activeStatus, loadProposals]);
 
   // ─── Totals ────────────────────────────────────────────────────────────────
   const calculateTotals = () => {
@@ -479,7 +515,7 @@ export const SalesProposals: React.FC = () => {
       }
       setShowModal(false);
       resetForm();
-      await loadProposals();
+      await loadProposals(searchTerm, activeStatus);
     } catch (err) {
       showToast(errMessage(err, "Couldn't save proposal."), "error");
     } finally {
@@ -496,7 +532,7 @@ export const SalesProposals: React.FC = () => {
       showToast("Proposal deleted successfully!", "success");
       setShowDelete(false);
       setToDelete(null);
-      await loadProposals();
+      await loadProposals(searchTerm, activeStatus);
     } catch (err) {
       showToast(errMessage(err, "Couldn't delete proposal."), "error");
     } finally {
@@ -504,15 +540,27 @@ export const SalesProposals: React.FC = () => {
     }
   };
 
+  // ─── Inline status update ──────────────────────────────────────────────────
+  // PATCH /proposal/edit/:id  body: { status }
+  const handleStatusUpdate = async (proposal: Proposal, newStatus: string) => {
+    setStatusMenuFor(null);
+    if (proposal.status === newStatus) return;
+    setUpdatingStatusId(proposal.id);
+    try {
+      await api.patch(`/proposal/edit/${proposal.id}`, { status: newStatus });
+      showToast(`Status updated to ${newStatus}.`, "success");
+      await loadProposals(searchTerm, activeStatus);
+    } catch (err) {
+      showToast(errMessage(err, "Couldn't update status."), "error");
+    } finally {
+      setUpdatingStatusId(null);
+    }
+  };
+
   // ─── Filter / paginate ─────────────────────────────────────────────────────
-  const filteredProposals = proposals.filter((p) => {
-    const q = searchTerm.toLowerCase();
-    const matchesSearch =
-      p.proposalNumber.toLowerCase().includes(q) ||
-      (customerNameById[p.customerId] ?? "").toLowerCase().includes(q);
-    const matchesStatus = statusFilter === "All" || p.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  // Both the text search and the status filter are applied server-side via the
+  // `searchTerm` param, so the returned list is used as-is.
+  const filteredProposals = proposals;
 
   const totalPages = Math.ceil(filteredProposals.length / itemsPerPage);
   const paginatedProposals = filteredProposals.slice(
@@ -538,16 +586,20 @@ export const SalesProposals: React.FC = () => {
     switch (status) {
       case "Draft":
         return "bg-gray-100 text-gray-700";
-      case "Sent":
-        return "bg-blue-100 text-blue-700";
-      case "Accepted":
-        return "bg-green-100 text-green-700";
       case "Partial":
         return "bg-yellow-100 text-yellow-700";
-      case "Rejected":
-        return "bg-red-100 text-red-700";
+      case "Paid":
+        return "bg-green-100 text-green-700";
       case "Overdue":
         return "bg-orange-100 text-orange-700";
+      case "Recurring":
+        return "bg-indigo-100 text-indigo-700";
+      case "Void":
+        return "bg-red-100 text-red-700";
+      case "CreditNotesApplied":
+        return "bg-teal-100 text-teal-700";
+      case "Open":
+        return "bg-blue-100 text-blue-700";
       default:
         return "bg-gray-100 text-gray-700";
     }
@@ -557,16 +609,20 @@ export const SalesProposals: React.FC = () => {
     switch (status) {
       case "Draft":
         return <FileText className="w-3 h-3" />;
-      case "Sent":
-        return <Send className="w-3 h-3" />;
-      case "Accepted":
-        return <CheckCircle className="w-3 h-3" />;
       case "Partial":
         return <Clock className="w-3 h-3" />;
-      case "Rejected":
-        return <X className="w-3 h-3" />;
+      case "Paid":
+        return <DollarSign className="w-3 h-3" />;
       case "Overdue":
         return <AlertCircle className="w-3 h-3" />;
+      case "Recurring":
+        return <RefreshCw className="w-3 h-3" />;
+      case "Void":
+        return <Ban className="w-3 h-3" />;
+      case "CreditNotesApplied":
+        return <CreditCard className="w-3 h-3" />;
+      case "Open":
+        return <Send className="w-3 h-3" />;
       default:
         return null;
     }
@@ -667,7 +723,7 @@ export const SalesProposals: React.FC = () => {
                 Filters
               </button>
               <button
-                onClick={() => loadProposals()}
+                onClick={() => loadProposals(searchTerm, activeStatus)}
                 className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
               >
                 <Download className="w-4 h-4" />
@@ -793,14 +849,56 @@ export const SalesProposals: React.FC = () => {
                         {formatCurrency(proposal.total)}
                       </td>
                       <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                            proposal.status,
-                          )}`}
-                        >
-                          {getStatusIcon(proposal.status)}
-                          {proposal.status}
-                        </span>
+                        <div className="relative">
+                          <button
+                            onClick={() =>
+                              setStatusMenuFor(
+                                statusMenuFor === proposal.id
+                                  ? null
+                                  : proposal.id,
+                              )
+                            }
+                            disabled={updatingStatusId === proposal.id}
+                            title="Update status"
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-shadow hover:ring-2 hover:ring-offset-1 hover:ring-blue-300 disabled:opacity-60 ${getStatusColor(
+                              proposal.status,
+                            )}`}
+                          >
+                            {updatingStatusId === proposal.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              getStatusIcon(proposal.status)
+                            )}
+                            {proposal.status}
+                            <ChevronRight className="w-3 h-3 rotate-90" />
+                          </button>
+                          {statusMenuFor === proposal.id && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-10"
+                                onClick={() => setStatusMenuFor(null)}
+                              />
+                              <div className="absolute left-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1 max-h-60 overflow-y-auto">
+                                {STATUS_OPTIONS.map((s) => (
+                                  <button
+                                    key={s}
+                                    onClick={() =>
+                                      handleStatusUpdate(proposal, s)
+                                    }
+                                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 flex items-center gap-2 ${
+                                      proposal.status === s
+                                        ? "font-semibold text-blue-600"
+                                        : "text-gray-700"
+                                    }`}
+                                  >
+                                    {getStatusIcon(s)}
+                                    {s}
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">

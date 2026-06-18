@@ -209,6 +209,7 @@ export const UsersManagement: React.FC = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
@@ -453,12 +454,20 @@ export const UsersManagement: React.FC = () => {
   };
 
   // Delete User
-  const handleDeleteUser = () => {
-    if (selectedUser) {
-      setUsers(users.filter((user) => user.id !== selectedUser.id));
+  // DELETE /user/delete/:id
+  const handleDeleteUser = async () => {
+    if (!selectedUser) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/user/delete/${selectedUser.id}`);
+      setUsers((prev) => prev.filter((user) => user.id !== selectedUser.id));
       setShowDeleteModal(false);
       setSelectedUser(null);
       showToast("User deleted successfully!");
+    } catch (err) {
+      alertApiError(err, "Couldn't delete user.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -1467,13 +1476,16 @@ export const UsersManagement: React.FC = () => {
               <div className="flex gap-3">
                 <button
                   onClick={handleDeleteUser}
-                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Delete
+                  {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {deleting ? "Deleting…" : "Delete"}
                 </button>
                 <button
                   onClick={() => setShowDeleteModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>

@@ -204,10 +204,10 @@ const RolesList: React.FC<RolesListProps> = ({ onEditRole }) => {
               Manage user roles, permissions, and access levels
             </p>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+          {/* <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
             <Plus className="w-4 h-4" />
             Create New Role
-          </button>
+          </button> */}
         </div>
 
         {/* Search + Filters */}

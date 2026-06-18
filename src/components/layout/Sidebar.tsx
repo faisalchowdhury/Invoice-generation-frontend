@@ -79,7 +79,7 @@ const navigationItems: NavItem[] = [
         icon: Handshake,
         path: "recruitment-dashboard",
       },
-      { label: "POS Dashboard", icon: BanknoteArrowUp, path: "pos-dashboard" },
+      // { label: "POS Dashboard", icon: BanknoteArrowUp, path: "pos-dashboard" },
       { label: "CRM Dashboard", icon: Network, path: "crm-dashboard" },
       {
         label: "Support Dashboard",

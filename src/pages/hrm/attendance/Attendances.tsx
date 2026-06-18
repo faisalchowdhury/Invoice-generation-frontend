@@ -32,6 +32,7 @@ import { attendanceHooks, employeeHooks, attendanceApi, type Attendance as ApiAt
 
 interface AttendanceRow {
   id: string;
+  employeeProfileId: string;
   employeeName: string;
   date: string;
   shift: string;
@@ -114,8 +115,45 @@ const titleCaseStatus = (s: string): AttendanceRow["status"] => {
   return map[(s ?? "").toLowerCase()] ?? "Absent";
 };
 
-const refName = (v: any): string =>
-  v && typeof v === "object" ? v.name ?? v.employee_id ?? "" : String(v ?? "");
+const isMongoId = (value: string) => /^[a-f0-9]{24}$/i.test(value);
+
+/** Human-readable label for an employee profile row (select options, tables). */
+const employeeProfileLabel = (e: any): string => {
+  if (!e) return "";
+  if (typeof e === "string") {
+    return isMongoId(e) ? "" : e;
+  }
+
+  const userRef = e.user_id;
+  const nameFromUser =
+    userRef && typeof userRef === "object" ? (userRef.name ?? "") : "";
+  const fullName = [e.first_name ?? e.firstName, e.last_name ?? e.lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const displayName =
+    nameFromUser ||
+    fullName ||
+    (typeof e.name === "string" && !isMongoId(e.name) ? e.name : "") ||
+    e.employee_name ||
+    "";
+
+  const employeeCode =
+    typeof e.employee_id === "string" && !isMongoId(e.employee_id)
+      ? e.employee_id
+      : "";
+
+  if (displayName && employeeCode) return `${displayName} (${employeeCode})`;
+  return displayName || employeeCode || "";
+};
+
+const employeeProfileId = (v: any): string => {
+  if (!v) return "";
+  if (typeof v === "object") return String(v._id ?? v.id ?? "");
+  return String(v);
+};
+
+const refName = (v: any): string => employeeProfileLabel(v);
 
 function mapFromApiAttendance(p: any): AttendanceRow {
   const clockIn = p.clock_in ?? p.clockIn ?? "";
@@ -126,6 +164,7 @@ function mapFromApiAttendance(p: any): AttendanceRow {
   const totalHour = Number(p.total_hours ?? p.totalHour ?? 0);
   return {
     id: String(p.id ?? p._id ?? ""),
+    employeeProfileId: employeeProfileId(p.employee_id ?? p.employee),
     employeeName: refName(p.employee_id ?? p.employee) || "",
     date: (p.date ?? "").slice(0, 10),
     shift,
@@ -179,12 +218,24 @@ export const Attendances: React.FC = () => {
   // Employee and shift options from API
   const employeeQuery = employeeHooks.useList({ page: 1, limit: 100 }, { retry: 0 });
   const employeeOptions = useMemo(
-    () => (employeeQuery.data ?? []).map((e: any) => {
-      const name = typeof e.user_id === "object" ? (e.user_id?.name ?? "") : (e.user_id ?? e.name ?? "");
-      return { id: String(e.id ?? e._id ?? ""), name };
-    }),
+    () =>
+      (employeeQuery.data ?? []).map((e: any) => ({
+        id: String(e.id ?? e._id ?? ""),
+        label: employeeProfileLabel(e),
+      })),
     [employeeQuery.data],
   );
+
+  const attendancesWithEmployeeNames = useMemo(() => {
+    const labelById = new Map(
+      employeeOptions.map((emp) => [emp.id, emp.label]),
+    );
+    return attendances.map((row) => {
+      if (row.employeeName) return row;
+      const label = labelById.get(row.employeeProfileId);
+      return label ? { ...row, employeeName: label } : row;
+    });
+  }, [attendances, employeeOptions]);
   // ─── Sorting ────────────────────────────────────────────────────────────────
 
   const handleSort = (field: SortField) => {
@@ -200,7 +251,7 @@ export const Attendances: React.FC = () => {
   // ─── Filtered & Sorted ─────────────────────────────────────────────────────
 
   const filteredAttendances = useMemo(() => {
-    let result = [...attendances];
+    let result = [...attendancesWithEmployeeNames];
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -229,7 +280,7 @@ export const Attendances: React.FC = () => {
       return 0;
     });
     return result;
-  }, [attendances, searchQuery, statusFilter, sortField, sortDir]);
+  }, [attendancesWithEmployeeNames, searchQuery, statusFilter, sortField, sortDir]);
 
   const totalPages = Math.ceil(filteredAttendances.length / perPage);
   const paginatedAttendances = filteredAttendances.slice(
@@ -269,7 +320,7 @@ export const Attendances: React.FC = () => {
   const openEditModal = (attendance: AttendanceRow) => {
     setSelectedAttendance(attendance);
     setAttendanceFormData({
-      employeeName: attendance.employeeName,
+      employeeName: attendance.employeeProfileId || attendance.employeeName,
       date: attendance.date,
       clockIn: attendance.clockIn,
       clockOut: attendance.clockOut,
@@ -443,7 +494,7 @@ export const Attendances: React.FC = () => {
               <option value="">Select Employee</option>
               {employeeOptions.length > 0
                 ? employeeOptions.map((emp) => (
-                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                    <option key={emp.id} value={emp.id}>{emp.label}</option>
                   ))
                 : employees.map((emp) => (
                     <option key={emp} value={emp}>{emp}</option>
